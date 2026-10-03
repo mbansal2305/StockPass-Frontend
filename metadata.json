@@ -1,0 +1,6 @@
+{
+  "name": "Vistar Logistics & Mandi Trading ERP",
+  "description": "Enterprise trading and logistics management system for commodity trading, multi-truck transport dispatch, order fulfillment, and role-based operations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
