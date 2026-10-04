@@ -28,7 +28,6 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
   const {
     currentUser,
     logout,
-    switchUserRole,
     currentPage,
     navigate,
     setMasterDataTab,
@@ -125,40 +124,6 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Quick Role Tester Bar */}
-          <div className="hidden sm:flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
-            <span className="px-2 py-0.5 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-              Role:
-            </span>
-            <button
-              type="button"
-              onClick={() => switchUserRole('OWNER')}
-              className={`px-2 py-1 rounded text-xs font-medium cursor-pointer transition-colors ${
-                currentUser?.role === 'OWNER' ? 'bg-white text-slate-900 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Owner
-            </button>
-            <button
-              type="button"
-              onClick={() => switchUserRole('ACCOUNTANT')}
-              className={`px-2 py-1 rounded text-xs font-medium cursor-pointer transition-colors ${
-                currentUser?.role === 'ACCOUNTANT' ? 'bg-white text-slate-900 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Accountant
-            </button>
-            <button
-              type="button"
-              onClick={() => switchUserRole('LABOUR')}
-              className={`px-2 py-1 rounded text-xs font-medium cursor-pointer transition-colors ${
-                currentUser?.role === 'LABOUR' ? 'bg-white text-slate-900 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Labour
-            </button>
-          </div>
-
           {/* Reset Demo Data Button */}
           <button
             type="button"
@@ -200,30 +165,6 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
                   <div className="text-slate-500 text-[11px]">@{currentUser?.username}</div>
                   <div className="mt-1 text-[10px] inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
                     Role: {currentUser?.role}
-                  </div>
-                </div> */}
-
-                {/* <div className="sm:hidden px-2 py-1.5 border-b border-slate-100">
-                  <span className="text-[10px] text-slate-400 font-semibold px-2">SWITCH ROLE</span>
-                  <div className="flex flex-col gap-0.5 mt-1">
-                    <button
-                      onClick={() => switchUserRole('OWNER')}
-                      className="px-2 py-1 text-left rounded hover:bg-slate-100 text-slate-700"
-                    >
-                      Owner
-                    </button>
-                    <button
-                      onClick={() => switchUserRole('ACCOUNTANT')}
-                      className="px-2 py-1 text-left rounded hover:bg-slate-100 text-slate-700"
-                    >
-                      Accountant
-                    </button>
-                    <button
-                      onClick={() => switchUserRole('LABOUR')}
-                      className="px-2 py-1 text-left rounded hover:bg-slate-100 text-slate-700"
-                    >
-                      Labour
-                    </button>
                   </div>
                 </div> */}
 

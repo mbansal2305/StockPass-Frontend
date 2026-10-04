@@ -4,6 +4,7 @@ import { Transport, TransportRentType, QuantityUnit, TransportStatus } from '../
 import { transportsApi } from '../../api';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/formatters';
+import { DecimalInput } from '../common/DecimalInput';
 import { Edit2, FilterX, Search } from 'lucide-react';
 
 interface PaymentDraft {
@@ -289,12 +290,9 @@ export const TransportPaymentsScreen: React.FC = () => {
                   </td>
                   <td className="px-2 py-2 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
+                      <DecimalInput
                         value={draft.receivedWeight}
-                        onChange={event => updateDraft(transport, { receivedWeight: Number(event.target.value) || 0 })}
+                        onChange={receivedWeight => updateDraft(transport, { receivedWeight })}
                         className="w-[72px] rounded border border-slate-300 px-1 py-1 text-right text-[11px] tabular-nums text-slate-900"
                       />
                       <span className="text-[9px] text-slate-500">{unitName(transport.grossWeightUnit)}</span>
@@ -312,15 +310,15 @@ export const TransportPaymentsScreen: React.FC = () => {
                         <button type="button" aria-pressed={draft.rentType === 'per_unit'} onClick={() => updateDraft(transport, { rentType: 'per_unit' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold ${draft.rentType === 'per_unit' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Per {unitName(transport.grossWeightUnit)}</button>
                         <button type="button" aria-pressed={draft.rentType === 'fix'} onClick={() => updateDraft(transport, { rentType: 'fix' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold ${draft.rentType === 'fix' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Fix</button>
                       </div>
-                      <input type="number" min="0" step="0.01" value={draft.rent} onChange={event => updateDraft(transport, { rent: Number(event.target.value) || 0 })} className="min-w-0 flex-1 rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" />
+                      <DecimalInput value={draft.rent} onChange={rent => updateDraft(transport, { rent })} className="min-w-0 flex-1 rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" />
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-right font-semibold tabular-nums text-slate-800">{formatCurrency(totalRent)}</td>
-                  <td className="px-2 py-2"><input aria-label="Advance by party" type="number" min="0" step="0.01" value={draft.advanceByClient} onChange={event => updateDraft(transport, { advanceByClient: Number(event.target.value) || 0 })} className="w-full min-w-[82px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><input aria-label="Advance paid" type="number" min="0" step="0.01" value={draft.advanceByFirm} onChange={event => updateDraft(transport, { advanceByFirm: Number(event.target.value) || 0 })} className="w-full min-w-[78px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><input aria-label="Shortage" type="number" min="0" step="0.01" value={draft.shortageAmount} onChange={event => updateDraft(transport, { shortageAmount: Number(event.target.value) || 0 })} className="w-full min-w-[74px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><input aria-label="Extra" type="number" min="0" step="0.01" value={draft.extraAmount} onChange={event => updateDraft(transport, { extraAmount: Number(event.target.value) || 0 })} className="w-full min-w-[70px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><input aria-label="Paid" type="number" min="0" step="0.01" value={draft.finalPaid} onChange={event => updateDraft(transport, { finalPaid: Number(event.target.value) || 0 })} className="w-full min-w-[70px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Advance by party" value={draft.advanceByClient} onChange={advanceByClient => updateDraft(transport, { advanceByClient })} className="w-full min-w-[82px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Advance paid" value={draft.advanceByFirm} onChange={advanceByFirm => updateDraft(transport, { advanceByFirm })} className="w-full min-w-[78px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Shortage" value={draft.shortageAmount} onChange={shortageAmount => updateDraft(transport, { shortageAmount })} className="w-full min-w-[74px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Extra" value={draft.extraAmount} onChange={extraAmount => updateDraft(transport, { extraAmount })} className="w-full min-w-[70px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Paid" value={draft.finalPaid} onChange={finalPaid => updateDraft(transport, { finalPaid })} className="w-full min-w-[70px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
                   <td className={`whitespace-nowrap px-2 py-2 text-right font-semibold tabular-nums ${left < 100 ? 'text-emerald-700' : 'text-red-700'}`}>{formatCurrency(left)}</td>
                   <td className="px-2 py-2"><input aria-label="Payment notes" value={draft.notes} onChange={event => updateDraft(transport, { notes: event.target.value })} className="w-full min-w-[150px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900" /></td>
                   <td className="px-2 py-2">

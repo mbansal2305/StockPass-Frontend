@@ -81,7 +81,6 @@ interface AppContextType {
   currentUser: User | null;
   login: (u: string, p: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
-  switchUserRole: (role: UserRole) => void;
   
   // Navigation
   currentPage: NavigationPage;
@@ -304,8 +303,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const hasToken = apiClient.getAccessToken();
       if (hasToken) {
         try {
-          const me = await authApi.getMe();
+          const me = await authApi.getMe(storage.getCurrentUser());
           setCurrentUser(me);
+          storage.setCurrentUser(me);
           setIsBackendConnected(true);
         } catch (e) {
           console.warn('Failed to verify token with backend me endpoint:', e);
@@ -353,6 +353,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // 1. Primary: Try real backend authentication
       const res = await authApi.login(username, pass);
       if (res.user) {
+        storage.setCurrentUser(res.user);
         setCurrentUser(res.user);
         setIsBackendConnected(true);
         await refreshData();
@@ -388,19 +389,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await authApi.logout();
     setCurrentUser(null);
     showToast('Logged out successfully', 'info');
-  };
-
-  const switchUserRole = (role: UserRole) => {
-    const allUsers = users.length > 0 ? users : storage.getUsers();
-    const target = allUsers.find(u => u.role === role && u.status === 'ACTIVE') || allUsers[0];
-    if (target) {
-      storage.setCurrentUser(target);
-      setCurrentUser(target);
-      showToast(`Switched active profile to ${target.name} (${target.role})`, 'info');
-      if (target.role !== 'OWNER' && currentPage === 'employees') {
-        navigate('dashboard');
-      }
-    }
   };
 
   const createUserAccount = async (payload: UserCreatePayload): Promise<User> => {
@@ -651,7 +639,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         currentUser,
         login,
         logout,
-        switchUserRole,
         currentPage,
         pageParams,
         navigate,

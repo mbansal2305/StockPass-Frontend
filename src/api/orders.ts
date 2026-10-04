@@ -10,6 +10,7 @@
  */
 
 import { apiClient } from './client';
+import { roundToTwoDecimals } from '../utils/numbers';
 import {
   Order,
   OrderType,
@@ -190,13 +191,13 @@ export function toBackendCreateSchema(order: Partial<Order>): OrderCreateSchema 
     from_client: parseNumId(order.fromClientId),
     to_client: parseNumId(order.toClientId),
     commodity: parseNumId(order.commodityId) || 1,
-    rate: order.rate !== undefined ? Number(order.rate) : 0,
-    quantity: order.quantity !== undefined ? Number(order.quantity) : 0,
+    rate: order.rate !== undefined ? roundToTwoDecimals(Number(order.rate)) : 0,
+    quantity: order.quantity !== undefined ? roundToTwoDecimals(Number(order.quantity)) : 0,
     quantity_unit: order.unit || 'quintal',
     start_date: order.startDate || null,
     expiry_date: order.expiryDate || null,
     contract_date: order.contractDate || order.startDate || null,
-    quantity_fulfilled: order.quantityFulfilled !== undefined ? Number(order.quantityFulfilled) : 0,
+    quantity_fulfilled: order.quantityFulfilled !== undefined ? roundToTwoDecimals(Number(order.quantityFulfilled)) : 0,
     broker: parseNumId(order.brokerId),
     status,
     notes: order.notes ? order.notes.trim() : null
@@ -235,13 +236,13 @@ export function toBackendUpdateSchema(id: number | string, order: Partial<Order>
   if (order.fromClientId !== undefined) payload.from_client = parseNumId(order.fromClientId);
   if (order.toClientId !== undefined) payload.to_client = parseNumId(order.toClientId);
   if (order.commodityId !== undefined) payload.commodity = parseNumId(order.commodityId) || 1;
-  if (order.rate !== undefined) payload.rate = Number(order.rate);
-  if (order.quantity !== undefined) payload.quantity = Number(order.quantity);
+  if (order.rate !== undefined) payload.rate = roundToTwoDecimals(Number(order.rate));
+  if (order.quantity !== undefined) payload.quantity = roundToTwoDecimals(Number(order.quantity));
   if (order.unit !== undefined) payload.quantity_unit = order.unit;
   if (order.startDate !== undefined) payload.start_date = order.startDate;
   if (order.expiryDate !== undefined) payload.expiry_date = order.expiryDate;
   if (order.contractDate !== undefined) payload.contract_date = order.contractDate;
-  if (order.quantityFulfilled !== undefined) payload.quantity_fulfilled = Number(order.quantityFulfilled);
+  if (order.quantityFulfilled !== undefined) payload.quantity_fulfilled = roundToTwoDecimals(Number(order.quantityFulfilled));
   if (order.brokerId !== undefined) payload.broker = parseNumId(order.brokerId);
   if (order.status) payload.status = statusMap[order.status] || 'pending';
   if (order.notes !== undefined) payload.notes = order.notes;

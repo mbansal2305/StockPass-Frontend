@@ -384,56 +384,58 @@ export const OrderListScreen: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
               <tr>
+                <th className="px-4 py-3">CONTRACT DATE</th>
                 <th 
                   onClick={() => toggleSort('orderNumber')}
                   className="px-4 py-3 cursor-pointer hover:text-slate-900"
                 >
                   <div className="flex items-center gap-1">
-                    Order No <ArrowUpDown className="w-3 h-3" />
+                    ORDER NO <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="px-4 py-3">Commodity</th>
-                <th className="px-4 py-3">Route / Party</th>
-                <th className="px-4 py-3">Broker</th>
+                <th className="px-4 py-3">COMMODITY</th>
+                <th className="px-4 py-3">ROUTE / PARTY</th>
+                <th className="px-4 py-3">BILLING FIRM</th>
+                <th className="px-4 py-3">BROKER</th>
+                <th className="px-4 py-3 text-right">RATE</th>
                 <th 
                   onClick={() => toggleSort('quantity')}
                   className="px-4 py-3 cursor-pointer hover:text-slate-900"
                 >
                   <div className="flex items-center gap-1">
-                    Order Qty <ArrowUpDown className="w-3 h-3" />
+                    ORDER QTY <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="px-4 py-3">Contract Date</th>
                 <th
                   onClick={() => toggleSort('remaining')}
                   className="px-4 py-3 cursor-pointer hover:text-slate-900 text-left"
                 >
                   <div className="flex items-center gap-1">
-                    rem_qty <ArrowUpDown className="w-3 h-3" />
+                    REM QTY <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-right">Rate</th>
+                <th className="px-4 py-3">START DATE</th>
                 <th 
                   onClick={() => toggleSort('expiryDate')}
                   className="px-4 py-3 cursor-pointer hover:text-slate-900"
                 >
                   <div className="flex items-center gap-1">
-                    Validity <ArrowUpDown className="w-3 h-3" />
+                    VALIDITY <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="px-4 py-3 text-right">ACTIONS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-500">
+                  <td colSpan={12} className="py-12 text-center text-slate-500">
                     <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading orders...</span>
                   </td>
                 </tr>
               ) : loadError ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center">
+                  <td colSpan={12} className="py-12 text-center">
                     <p className="text-red-600 font-medium">{loadError}</p>
                     <button type="button" onClick={() => setReloadSequence(sequence => sequence + 1)} className="mt-2 text-xs font-semibold text-blue-700 hover:underline">
                       Retry
@@ -442,7 +444,7 @@ export const OrderListScreen: React.FC = () => {
                 </tr>
               ) : paginatedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center">
+                  <td colSpan={12} className="py-12 text-center">
                     <p className="text-slate-500 font-medium">No orders found matching criteria</p>
                     <p className="text-slate-400 text-[11px] mt-1">Adjust filters or create a new order</p>
                     <button
@@ -460,8 +462,10 @@ export const OrderListScreen: React.FC = () => {
                   const comm = commodityMap.get(order.commodityId);
                   const fromClient = clientMap.get(order.fromClientId) || '-';
                   const toClient = clientMap.get(order.toClientId) || '-';
+                  const billingFirm = order.type === 'SALES ORDER' ? fromClient : toClient;
                   const remaining = Math.max(0, order.quantity - order.quantityFulfilled);
                   const daysMeta = getDaysRemaining(order.expiryDate);
+                  const hasStarted = getDaysRemaining(order.startDate).days <= 0;
                   const isCompleted = order.status === 'COMPLETED';
 
                   // Row background & left border color by status
@@ -489,6 +493,11 @@ export const OrderListScreen: React.FC = () => {
                       aria-label={`View order ${order.orderNumber}`}
                       className={`${rowBgClass} cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600`}
                     >
+                      {/* Contract Date */}
+                      <td className="px-4 py-3 whitespace-nowrap text-slate-600 tabular-nums">
+                        {formatDate(order.contractDate)}
+                      </td>
+
                       {/* Order Number */}
                       <td className="px-4 py-3">
                         <button
@@ -532,19 +541,25 @@ export const OrderListScreen: React.FC = () => {
                         )}
                       </td>
 
+                      {/* Billing Firm */}
+                      <td className="px-4 py-3 max-w-[180px] truncate text-slate-700" title={billingFirm}>
+                        {billingFirm}
+                      </td>
+
                       {/* Broker */}
                       <td className="px-4 py-3 text-slate-700">
                         {brokerMap.get(order.brokerId) || 'Direct'}
                       </td>
 
+                      {/* Rate */}
+                      <td className="px-4 py-3 text-right tabular-nums font-mono text-slate-700">
+                        {formatCurrency(order.rate)}
+                        <span className="text-[10px] text-slate-400 block">/{getUnitLabel(order.unit)}</span>
+                      </td>
+
                       {/* Quantity */}
                       <td className="px-4 py-3 font-semibold text-slate-900 tabular-nums">
                         {formatQuantityWithUnit(order.quantity, order.unit)}
-                      </td>
-
-                      {/* Contract Date */}
-                      <td className="px-4 py-3 whitespace-nowrap text-slate-600 tabular-nums">
-                        {formatDate(order.contractDate)}
                       </td>
 
                       {/* Remaining Quantity */}
@@ -562,10 +577,12 @@ export const OrderListScreen: React.FC = () => {
                         </span>
                       </td>
 
-                      {/* Rate */}
-                      <td className="px-4 py-3 text-right tabular-nums font-mono text-slate-700">
-                        {formatCurrency(order.rate)}
-                        <span className="text-[10px] text-slate-400 block">/{getUnitLabel(order.unit)}</span>
+                      {/* Start Date */}
+                      <td className="px-4 py-3 whitespace-nowrap text-slate-600 tabular-nums">
+                        {formatDate(order.startDate)}
+                        <div className={`mt-0.5 text-[10px] font-semibold ${hasStarted ? 'text-emerald-600' : 'text-slate-500'}`}>
+                          {hasStarted ? 'contract started' : 'upcoming'}
+                        </div>
                       </td>
 
                       {/* Validity */}

@@ -207,6 +207,9 @@ export interface Order {
   startDate: string; // YYYY-MM-DD
   expiryDate: string; // YYYY-MM-DD
   quantityFulfilled: number; // in selected unit
+  remQuantity?: number;
+  remQuantityUnit?: QuantityUnit;
+  selectorClientName?: string;
   brokerId: string;
   status: OrderStatus;
   notes?: string;
@@ -218,6 +221,7 @@ export interface TransportItem {
   id?: number;
   orderId: string;
   allocatedQuantity: number; // In the transport gross-weight unit
+  orderEntryQuantity?: number; // In the transport gross-weight unit
 }
 
 export type TransportStatus = 'PENDING' | 'DELIVERY' | 'FINANCE' | 'PAID';

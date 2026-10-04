@@ -13,6 +13,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { formatQuantityWithUnit, formatCurrency } from '../../utils/formatters';
+import { DecimalInput } from '../common/DecimalInput';
 
 const isFlagEnabled = (value: boolean | string | undefined): boolean => {
   if (typeof value === 'boolean') return value;
@@ -31,6 +32,20 @@ const getTodayDate = (): string => {
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
   return `${today.getFullYear()}-${month}-${day}`;
+};
+
+const convertQuantityUnit = (quantity: number, fromUnit: QuantityUnit, toUnit: QuantityUnit): number => {
+  const metricTons = fromUnit === 'mt' ? quantity : fromUnit === 'quintal' ? quantity / 10 : quantity / 1000;
+  if (toUnit === 'mt') return metricTons;
+  if (toUnit === 'quintal') return metricTons * 10;
+  return metricTons * 1000;
+};
+
+const sameId = (left: string, right: string): boolean => {
+  const leftId = String(left).trim();
+  const rightId = String(right).trim();
+  if (leftId === rightId) return true;
+  return /^\d+$/.test(leftId) && /^\d+$/.test(rightId) && Number(leftId) === Number(rightId);
 };
 
 export const TransportFormScreen: React.FC = () => {
@@ -55,8 +70,6 @@ export const TransportFormScreen: React.FC = () => {
   const prefillCommodityId = pageParams.prefillCommodityId;
   const prefillFromClientId = pageParams.prefillFromClientId;
   const prefillToClientId = pageParams.prefillToClientId;
-  const remainingCapacity = pageParams.remainingCapacity || 24;
-
   const defaultBillingFirm = clients.find(c => c.type === 'MY_FIRM')?.id || clients[0]?.id || '';
 
   // Form State
@@ -69,10 +82,10 @@ export const TransportFormScreen: React.FC = () => {
     toClientId: prefillToClientId || clients[1]?.id || clients[0]?.id || '',
     vehicleNumber: '',
     transporterId: transporters[0]?.id || '',
-    grossWeight: Math.min(26.5, remainingCapacity > 0 ? remainingCapacity : 24),
+    grossWeight: 0,
     grossWeightUnit: 'quintal' as QuantityUnit,
-    bagNumbers: 500,
-    bagWeight: 500,
+    bagNumbers: 0,
+    bagWeight: 0,
     anugya: false,
     gatepass: false,
     rent: 0,
@@ -104,6 +117,9 @@ export const TransportFormScreen: React.FC = () => {
 
   const sourceClientName = locations.find(location => location.id === formData.fromClientId)?.name || 'Selected origin';
   const destinationClientName = locations.find(location => location.id === formData.toClientId)?.name || 'Selected destination';
+  const salesOrdersForCommodity = salesOrders.filter(order => sameId(order.commodityId, formData.commodityId));
+  const purchaseOrdersForCommodity = purchaseOrders.filter(order => sameId(order.commodityId, formData.commodityId));
+  const contractOrdersForCommodity = [...salesOrdersForCommodity, ...purchaseOrdersForCommodity];
 
   useEffect(() => {
     let cancelled = false;
@@ -223,10 +239,10 @@ export const TransportFormScreen: React.FC = () => {
   };
 
   const handleAddItem = (orderType: 'SALES ORDER' | 'PURCHASE ORDER') => {
-    const orderOptions = orderType === 'SALES ORDER' ? salesOrders : purchaseOrders;
+    const orderOptions = orderType === 'SALES ORDER' ? salesOrdersForCommodity : purchaseOrdersForCommodity;
     const unallocatedOrder = orderOptions.find(o => !items.some(i => i.orderId === o.id) && o.status === 'PENDING') || orderOptions[0];
     if (unallocatedOrder) {
-      setItems([...items, { orderId: unallocatedOrder.id, allocatedQuantity: 0 }]);
+      setItems([...items, { orderId: unallocatedOrder.id, allocatedQuantity: 0, orderEntryQuantity: 0 }]);
       setErrors(previous => {
         const { items: _itemsError, ...remainingErrors } = previous;
         return remainingErrors;
@@ -256,23 +272,45 @@ export const TransportFormScreen: React.FC = () => {
 
   const handleItemOrderChange = (index: number, orderId: string) => {
     const next = [...items];
-    next[index] = { ...next[index], orderId };
+    next[index] = { ...next[index], orderId, orderEntryQuantity: 0 };
     setItems(next);
     setErrors(previous => {
       const { items: _itemsError, ...remainingErrors } = previous;
+      delete remainingErrors[`orderEntry-${index}`];
       return remainingErrors;
     });
   };
 
-  const orderTypeById = new Map(contractOrders.map(order => [order.id.trim(), order.type]));
+  const handleCommodityChange = (commodityId: string) => {
+    setFormData(previous => ({ ...previous, commodityId }));
+    const matchingOrderIds = contractOrders
+      .filter(order => sameId(order.commodityId, commodityId))
+      .map(order => order.id);
+    setItems(previous => previous.filter(item => matchingOrderIds.some(id => sameId(id, item.orderId))));
+    setErrors({});
+  };
+
+  const handleOrderEntryChange = (index: number, orderEntryQuantity: number) => {
+    const next = [...items];
+    next[index] = { ...next[index], orderEntryQuantity };
+    setItems(next);
+    setErrors(previous => {
+      const remainingErrors = { ...previous };
+      delete remainingErrors[`orderEntry-${index}`];
+      delete remainingErrors.items;
+      return remainingErrors;
+    });
+  };
+
+  const orderTypeById = new Map(contractOrdersForCommodity.map(order => [order.id.trim(), order.type]));
+  const findOrderForItem = (orderId: string) => contractOrdersForCommodity.find(order => sameId(order.id, orderId));
   const getOrderType = (orderId: string): 'SALES ORDER' | 'PURCHASE ORDER' | undefined => {
     const normalizedId = String(orderId).trim();
     const directMatch = orderTypeById.get(normalizedId);
     if (directMatch) return directMatch;
-    if (/^\d+$/.test(normalizedId)) {
-      return contractOrders.find(order => /^\d+$/.test(order.id) && Number(order.id) === Number(normalizedId))?.type;
-    }
-    return undefined;
+    return findOrderForItem(orderId)?.type === 'SALES ORDER' ? 'SALES ORDER'
+      : findOrderForItem(orderId)?.type === 'PURCHASE ORDER' ? 'PURCHASE ORDER'
+      : undefined;
   };
   const salesAllocated = items.reduce((sum, item) => {
     return getOrderType(item.orderId) === 'SALES ORDER' ? sum + (Number(item.allocatedQuantity) || 0) : sum;
@@ -283,7 +321,7 @@ export const TransportFormScreen: React.FC = () => {
   const hasSalesItems = items.some(item => getOrderType(item.orderId) === 'SALES ORDER');
   const hasPurchaseItems = items.some(item => getOrderType(item.orderId) === 'PURCHASE ORDER');
   const renderAllocationGroup = (orderType: 'SALES ORDER' | 'PURCHASE ORDER') => {
-    const orderOptions = orderType === 'SALES ORDER' ? salesOrders : purchaseOrders;
+    const orderOptions = orderType === 'SALES ORDER' ? salesOrdersForCommodity : purchaseOrdersForCommodity;
     const groupItems = items
       .map((item, index) => ({ item, index }))
       .filter(({ item }) => getOrderType(item.orderId) === orderType);
@@ -308,12 +346,19 @@ export const TransportFormScreen: React.FC = () => {
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
                 <tr>
                   <th className="px-3 py-2">Order</th>
-                  <th className="px-3 py-2 text-right min-w-[150px]">Allocated ({getWeightUnitLabel(formData.grossWeightUnit)})</th>
+                  <th className="px-3 py-2 text-right">Remaining ({getWeightUnitLabel(formData.grossWeightUnit)})</th>
+                  <th className="px-3 py-2 text-right">Allocated</th>
+                  <th className="px-3 py-2 text-right min-w-[130px]">Order Entry ({getWeightUnitLabel(formData.grossWeightUnit)})</th>
                   <th className="px-3 py-2 text-right">Remove</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {groupItems.map(({ item, index }) => (
+                {groupItems.map(({ item, index }) => {
+                  const order = findOrderForItem(item.orderId);
+                  const remaining = order?.remQuantity === undefined
+                    ? undefined
+                    : convertQuantityUnit(order.remQuantity, order.remQuantityUnit || 'mt', formData.grossWeightUnit);
+                  return (
                   <tr key={item.id ?? `${orderType}-${index}`}>
                     <td className="px-3 py-2">
                       <select
@@ -322,19 +367,29 @@ export const TransportFormScreen: React.FC = () => {
                         className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white text-slate-900"
                       >
                         {orderOptions.map(order => (
-                          <option key={order.id} value={order.id}>{order.orderNumber}</option>
+                          <option key={order.id} value={order.id}>
+                            {order.orderNumber}{order.selectorClientName ? ` (${order.selectorClientName})` : ''}
+                          </option>
                         ))}
                       </select>
                     </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">
+                      {remaining === undefined ? '-' : formatQuantityWithUnit(remaining, formData.grossWeightUnit)}
+                    </td>
                     <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
+                      <DecimalInput
                         value={item.allocatedQuantity}
-                        onChange={(event) => handleItemQuantityChange(index, parseFloat(event.target.value) || 0)}
-                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 font-bold tabular-nums text-blue-700 text-right"
+                        onChange={(quantity) => handleItemQuantityChange(index, quantity)}
+                        className="w-[76px] text-xs border border-slate-300 rounded px-2 py-1.5 font-bold tabular-nums text-blue-700 text-right"
                       />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <DecimalInput
+                        value={item.orderEntryQuantity || 0}
+                        onChange={(quantity) => handleOrderEntryChange(index, quantity)}
+                        className="w-[110px] text-xs border border-slate-300 rounded px-2 py-1.5 tabular-nums text-slate-900 text-right"
+                      />
+                      {errors[`orderEntry-${index}`] && <p className="mt-1 text-left text-[10px] text-red-600">{errors[`orderEntry-${index}`]}</p>}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button
@@ -347,7 +402,8 @@ export const TransportFormScreen: React.FC = () => {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -384,6 +440,15 @@ export const TransportFormScreen: React.FC = () => {
       newErrors.items = 'Purchase allocation total must equal the gross loading weight';
     }
 
+    items.forEach((item, index) => {
+      const order = findOrderForItem(item.orderId);
+      if (order?.remQuantity === undefined) return;
+      const remaining = convertQuantityUnit(order.remQuantity, order.remQuantityUnit || 'mt', formData.grossWeightUnit);
+      if ((item.orderEntryQuantity || 0) > remaining + 0.000001) {
+        newErrors[`orderEntry-${index}`] = `Must be no more than ${formatQuantityWithUnit(remaining, formData.grossWeightUnit)}`;
+      }
+    });
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -399,7 +464,8 @@ export const TransportFormScreen: React.FC = () => {
     const sanitizedItems = items.map(i => ({
       id: i.id,
       orderId: i.orderId,
-      allocatedQuantity: Number(i.allocatedQuantity)
+      allocatedQuantity: Number(i.allocatedQuantity),
+      orderEntryQuantity: Number(i.orderEntryQuantity) || 0
     }));
 
     try {
@@ -415,8 +481,8 @@ export const TransportFormScreen: React.FC = () => {
         transporterId: formData.transporterId,
         grossWeight: Number(formData.grossWeight),
         grossWeightUnit: formData.grossWeightUnit,
-        bagNumbers: formData.bagNumbers ? Number(formData.bagNumbers) : undefined,
-        bagWeight: formData.bagWeight ? Number(formData.bagWeight) : undefined,
+        bagNumbers: Number(formData.bagNumbers),
+        bagWeight: Number(formData.bagWeight),
         anugya: formData.anugya,
         gatepass: formData.gatepass,
         rent: Number(formData.rent),
@@ -427,7 +493,7 @@ export const TransportFormScreen: React.FC = () => {
         extraPaid: Number(formData.extraPaid),
         shortage: Number(formData.shortage),
         unloadDate: formData.unloadDate || undefined,
-        receivedWeight: formData.receivedWeight ? Number(formData.receivedWeight) : undefined,
+        receivedWeight: Number(formData.receivedWeight),
         sourceWeightReceipt: formData.sourceWeightReceipt.trim(),
         destinationWeightReceipt: formData.destinationWeightReceipt.trim(),
         status: formData.status,
@@ -555,7 +621,7 @@ export const TransportFormScreen: React.FC = () => {
               <label className="block text-xs font-medium text-slate-700 mb-1">Commodity *</label>
               <select
                 value={formData.commodityId}
-                onChange={(e) => setFormData({ ...formData, commodityId: e.target.value })}
+                onChange={(e) => handleCommodityChange(e.target.value)}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white font-medium"
               >
                 {commodities.map((c) => (
@@ -619,13 +685,10 @@ export const TransportFormScreen: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Gross Loading Weight *</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.1"
+              <DecimalInput
                 required
                 value={formData.grossWeight}
-                onChange={(e) => handleGrossWeightChange(parseFloat(e.target.value) || 0)}
+                onChange={handleGrossWeightChange}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-bold tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
               <select
@@ -645,11 +708,9 @@ export const TransportFormScreen: React.FC = () => {
 
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Bag Count</label>
-              <input
-                type="number"
-                min="0"
+              <DecimalInput
                 value={formData.bagNumbers}
-                onChange={(e) => setFormData({ ...formData, bagNumbers: parseInt(e.target.value) || 0 })}
+                onChange={(bagNumbers) => setFormData({ ...formData, bagNumbers })}
                 placeholder="500 bags"
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
@@ -657,12 +718,9 @@ export const TransportFormScreen: React.FC = () => {
 
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Weight of Each Bag (grams)</label>
-              <input
-                type="number"
-                min="0"
-                step="1"
+              <DecimalInput
                 value={formData.bagWeight}
-                onChange={(e) => setFormData({ ...formData, bagWeight: parseFloat(e.target.value) || 0 })}
+                onChange={(bagWeight) => setFormData({ ...formData, bagWeight })}
                 placeholder="50000 grams"
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
@@ -760,73 +818,55 @@ export const TransportFormScreen: React.FC = () => {
                   ? `Rent per ${getWeightUnitLabel(formData.grossWeightUnit)} (₹) *`
                   : 'Fixed Rent (₹) *'}
               </label>
-              <input
-                type="number"
-                step="100"
-                min="0"
+              <DecimalInput
                 required
                 value={formData.rent}
-                onChange={(e) => setFormData({ ...formData, rent: parseFloat(e.target.value) || 0 })}
+                onChange={(rent) => setFormData({ ...formData, rent })}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
             </div>
 
             <div>
               <label className="block min-h-8 text-xs font-medium text-slate-700 mb-1">Advance Paid by Firm (₹)</label>
-              <input
-                type="number"
-                step="100"
-                min="0"
+              <DecimalInput
                 value={formData.advanceByFirm}
-                onChange={(e) => setFormData({ ...formData, advanceByFirm: parseFloat(e.target.value) || 0 })}
+                onChange={(advanceByFirm) => setFormData({ ...formData, advanceByFirm })}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
             </div>
 
             <div>
               <label className="block min-h-8 text-xs font-medium text-slate-700 mb-1">Advance Paid by Consignee (₹)</label>
-              <input
-                type="number"
-                step="100"
-                min="0"
+              <DecimalInput
                 value={formData.advanceByClient}
-                onChange={(e) => setFormData({ ...formData, advanceByClient: parseFloat(e.target.value) || 0 })}
+                onChange={(advanceByClient) => setFormData({ ...formData, advanceByClient })}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
             </div>
 
             <div>
               <label className="block min-h-8 text-xs font-medium text-slate-700 mb-1">Extra (₹)</label>
-              <input
-                type="number"
-                step="100"
-                min="0"
+              <DecimalInput
                 value={formData.extraPaid}
-                onChange={(e) => setFormData({ ...formData, extraPaid: parseFloat(e.target.value) || 0 })}
+                onChange={(extraPaid) => setFormData({ ...formData, extraPaid })}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
             </div>
 
             <div>
               <label className="block min-h-8 text-xs font-medium text-slate-700 mb-1">Shortage (₹)</label>
-              <input
-                type="number"
-                step="100"
-                min="0"
+              <DecimalInput
                 value={formData.shortage}
-                onChange={(e) => setFormData({ ...formData, shortage: parseFloat(e.target.value) || 0 })}
+                onChange={(shortage) => setFormData({ ...formData, shortage })}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
             </div>
 
             <div>
               <label className="block min-h-8 text-xs font-medium text-slate-700 mb-1">Final Settled Paid (₹)</label>
-              <input
-                type="number"
-                step="100"
-                min="0"
+              <DecimalInput
                 value={formData.finalPaid}
-                onChange={(e) => setFormData({ ...formData, finalPaid: parseFloat(e.target.value) || 0 })}
+                onChange={(finalPaid) => setFormData({ ...formData, finalPaid })}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
             </div>
@@ -867,12 +907,9 @@ export const TransportFormScreen: React.FC = () => {
 
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Received Weight (MT at Gate)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
+              <DecimalInput
                 value={formData.receivedWeight}
-                onChange={(e) => setFormData({ ...formData, receivedWeight: parseFloat(e.target.value) || 0 })}
+                onChange={(receivedWeight) => setFormData({ ...formData, receivedWeight })}
                 placeholder="Optional until unloaded"
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />

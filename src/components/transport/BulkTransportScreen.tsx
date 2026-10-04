@@ -456,8 +456,7 @@ export const BulkTransportScreen: React.FC = () => {
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"
-                          step="0.01"
-                          min="0.1"
+                      
                           required
                           value={row.grossWeight}
                           onChange={(e) => handleUpdateRow(row.id, 'grossWeight', parseFloat(e.target.value) || 0)}
@@ -478,8 +477,7 @@ export const BulkTransportScreen: React.FC = () => {
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"
-                          step="100"
-                          min="0"
+                          
                           value={row.rent}
                           onChange={(e) => handleUpdateRow(row.id, 'rent', parseFloat(e.target.value) || 0)}
                           className="w-24 text-xs font-mono border border-slate-300 rounded px-2 py-1 text-right text-slate-700 tabular-nums"

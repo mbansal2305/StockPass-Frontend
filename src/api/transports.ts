@@ -1,6 +1,7 @@
 import { BusinessClient, Commodity, Order, QuantityUnit, Transport, TransportItem, TransportRentType, TransportStatus, Transporter } from '../types';
 import { apiClient } from './client';
 import { transformBackendOrderToFrontend } from './orders';
+import { roundToTwoDecimals } from '../utils/numbers';
 
 export interface TransportLookups {
   clients?: BusinessClient[];
@@ -91,7 +92,8 @@ export function transformBackendTransport(raw: any, lookups: TransportLookups = 
     return {
       id: item.id === undefined || item.id === null ? undefined : Number(item.id),
       orderId,
-      allocatedQuantity: Number(item.quantity ?? item.allocated_quantity ?? item.allocatedQuantity ?? 0)
+      allocatedQuantity: Number(item.quantity ?? item.allocated_quantity ?? item.allocatedQuantity ?? 0),
+      orderEntryQuantity: Number(item.order_entry ?? item.orderEntryQuantity ?? 0)
     };
   });
 
@@ -173,7 +175,10 @@ function toTransportFormData(
     const value = transport[property] as string | undefined;
     if (value !== undefined) appendValue(form, field, numericId(value));
   });
-  scalarFields.forEach(([property, field]) => appendValue(form, field, transport[property]));
+  scalarFields.forEach(([property, field]) => {
+    const value = transport[property];
+    appendValue(form, field, typeof value === 'number' ? roundToTwoDecimals(value) : value);
+  });
 
   if (transport.grossWeightUnit !== undefined) appendValue(form, 'gross_wt_unit', transport.grossWeightUnit);
   if (transport.anugya !== undefined) appendValue(form, 'anugya', toBooleanFlag(transport.anugya));
@@ -194,7 +199,8 @@ function toTransportFormData(
       return {
         ...(includeId && item.id !== undefined ? { id: item.id } : {}),
         order: Number(backendOrderId),
-        quantity: item.allocatedQuantity
+        quantity: roundToTwoDecimals(item.allocatedQuantity),
+        order_entry: roundToTwoDecimals(item.orderEntryQuantity || 0)
       };
     });
     form.append('items', JSON.stringify(items));
@@ -283,14 +289,24 @@ function normalizeOrderOptions(
 ): Order[] {
   return getSelectionRows(response)
     .filter((raw: any) => raw && typeof raw === 'object')
-    .map((raw: any) => transformBackendOrderToFrontend({
-      ...raw,
-      type: raw.type ?? raw.order_type,
-      order_no: raw.order_no ?? raw.order_number,
-      from_client: relationId(raw.from_client, lookups.clients),
-      to_client: relationId(raw.to_client, lookups.clients),
-      commodity: relationId(raw.commodity, lookups.commodities)
-    }));
+    .map((raw: any) => {
+      const orderType = String(raw.type ?? raw.order_type ?? '').toLowerCase();
+      const counterpartyName = orderType.includes('purchase') ? raw.from_client : raw.to_client;
+      const order = transformBackendOrderToFrontend({
+        ...raw,
+        type: raw.type ?? raw.order_type,
+        order_no: raw.order_no ?? raw.order_number,
+        from_client: relationId(raw.from_client, lookups.clients),
+        to_client: relationId(raw.to_client, lookups.clients),
+        commodity: raw.commodity_id ?? relationId(raw.commodity, lookups.commodities)
+      });
+      return {
+        ...order,
+        remQuantity: Number(raw.rem_qty ?? raw.remaining_quantity ?? 0),
+        remQuantityUnit: (raw.rem_qty_unit ?? raw.remaining_quantity_unit ?? raw.quantity_unit ?? 'mt') as QuantityUnit,
+        selectorClientName: String(counterpartyName ?? '')
+      };
+    });
 }
 
 export const transportsApi = {
@@ -332,15 +348,15 @@ export const transportsApi = {
   async updatePayments(payment: TransportPaymentUpdate): Promise<void> {
     const form = new FormData();
     appendValue(form, 'id', numericId(payment.id));
-    appendValue(form, 'rcvd_wt', payment.receivedWeight);
+    appendValue(form, 'rcvd_wt', roundToTwoDecimals(payment.receivedWeight));
     form.append('unload_date', payment.unloadDate);
-    appendValue(form, 'rent', payment.rent);
+    appendValue(form, 'rent', roundToTwoDecimals(payment.rent));
     appendValue(form, 'rent_type', payment.rentType);
-    appendValue(form, 'adv_by_client', payment.advanceByClient);
-    appendValue(form, 'adv_by_firm', payment.advanceByFirm);
-    appendValue(form, 'extra_Paid', payment.shortageAmount);
-    appendValue(form, 'shortage', payment.extraAmount);
-    appendValue(form, 'final_paid', payment.finalPaid);
+    appendValue(form, 'adv_by_client', roundToTwoDecimals(payment.advanceByClient));
+    appendValue(form, 'adv_by_firm', roundToTwoDecimals(payment.advanceByFirm));
+    appendValue(form, 'extra_Paid', roundToTwoDecimals(payment.shortageAmount));
+    appendValue(form, 'shortage', roundToTwoDecimals(payment.extraAmount));
+    appendValue(form, 'final_paid', roundToTwoDecimals(payment.finalPaid));
     appendValue(form, 'status', payment.status.toLowerCase());
     form.append('notes', payment.notes);
     await apiClient.patchForm<any>('/transports/upd', form);
