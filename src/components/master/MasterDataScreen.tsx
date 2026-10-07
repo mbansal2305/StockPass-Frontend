@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { getClientFlagBadge, getClientTypeLabel } from '../../utils/formatters';
+import { getImageSource } from '../../utils/images';
 
 export const MasterDataScreen: React.FC = () => {
   const {
@@ -107,6 +108,7 @@ export const MasterDataScreen: React.FC = () => {
     flag: ClientFlag;
     location_url: string;
     notes: string;
+    profile_picture: string;
   }>({
     name: '',
     address: '',
@@ -115,7 +117,8 @@ export const MasterDataScreen: React.FC = () => {
     type: 'company' as ClientType,
     flag: 'good' as ClientFlag,
     location_url: '',
-    notes: ''
+    notes: '',
+    profile_picture: ''
   });
 
   const [brokerModalOpen, setBrokerModalOpen] = useState(false);
@@ -208,6 +211,7 @@ export const MasterDataScreen: React.FC = () => {
               type: c.type || 'COMPANY',
               flag: c.flag || 'GOOD',
               location_url: c.location_url || '',
+              profile_picture: c.profile_picture || c.image || null,
               notes: c.notes || ''
             }))
           }));
@@ -460,7 +464,8 @@ export const MasterDataScreen: React.FC = () => {
         type: (item.type || 'company').toLowerCase() as ClientType,
         flag: (item.flag || 'good').toLowerCase() as ClientFlag,
         location_url: item.location_url || '',
-        notes: item.notes || ''
+        notes: item.notes || '',
+        profile_picture: item.profile_picture || item.image || ''
       });
     } else {
       setEditingClient(null);
@@ -472,7 +477,8 @@ export const MasterDataScreen: React.FC = () => {
         type: 'company' as ClientType,
         flag: 'good' as ClientFlag,
         location_url: '',
-        notes: ''
+        notes: '',
+        profile_picture: ''
       });
     }
     setClientModalOpen(true);
@@ -486,8 +492,6 @@ export const MasterDataScreen: React.FC = () => {
     }
     setIsSubmitting(true);
     try {
-      // Exactly matching ENTITY_FIELDS: name, address, city, pincode, type, flag, location_url, notes
-      // type and flag are sent strictly in lowercase in payload to backend
       const content = {
         name: clientForm.name.trim(),
         address: clientForm.address.trim(),
@@ -496,7 +500,10 @@ export const MasterDataScreen: React.FC = () => {
         type: String(clientForm.type || 'company').toLowerCase() as ClientType,
         flag: String(clientForm.flag || 'good').toLowerCase() as ClientFlag,
         location_url: clientForm.location_url.trim(),
-        notes: clientForm.notes.trim()
+        notes: clientForm.notes.trim(),
+        ...(String(clientForm.type).toLowerCase() === 'my_firm'
+          ? { profile_picture: clientForm.profile_picture || null }
+          : {})
       };
       if (editingClient) {
         await masterUpdate('businessclient', editingClient.id, content);
@@ -1688,10 +1695,10 @@ export const MasterDataScreen: React.FC = () => {
         </div>
       )}
 
-      {/* CLIENT FORM MODAL (Strictly: name, address, city, pincode, type, flag, location_url, notes) */}
+      {/* CLIENT FORM MODAL */}
       {clientModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-5 border border-slate-200">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[calc(100vh-2rem)] overflow-y-auto p-5 border border-slate-200">
             <h3 className="text-sm font-bold text-slate-900 mb-3">
               {editingClient ? 'Edit Business Client / Godown' : 'Add Business Client / Godown'}
             </h3>
@@ -1739,6 +1746,35 @@ export const MasterDataScreen: React.FC = () => {
                   </select>
                 </div>
               </div>
+
+              {String(clientForm.type).toLowerCase() === 'my_firm' && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Firm Logo</label>
+                  {clientForm.profile_picture && (
+                    <img
+                      src={getImageSource(clientForm.profile_picture)}
+                      alt="Firm logo preview"
+                      className="mb-2 h-14 w-14 rounded-md border border-slate-200 object-contain"
+                    />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        if (typeof reader.result === 'string') {
+                          setClientForm((current) => ({ ...current, profile_picture: reader.result as string }));
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                    className="block w-full text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Address *</label>

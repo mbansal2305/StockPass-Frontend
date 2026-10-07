@@ -19,6 +19,9 @@ export interface TransportClientOption {
   id: string;
   name: string;
   city?: string;
+  clientType?: string;
+  image?: string | null;
+  imageUrl?: string | null;
 }
 
 export interface TransportListFilters {
@@ -46,6 +49,71 @@ export interface TransportPaymentUpdate {
 }
 
 type TransportWrite = Partial<Transport> & Pick<Transport, 'billingFirmId' | 'commodityId'>;
+
+export type BulkTransportEntry = Partial<Transport> & { id?: string };
+
+export interface BulkTransportCreatePayload {
+  title: string;
+  loadingDate?: string;
+  billNumber?: string;
+  orderId?: string;
+  billingFirmId?: string;
+  transporterId?: string;
+  toClientId?: string;
+  commodityId?: string;
+  status?: TransportStatus;
+  transports: BulkTransportEntry[];
+}
+
+export interface BulkTransportUpdatePayload {
+  id: string;
+  title?: string;
+  loadingDate?: string;
+  billNumber?: string;
+  orderId?: string;
+  billingFirmId?: string;
+  transporterId?: string;
+  toClientId?: string;
+  commodityId?: string;
+  status?: TransportStatus;
+  transports?: BulkTransportEntry[];
+}
+
+export interface BulkTransportDetail {
+  id: string;
+  title: string;
+  loadingDate?: string;
+  billNumber?: string;
+  orderId?: string;
+  billingFirmId?: string;
+  transporterId?: string;
+  toClientId?: string;
+  commodityId?: string;
+  status?: TransportStatus;
+  selectedSources: string[];
+  transports: Transport[];
+}
+
+export interface BulkTransportListItem {
+  id: string;
+  loadingDate?: string;
+  title: string;
+  commodity?: string;
+  billNumber?: string;
+  order?: string;
+  billingFirm?: string;
+  destination?: string;
+  status: string;
+  vehicleCount: number;
+}
+
+export interface BulkTransportListPage {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  results: BulkTransportListItem[];
+}
 
 const numericId = (value: string | number | undefined): string => {
   if (value === undefined || value === '') return '';
@@ -210,6 +278,111 @@ function toTransportFormData(
   return form;
 }
 
+function toBulkTransportSchema(transport: BulkTransportEntry, lookups: TransportLookups, includeId = false): Record<string, unknown> {
+  const orderItems = transport.items?.map(item => {
+    const orderReference = String(item.orderId).trim();
+    const matchedOrder = lookups.orders?.find(order =>
+      order.id === orderReference || order.orderNumber.trim().toLowerCase() === orderReference.toLowerCase()
+    );
+    const backendOrderId = matchedOrder?.id ?? (/^\d+$/.test(orderReference) ? orderReference : '');
+    if (!backendOrderId || !/^\d+$/.test(backendOrderId)) {
+      throw new Error(`Cannot resolve order "${orderReference}" to a backend order ID`);
+    }
+    return {
+      ...(includeId && item.id !== undefined ? { id: item.id } : {}),
+      order: Number(backendOrderId),
+      quantity: roundToTwoDecimals(item.allocatedQuantity),
+      order_entry: roundToTwoDecimals(item.orderEntryQuantity || 0)
+    };
+  });
+
+  return {
+    ...(includeId && transport.id ? { id: Number(numericId(transport.id)) } : {}),
+    bill_no: transport.billNumber,
+    ...(transport.billingFirmId ? { billing_firm: Number(numericId(transport.billingFirmId)) } : {}),
+    ...(transport.commodityId ? { commodity: Number(numericId(transport.commodityId)) } : {}),
+    ...(transport.fromClientId ? { from_client: Number(numericId(transport.fromClientId)) } : {}),
+    ...(transport.toClientId ? { to_client: Number(numericId(transport.toClientId)) } : {}),
+    vehicle_no: transport.vehicleNumber,
+    ...(transport.transporterId ? { transporter: Number(numericId(transport.transporterId)) } : {}),
+    gross_wt: transport.grossWeight === undefined ? undefined : roundToTwoDecimals(transport.grossWeight),
+    gross_wt_unit: transport.grossWeightUnit,
+    bag_nos: transport.bagNumbers,
+    bag_wt: transport.bagWeight,
+    anugya: transport.anugya === undefined ? undefined : toBooleanFlag(transport.anugya),
+    gatepass: transport.gatepass === undefined ? undefined : toBooleanFlag(transport.gatepass),
+    rent: transport.rent === undefined ? undefined : roundToTwoDecimals(transport.rent),
+    rent_type: transport.rentType,
+    adv_by_client: transport.advanceByClient === undefined ? undefined : roundToTwoDecimals(transport.advanceByClient),
+    adv_by_firm: transport.advanceByFirm === undefined ? undefined : roundToTwoDecimals(transport.advanceByFirm),
+    final_paid: transport.finalPaid === undefined ? undefined : roundToTwoDecimals(transport.finalPaid),
+    extra_paid: transport.extraPaid === undefined ? undefined : roundToTwoDecimals(transport.extraPaid),
+    shortage: transport.shortage === undefined ? undefined : roundToTwoDecimals(transport.shortage),
+    loading_date: transport.loadingDate,
+    unload_date: transport.unloadDate,
+    rcvd_wt: transport.receivedWeight === undefined ? undefined : roundToTwoDecimals(transport.receivedWeight),
+    status: transport.status?.toLowerCase(),
+    items: orderItems,
+    notes: transport.notes,
+    created_by: transport.createdBy
+  };
+}
+
+function toBulkTransportFormData(
+  payload: {
+    title?: string;
+    loadingDate?: string;
+    billNumber?: string;
+    orderId?: string;
+    billingFirmId?: string;
+    transporterId?: string;
+    toClientId?: string;
+    commodityId?: string;
+    status?: TransportStatus;
+    transports?: BulkTransportEntry[];
+  },
+  lookups: TransportLookups,
+  id?: string
+): FormData {
+  const form = new FormData();
+  if (id) appendValue(form, 'id', numericId(id));
+  if (payload.title !== undefined) form.append('title', payload.title);
+  appendValue(form, 'loading_date', payload.loadingDate);
+  appendValue(form, 'bill_no', payload.billNumber);
+  appendValue(form, 'order', payload.orderId ? numericId(payload.orderId) : undefined);
+  appendValue(form, 'billing_firm', payload.billingFirmId ? numericId(payload.billingFirmId) : undefined);
+  appendValue(form, 'transporter', payload.transporterId ? numericId(payload.transporterId) : undefined);
+  appendValue(form, 'to_client', payload.toClientId ? numericId(payload.toClientId) : undefined);
+  appendValue(form, 'commodity', payload.commodityId ? numericId(payload.commodityId) : undefined);
+  appendValue(form, 'status', payload.status?.toLowerCase());
+  if (payload.transports !== undefined) {
+    form.append('transports', JSON.stringify(payload.transports.map(transport =>
+      toBulkTransportSchema(transport, lookups, Boolean(id))
+    )));
+  }
+  return form;
+}
+
+function unwrapBulkTransport(value: any, lookups: TransportLookups): BulkTransportDetail {
+  const bulkTransport = value?.data ?? value;
+  return {
+    id: String(bulkTransport?.id ?? ''),
+    title: String(bulkTransport?.title ?? ''),
+    loadingDate: bulkTransport?.loading_date ?? bulkTransport?.loadingDate ?? undefined,
+    billNumber: bulkTransport?.bill_no ?? bulkTransport?.billNumber ?? undefined,
+    orderId: relationId(bulkTransport?.order, (lookups.orders || []).map(order => ({ id: order.id, name: order.orderNumber })),),
+    billingFirmId: relationId(bulkTransport?.billing_firm, lookups.clients),
+    transporterId: relationId(bulkTransport?.transporter, lookups.transporters),
+    toClientId: relationId(bulkTransport?.to_client, lookups.clients),
+    commodityId: relationId(bulkTransport?.commodity, lookups.commodities),
+    status: normalizeStatus(bulkTransport?.status),
+    selectedSources: Array.isArray(bulkTransport?.selected_sources) ? bulkTransport.selected_sources.map((source: unknown) => String(source)) : [],
+    transports: Array.isArray(bulkTransport?.transports)
+      ? bulkTransport.transports.map((transport: any) => transformBackendTransport(transport, lookups))
+      : []
+  };
+}
+
 function unwrapTransport(value: any, lookups: TransportLookups): Transport {
   return transformBackendTransport(value?.data ?? value, lookups);
 }
@@ -246,7 +419,10 @@ function normalizeClientOptions(response: any): TransportClientOption[] {
     return [{
       id: String(id),
       name: String(name),
-      city: client.city ? String(client.city) : undefined
+      city: client.city ? String(client.city) : undefined,
+      clientType: String(client.client_type ?? client.clientType ?? client.type ?? '') || undefined,
+      image: client.image ?? client.profile_picture ?? null,
+      imageUrl: client.image_url ?? client.imageUrl ?? null
     }];
   });
 }
@@ -292,24 +468,85 @@ function normalizeOrderOptions(
     .map((raw: any) => {
       const orderType = String(raw.type ?? raw.order_type ?? '').toLowerCase();
       const counterpartyName = orderType.includes('purchase') ? raw.from_client : raw.to_client;
+      const quantity = Number(raw.quantity ?? raw.order_qty ?? 0);
+      const remainingQuantity = raw.rem_qty ?? raw.remaining_quantity;
+      const fulfilledQuantity = raw.quantity_fulfilled ?? raw.quantityFulfilled ?? (
+        remainingQuantity === undefined || remainingQuantity === null
+          ? 0
+          : quantity - Number(remainingQuantity)
+      );
       const order = transformBackendOrderToFrontend({
         ...raw,
         type: raw.type ?? raw.order_type,
         order_no: raw.order_no ?? raw.order_number,
+        quantity,
+        quantity_fulfilled: fulfilledQuantity,
+        quantity_unit: raw.quantity_unit ?? raw.qty_unit ?? raw.unit,
         from_client: relationId(raw.from_client, lookups.clients),
         to_client: relationId(raw.to_client, lookups.clients),
         commodity: raw.commodity_id ?? relationId(raw.commodity, lookups.commodities)
       });
       return {
         ...order,
-        remQuantity: Number(raw.rem_qty ?? raw.remaining_quantity ?? 0),
-        remQuantityUnit: (raw.rem_qty_unit ?? raw.remaining_quantity_unit ?? raw.quantity_unit ?? 'mt') as QuantityUnit,
+        remQuantity: Number(remainingQuantity ?? quantity - Number(fulfilledQuantity)),
+        remQuantityUnit: (raw.rem_qty_unit ?? raw.remaining_quantity_unit ?? raw.qty_unit ?? raw.quantity_unit ?? 'mt') as QuantityUnit,
+        commodityName: typeof raw.commodity === 'string' ? raw.commodity : raw.commodity?.name,
+        commodityType: raw.commodity_type ?? raw.commodityType,
         selectorClientName: String(counterpartyName ?? '')
       };
     });
 }
 
 export const transportsApi = {
+  async listBulk(page = 1, pageSize = 10): Promise<BulkTransportListPage> {
+    const form = new FormData();
+    appendValue(form, 'page', page);
+    appendValue(form, 'page_size', pageSize);
+    const response = await apiClient.postForm<any>('/bulk-transports/lst', form);
+    const data = response?.data?.data ?? response?.data ?? response;
+    const results = Array.isArray(data?.results) ? data.results : [];
+
+    return {
+      page: Number(data?.page) || page,
+      pageSize: Number(data?.page_size ?? data?.pageSize) || pageSize,
+      total: Number(data?.total) || 0,
+      totalPages: Number(data?.total_pages ?? data?.totalPages) || 1,
+      results: results.map((item: any) => ({
+        id: String(item.id ?? ''),
+        loadingDate: item.loading_date ?? item.loadingDate ?? undefined,
+        title: String(item.title ?? ''),
+        commodity: item.commodity == null ? undefined : String(item.commodity),
+        billNumber: item.bill_no == null ? undefined : String(item.bill_no),
+        order: item.order == null ? undefined : String(item.order),
+        billingFirm: item.billing_firm == null ? undefined : String(item.billing_firm),
+        destination: item.to_client == null ? undefined : String(item.to_client),
+        status: String(item.status ?? 'pending'),
+        vehicleCount: Number(item.num_vehicles) || 0
+      }))
+    };
+  },
+
+  async addBulk(payload: BulkTransportCreatePayload, lookups: TransportLookups = {}): Promise<BulkTransportDetail> {
+    const response = await apiClient.postForm<any>(
+      '/bulk-transports/add',
+      toBulkTransportFormData(payload, lookups)
+    );
+    return unwrapBulkTransport(response, lookups);
+  },
+
+  async updateBulk(payload: BulkTransportUpdatePayload, lookups: TransportLookups = {}): Promise<BulkTransportDetail> {
+    const response = await apiClient.patchForm<any>(
+      '/bulk-transports/upd',
+      toBulkTransportFormData(payload, lookups, payload.id)
+    );
+    return unwrapBulkTransport(response, lookups);
+  },
+
+  async getBulk(id: string, lookups: TransportLookups = {}): Promise<BulkTransportDetail> {
+    const response = await apiClient.get<any>(`/bulk-transports/get?id=${encodeURIComponent(numericId(id))}`);
+    return unwrapBulkTransport(response, lookups);
+  },
+
   async selectBillingFirms(): Promise<TransportClientOption[]> {
     const response = await apiClient.get<any>('/transports/clients/firms/sel/');
     return normalizeClientOptions(response);
@@ -332,6 +569,11 @@ export const transportsApi = {
 
   async selectPurchaseOrders(lookups: Pick<TransportLookups, 'clients' | 'commodities'> = {}): Promise<Order[]> {
     const response = await apiClient.get<any>('/transports/orders/po/sel/');
+    return normalizeOrderOptions(response, lookups);
+  },
+
+  async selectBulkOrders(lookups: Pick<TransportLookups, 'clients' | 'commodities'> = {}): Promise<Order[]> {
+    const response = await apiClient.get<any>('/bulk-transports/orders/sel/');
     return normalizeOrderOptions(response, lookups);
   },
 
@@ -404,6 +646,12 @@ export const transportsApi = {
     const response = await apiClient.postForm<any>('/transports/search', form);
     const parsed = unwrapPage(response);
     return parsed.results.map(transport => transformBackendTransport(transport, lookups));
+  },
+
+  async deleteBulk(id: string): Promise<void> {
+    await apiClient.delete<any>('/bulk-transports/del', {
+      body: JSON.stringify({ id: Number(numericId(id)) })
+    });
   },
 
   async delete(id: string): Promise<void> {

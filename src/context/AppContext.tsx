@@ -36,6 +36,7 @@ export type NavigationPage =
   | 'transport-payments'
   | 'transport-detail'
   | 'transport-form'
+  | 'bulk-transport-list'
   | 'bulk-transport'
   | 'master-data'
   | 'employees';
@@ -45,6 +46,7 @@ const TRANSPORT_PAGES: NavigationPage[] = [
   'transport-payments',
   'transport-detail',
   'transport-form',
+  'bulk-transport-list',
   'bulk-transport'
 ];
 
@@ -209,6 +211,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           type: cl.type || 'COMPANY',
           flag: cl.flag || 'GOOD',
           location_url: cl.location_url || '',
+          image: cl.image || cl.profile_picture || null,
+          imageUrl: cl.image_url || cl.imageUrl || null,
+          profile_picture: cl.profile_picture || cl.image || null,
           notes: cl.notes || ''
         }));
       }

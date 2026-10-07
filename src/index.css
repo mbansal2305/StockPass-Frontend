@@ -29,6 +29,38 @@
 }
 
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 14mm;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .payment-bill-print-root,
+  .payment-bill-print-root * {
+    visibility: visible !important;
+  }
+
+  .payment-bill-print-root {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  .payment-bill-paper {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    border: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
   .no-print {
     display: none !important;
   }

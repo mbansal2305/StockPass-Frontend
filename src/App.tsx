@@ -11,6 +11,7 @@ import { TransportPaymentsScreen } from './components/transport/TransportPayment
 import { TransportDetailScreen } from './components/transport/TransportDetailScreen';
 import { TransportFormScreen } from './components/transport/TransportFormScreen';
 import { BulkTransportScreen } from './components/transport/BulkTransportScreen';
+import { BulkTransportListScreen } from './components/transport/BulkTransportListScreen';
 import { MasterDataScreen } from './components/master/MasterDataScreen';
 import { EmployeeScreen } from './components/employees/EmployeeScreen';
 
@@ -31,6 +32,7 @@ const MainRouter: React.FC = () => {
       {currentPage === 'transport-payments' && <TransportPaymentsScreen />}
       {currentPage === 'transport-detail' && <TransportDetailScreen />}
       {currentPage === 'transport-form' && <TransportFormScreen />}
+      {currentPage === 'bulk-transport-list' && <BulkTransportListScreen />}
       {currentPage === 'bulk-transport' && <BulkTransportScreen />}
       {currentPage === 'master-data' && <MasterDataScreen />}
       {currentPage === 'employees' && <EmployeeScreen />}

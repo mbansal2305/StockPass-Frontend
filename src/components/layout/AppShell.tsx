@@ -52,6 +52,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
       case 'transport-payments': return 'Transport Payments';
       case 'transport-detail': return 'Transport Consignment Details';
       case 'transport-form': return 'Transport Entry';
+      case 'bulk-transport-list': return 'Bulk Transport List';
       case 'bulk-transport': return 'Bulk Transport Dispatch';
       case 'master-data': return 'Master Data Repository';
       case 'employees': return 'Employee Management & Access Control';
@@ -72,7 +73,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
         { id: 'orders' as NavigationPage, label: 'Orders', icon: ClipboardList },
         { id: 'transport' as NavigationPage, label: 'Transport', icon: Truck },
         { id: 'transport-payments' as NavigationPage, label: 'Transport Payments', icon: WalletCards },
-        { id: 'bulk-transport' as NavigationPage, label: 'Bulk Transport', icon: Layers }
+        { id: 'bulk-transport-list' as NavigationPage, label: 'Bulk Transports', icon: Layers }
       ]
     },
     {

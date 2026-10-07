@@ -90,6 +90,9 @@ export interface BusinessClient {
   flag: ClientFlag;
   location_url?: string;
   notes?: string;
+  image?: string | null;
+  imageUrl?: string | null;
+  profile_picture?: string | null;
   phone?: string;
   gstin?: string;
   createdAt?: string;
@@ -200,6 +203,8 @@ export interface Order {
   fromClientId: string;
   toClientId: string;
   commodityId: string;
+  commodityName?: string;
+  commodityType?: string;
   rate: number; // in ₹ per selected unit
   quantity: number; // in selected unit
   unit?: QuantityUnit; // 'mt' | 'quintal' | 'kg'
