@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Transport, TransportRentType, QuantityUnit, TransportStatus } from '../../types';
-import { apiClient, TransportClientOption, transportsApi } from '../../api';
+import { apiClient, PaginatedTransportsResult, TransportClientOption, transportsApi } from '../../api';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
@@ -50,21 +50,33 @@ const unitName = (unit: QuantityUnit | undefined): string => {
 
 export const TransportPaymentsScreen: React.FC = () => {
   const {
-    transports,
     commodities,
     clients,
     transporters,
+    orders,
     refreshData,
     showToast,
     transportGet,
     navigate
   } = useApp();
 
-  const [activeStatus, setActiveStatus] = useState('PENDING');
+  const [activeStatus, setActiveStatus] = useState<TransportStatus>('PENDING');
   const [searchTerm, setSearchTerm] = useState('');
   const [commodityFilter, setCommodityFilter] = useState('ALL');
   const [transporterFilter, setTransporterFilter] = useState('ALL');
   const [billingFirmFilter, setBillingFirmFilter] = useState('ALL');
+  const [currentPageNum, setCurrentPageNum] = useState(1);
+  const pageSize = 10;
+  const [reloadSequence, setReloadSequence] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [serverPage, setServerPage] = useState<PaginatedTransportsResult>({
+    results: [],
+    total: 0,
+    page: 1,
+    pageSize,
+    totalPages: 1
+  });
   const [drafts, setDrafts] = useState<Record<string, PaymentDraft>>({});
   const [pendingSubmit, setPendingSubmit] = useState<Transport | null>(null);
   const [pendingEdit, setPendingEdit] = useState<Transport | null>(null);
@@ -73,6 +85,45 @@ export const TransportPaymentsScreen: React.FC = () => {
   const [logoSourceIndex, setLogoSourceIndex] = useState(0);
   const [resolvedLogoSource, setResolvedLogoSource] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isCurrent = true;
+    setIsLoading(true);
+    setLoadError('');
+    transportsApi.listPaginated({
+      status: activeStatus,
+      commodity: commodityFilter === 'ALL' ? undefined : commodityFilter,
+      transporter: transporterFilter === 'ALL' ? undefined : transporterFilter,
+      billingFirm: billingFirmFilter === 'ALL' ? undefined : billingFirmFilter,
+      page: currentPageNum,
+      pageSize
+    }, { clients, commodities, orders, transporters })
+      .then(result => {
+        if (isCurrent) setServerPage(result);
+      })
+      .catch((error: unknown) => {
+        if (isCurrent) setLoadError(error instanceof Error ? error.message : 'Failed to load transports');
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [
+    activeStatus,
+    commodityFilter,
+    transporterFilter,
+    billingFirmFilter,
+    currentPageNum,
+    pageSize,
+    reloadSequence,
+    clients,
+    commodities,
+    orders,
+    transporters
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,7 +191,7 @@ export const TransportPaymentsScreen: React.FC = () => {
     }));
   };
 
-  const filteredTransports = useMemo(() => transports.filter(transport => {
+  const filteredTransports = useMemo(() => serverPage.results.filter(transport => {
     const commodityName = commodityMap.get(transport.commodityId)?.name || '';
     const transporterName = transporterMap.get(transport.transporterId) || '';
     const billingFirmName = clientMap.get(transport.billingFirmId) || '';
@@ -156,12 +207,8 @@ export const TransportPaymentsScreen: React.FC = () => {
       fromName,
       toName
     ].some(value => value.toLowerCase().includes(lowerSearch));
-    return matchesSearch &&
-      (activeStatus === 'ALL' || transport.status === activeStatus) &&
-      (commodityFilter === 'ALL' || transport.commodityId === commodityFilter) &&
-      (transporterFilter === 'ALL' || transport.transporterId === transporterFilter) &&
-      (billingFirmFilter === 'ALL' || transport.billingFirmId === billingFirmFilter);
-  }), [transports, commodityMap, transporterMap, clientMap, searchTerm, activeStatus, commodityFilter, transporterFilter, billingFirmFilter]);
+    return matchesSearch;
+  }), [serverPage.results, commodityMap, transporterMap, clientMap, searchTerm]);
 
   const resetFilters = () => {
     setActiveStatus('PENDING');
@@ -169,14 +216,16 @@ export const TransportPaymentsScreen: React.FC = () => {
     setCommodityFilter('ALL');
     setTransporterFilter('ALL');
     setBillingFirmFilter('ALL');
+    setCurrentPageNum(1);
   };
 
+  const totalPages = serverPage.totalPages || 1;
   const statusFilterItems = [
-    { value: 'ALL', label: `All (${transports.length})`, active: 'bg-white text-slate-900 shadow-sm', idle: 'text-slate-600 hover:bg-white/60' },
-    { value: 'PENDING', label: `Pending (${transports.filter(t => t.status === 'PENDING').length})`, active: 'bg-amber-100 text-amber-900 ring-1 ring-amber-300', idle: 'text-amber-800 hover:bg-amber-50' },
-    { value: 'DELIVERY', label: `In Delivery (${transports.filter(t => t.status === 'DELIVERY').length})`, active: 'bg-sky-100 text-sky-900 ring-1 ring-sky-300', idle: 'text-sky-800 hover:bg-sky-50' },
-    { value: 'FINANCE', label: `Finance (${transports.filter(t => t.status === 'FINANCE').length})`, active: 'bg-purple-100 text-purple-900 ring-1 ring-purple-300', idle: 'text-purple-800 hover:bg-purple-50' },
-    { value: 'PAID', label: `Paid (${transports.filter(t => t.status === 'PAID').length})`, active: 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-300', idle: 'text-emerald-800 hover:bg-emerald-50' }
+    { value: 'DRAFT' as const, label: 'Draft', active: 'bg-slate-200 text-slate-900 border-slate-400 ring-2 ring-slate-400/30', idle: 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200/60', dot: 'bg-slate-400 border-slate-500' },
+    { value: 'PENDING' as const, label: 'Pending', active: 'bg-amber-100 text-amber-900 border-amber-300 ring-2 ring-amber-400/30', idle: 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/60', dot: 'bg-amber-500 border-amber-600' },
+    { value: 'DELIVERY' as const, label: 'Delivery', active: 'bg-blue-100 text-blue-900 border-blue-300 ring-2 ring-blue-400/30', idle: 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100/60', dot: 'bg-blue-500 border-blue-600' },
+    { value: 'FINANCE' as const, label: 'Finance', active: 'bg-purple-100 text-purple-900 border-purple-300 ring-2 ring-purple-400/30', idle: 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100/60', dot: 'bg-purple-500 border-purple-600' },
+    { value: 'PAID' as const, label: 'Paid', active: 'bg-emerald-100 text-emerald-900 border-emerald-300 ring-2 ring-emerald-400/30', idle: 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/60', dot: 'bg-emerald-500 border-emerald-600' }
   ];
 
   const savePayment = async () => {
@@ -200,6 +249,7 @@ export const TransportPaymentsScreen: React.FC = () => {
         notes: draft.notes
       });
       await refreshData();
+      setReloadSequence(sequence => sequence + 1);
       setPendingSubmit(null);
       showToast(`Payment saved for ${transport.billNumber}`, 'success');
     } catch (error: any) {
@@ -228,38 +278,28 @@ export const TransportPaymentsScreen: React.FC = () => {
         <p className="mt-0.5 text-xs text-slate-500">Review receipts, settle freight, and close consignments.</p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-200/70 p-1">
-        {statusFilterItems.map(item => (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => setActiveStatus(item.value)}
-            className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold ${activeStatus === item.value ? item.active : item.idle}`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
         <div className="relative min-w-[220px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             value={searchTerm}
-            onChange={event => setSearchTerm(event.target.value)}
+            onChange={event => {
+              setSearchTerm(event.target.value);
+              setCurrentPageNum(1);
+            }}
             placeholder="Search bill, vehicle, firm, route, transporter..."
             className="w-full rounded-md border border-slate-200 py-1.5 pl-9 pr-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
           />
         </div>
-        <select value={commodityFilter} onChange={event => setCommodityFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
+        <select value={commodityFilter} onChange={event => { setCommodityFilter(event.target.value); setCurrentPageNum(1); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
           <option value="ALL">All Commodities</option>
           {commodities.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
-        <select value={transporterFilter} onChange={event => setTransporterFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
+        <select value={transporterFilter} onChange={event => { setTransporterFilter(event.target.value); setCurrentPageNum(1); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
           <option value="ALL">All Transporters</option>
           {transporters.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
-        <select value={billingFirmFilter} onChange={event => setBillingFirmFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
+        <select value={billingFirmFilter} onChange={event => { setBillingFirmFilter(event.target.value); setCurrentPageNum(1); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
           <option value="ALL">All Billing Firms</option>
           {clients.filter(client => String(client.type).toUpperCase() === 'MY_FIRM').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
@@ -270,7 +310,33 @@ export const TransportPaymentsScreen: React.FC = () => {
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-slate-700">Status Color Legend:</span>
+          <span className="text-[11px] text-slate-400">Rows are color-coded by shipment lifecycle</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {statusFilterItems.map(item => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => {
+                setActiveStatus(item.value);
+                setCurrentPageNum(1);
+              }}
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all ${
+                activeStatus === item.value ? item.active : item.idle
+              }`}
+              title={`Filter by ${item.label}`}
+            >
+              <span className={`h-2.5 w-2.5 rounded-full border ${item.dot}`} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-t-lg border-x border-t border-slate-200 bg-white">
         <table className="w-full min-w-[2160px] table-fixed text-left text-[11px]">
           <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-semibold uppercase text-slate-500">
             <tr>
@@ -296,7 +362,11 @@ export const TransportPaymentsScreen: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredTransports.length === 0 ? (
+            {isLoading ? (
+              <tr><td colSpan={19} className="py-10 text-center text-xs text-slate-500">Loading transports...</td></tr>
+            ) : loadError ? (
+              <tr><td colSpan={19} className="py-10 text-center text-xs text-red-600">{loadError}</td></tr>
+            ) : filteredTransports.length === 0 ? (
               <tr><td colSpan={19} className="py-10 text-center text-xs text-slate-500">No transport payments match these filters.</td></tr>
             ) : filteredTransports.map(transport => {
               const draft = getDraft(transport);
@@ -312,15 +382,19 @@ export const TransportPaymentsScreen: React.FC = () => {
               const to = clientMap.get(transport.toClientId) || '-';
               const rowColor = draft.status === 'PENDING'
                 ? 'bg-amber-50/50 hover:bg-amber-100/60'
+                : draft.status === 'DRAFT'
+                ? 'bg-slate-50 hover:bg-slate-100'
                 : draft.status === 'DELIVERY'
-                ? 'bg-sky-50/50 hover:bg-sky-100/60'
+                ? 'bg-blue-50/50 hover:bg-blue-100/60'
                 : draft.status === 'FINANCE'
                 ? 'bg-purple-50/50 hover:bg-purple-100/60'
                 : 'bg-emerald-50/50 hover:bg-emerald-100/60';
               const statusSelectColor = draft.status === 'PENDING'
                 ? 'border-amber-300 bg-amber-50 text-amber-900'
+                : draft.status === 'DRAFT'
+                ? 'border-slate-300 bg-slate-50 text-slate-900'
                 : draft.status === 'DELIVERY'
-                ? 'border-sky-300 bg-sky-50 text-sky-900'
+                ? 'border-blue-300 bg-blue-50 text-blue-900'
                 : draft.status === 'FINANCE'
                 ? 'border-purple-300 bg-purple-50 text-purple-900'
                 : 'border-emerald-300 bg-emerald-50 text-emerald-900';
@@ -387,6 +461,7 @@ export const TransportPaymentsScreen: React.FC = () => {
                   <td className="px-2 py-2"><input aria-label="Payment notes" value={draft.notes} onChange={event => updateDraft(transport, { notes: event.target.value })} className="w-full min-w-[150px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900" /></td>
                   <td className="px-2 py-2">
                     <select value={draft.status} onChange={event => updateDraft(transport, { status: event.target.value as TransportStatus })} className={`w-full rounded border px-1.5 py-1 text-[10px] font-semibold ${statusSelectColor}`}>
+                      <option value="DRAFT">Draft</option>
                       <option value="PENDING">Pending</option>
                       <option value="DELIVERY">Delivery</option>
                       <option value="FINANCE">Finance</option>
@@ -404,6 +479,33 @@ export const TransportPaymentsScreen: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {(serverPage.total > 0 || totalPages > 1) && (
+        <div className="flex items-center justify-between rounded-b-lg border-x border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+          <span>
+            Showing {serverPage.total === 0 ? 0 : (currentPageNum - 1) * pageSize + 1} to {Math.min(currentPageNum * pageSize, serverPage.total)} of {serverPage.total} transports
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={currentPageNum === 1}
+              onClick={() => setCurrentPageNum(page => page - 1)}
+              className="rounded border border-slate-200 bg-white px-2.5 py-1 disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="px-2 font-medium">{currentPageNum} / {totalPages}</span>
+            <button
+              type="button"
+              disabled={currentPageNum === totalPages}
+              onClick={() => setCurrentPageNum(page => page + 1)}
+              className="rounded border border-slate-200 bg-white px-2.5 py-1 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {printTransport && (() => {
         const printDraft = getDraft(printTransport);

@@ -33,6 +33,14 @@ export interface TransportListFilters {
   pageSize?: number;
 }
 
+export interface PaginatedTransportsResult {
+  results: Transport[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export interface TransportPaymentUpdate {
   id: string;
   status: TransportStatus;
@@ -132,7 +140,7 @@ const relationId = (value: any, entities: Array<{ id: string; name: string }> = 
 
 const normalizeStatus = (value: unknown): TransportStatus => {
   const status = String(value || '').toUpperCase();
-  if (status === 'DELIVERY' || status === 'FINANCE' || status === 'PAID') return status;
+  if (status === 'DRAFT' || status === 'DELIVERY' || status === 'FINANCE' || status === 'PAID') return status;
   return 'PENDING';
 };
 
@@ -387,14 +395,22 @@ function unwrapTransport(value: any, lookups: TransportLookups): Transport {
   return transformBackendTransport(value?.data ?? value, lookups);
 }
 
-function unwrapPage(value: any): { results: any[]; totalPages: number } {
+function unwrapPage(value: any): { results: any[]; total: number; page: number; pageSize: number; totalPages: number } {
   const data = value?.data ?? value;
   const page = data?.data && !Array.isArray(data.data) ? data.data : data;
   const results = Array.isArray(page?.results) ? page.results
     : Array.isArray(page?.items) ? page.items
     : Array.isArray(data) ? data
     : [];
-  return { results, totalPages: Number(page?.total_pages ?? page?.totalPages ?? 1) || 1 };
+  const pageSize = Number(page?.page_size ?? page?.pageSize) || results.length || 100;
+  const total = Number(page?.total) || results.length;
+  return {
+    results,
+    total,
+    page: Number(page?.page) || 1,
+    pageSize,
+    totalPages: Number(page?.total_pages ?? page?.totalPages) || Math.ceil(total / pageSize) || 1
+  };
 }
 
 function normalizeClientOptions(response: any): TransportClientOption[] {
@@ -620,24 +636,34 @@ export const transportsApi = {
   async list(filters: TransportListFilters = {}, lookups: TransportLookups = {}): Promise<Transport[]> {
     const firstPage = filters.page || 1;
     const pageSize = filters.pageSize || 100;
-    const results: any[] = [];
+    const results: Transport[] = [];
     let totalPages = firstPage;
 
     for (let page = firstPage; page <= totalPages; page += 1) {
-      const form = new FormData();
-      appendValue(form, 'transporter', filters.transporter ? numericId(filters.transporter) : undefined);
-      appendValue(form, 'status', filters.status?.toLowerCase());
-      appendValue(form, 'commodity', filters.commodity ? numericId(filters.commodity) : undefined);
-      appendValue(form, 'billing_firm', filters.billingFirm ? numericId(filters.billingFirm) : undefined);
-      appendValue(form, 'page', page);
-      appendValue(form, 'page_size', pageSize);
-      const response = await apiClient.postForm<any>('/transports/lst', form);
-      const parsed = unwrapPage(response);
+      const parsed = await this.listPaginated({ ...filters, page, pageSize }, lookups);
       results.push(...parsed.results);
       totalPages = parsed.totalPages;
     }
 
-    return results.map(transport => transformBackendTransport(transport, lookups));
+    return results;
+  },
+
+  async listPaginated(filters: TransportListFilters = {}, lookups: TransportLookups = {}): Promise<PaginatedTransportsResult> {
+    const page = filters.page || 1;
+    const pageSize = filters.pageSize || 100;
+    const form = new FormData();
+    appendValue(form, 'transporter', filters.transporter ? numericId(filters.transporter) : undefined);
+    appendValue(form, 'status', filters.status?.toLowerCase());
+    appendValue(form, 'commodity', filters.commodity ? numericId(filters.commodity) : undefined);
+    appendValue(form, 'billing_firm', filters.billingFirm ? numericId(filters.billingFirm) : undefined);
+    appendValue(form, 'page', page);
+    appendValue(form, 'page_size', pageSize);
+    const response = await apiClient.postForm<any>('/transports/lst', form);
+    const parsed = unwrapPage(response);
+    return {
+      ...parsed,
+      results: parsed.results.map(transport => transformBackendTransport(transport, lookups))
+    };
   },
 
   async search(keyword: string, lookups: TransportLookups = {}): Promise<Transport[]> {

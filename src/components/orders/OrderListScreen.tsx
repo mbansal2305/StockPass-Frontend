@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Order, OrderType, OrderStatus, OrderListSchema } from '../../types';
 import {
@@ -17,7 +17,9 @@ import {
   ArrowUpRight,
   X,
   MoreVertical,
-  Loader2
+  Loader2,
+  CheckCircle2,
+  Clock
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatWeight, formatQuantityWithUnit, getUnitLabel, formatDate, getDaysRemaining } from '../../utils/formatters';
@@ -40,6 +42,7 @@ export const OrderListScreen: React.FC = () => {
     navigate,
     pageParams,
     orderDelete,
+    orderSetStatus,
     orderListPaginated
   } = useApp();
 
@@ -49,7 +52,7 @@ export const OrderListScreen: React.FC = () => {
   // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<OrderType>('SALES ORDER');
-  const [statusFilter, setStatusFilter] = useState<string>(pageParams.statusFilter || 'ALL');
+  const [statusFilter, setStatusFilter] = useState<string>(pageParams.statusFilter || 'PENDING');
   const [commodityFilter, setCommodityFilter] = useState<string>('ALL');
   const [fromClientFilter, setFromClientFilter] = useState<string>(pageParams.fromClientFilter || pageParams.clientFilter || 'ALL');
   const [toClientFilter, setToClientFilter] = useState<string>(pageParams.toClientFilter || 'ALL');
@@ -75,6 +78,10 @@ export const OrderListScreen: React.FC = () => {
   const [deleteOrderTarget, setDeleteOrderTarget] = useState<Order | null>(null);
   const [showTypeSelectModal, setShowTypeSelectModal] = useState<boolean>(false);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const [actionMenuOpensUp, setActionMenuOpensUp] = useState(false);
+  const [actionMenuMaxHeight, setActionMenuMaxHeight] = useState<number>();
+  const actionMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Client and Commodity lookups
   const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c.name])), [clients]);
@@ -155,6 +162,20 @@ export const OrderListScreen: React.FC = () => {
   const totalPages = serverPage.totalPages || 1;
   const paginatedOrders = filteredOrders;
 
+  useLayoutEffect(() => {
+    if (!openActionMenuId || !actionMenuTriggerRef.current || !actionMenuRef.current) return;
+
+    const triggerRect = actionMenuTriggerRef.current.getBoundingClientRect();
+    const menuHeight = actionMenuRef.current.scrollHeight;
+    const spaceAbove = triggerRect.top;
+    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    const opensUp = spaceBelow < menuHeight && spaceAbove > spaceBelow;
+    const availableSpace = opensUp ? spaceAbove : spaceBelow;
+
+    setActionMenuOpensUp(opensUp);
+    setActionMenuMaxHeight(Math.max(0, availableSpace - 8));
+  }, [openActionMenuId]);
+
   const toggleSort = (field: 'orderNumber' | 'startDate' | 'expiryDate' | 'quantity' | 'remaining') => {
     if (sortField === field) {
       setSortAsc(!sortAsc);
@@ -185,6 +206,17 @@ export const OrderListScreen: React.FC = () => {
       showToast(err.message || 'Failed to delete order', 'error');
     } finally {
       setDeleteOrderTarget(null);
+    }
+  };
+
+  const handleOrderStatusChange = async (order: Order, status: 'PENDING' | 'COMPLETED') => {
+    setOpenActionMenuId(null);
+    try {
+      await orderSetStatus(order.id, status);
+      showToast(`Order ${order.orderNumber} marked ${status.toLowerCase()}`, 'success');
+      setReloadSequence(sequence => sequence + 1);
+    } catch (err: any) {
+      showToast(err.message || `Failed to mark order ${status.toLowerCase()}`, 'error');
     }
   };
 
@@ -264,17 +296,6 @@ export const OrderListScreen: React.FC = () => {
             </div>
 
             <select
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setCurrentPageNum(1); }}
-              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 shrink-0"
-            >
-              <option value="ALL">All Statuses</option>
-              <option value="DRAFT">Draft</option>
-              <option value="PENDING">Pending (Active)</option>
-              <option value="COMPLETED">Completed</option>
-            </select>
-
-            <select
               value={commodityFilter}
               onChange={(e) => { setCommodityFilter(e.target.value); setCurrentPageNum(1); }}
               className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 shrink-0"
@@ -283,24 +304,6 @@ export const OrderListScreen: React.FC = () => {
               {commodities.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
-            </select>
-
-            <select
-              value={fromClientFilter}
-              onChange={(e) => { setFromClientFilter(e.target.value); setCurrentPageNum(1); }}
-              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 shrink-0"
-            >
-              <option value="ALL">All Source Clients</option>
-              {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
-            </select>
-
-            <select
-              value={toClientFilter}
-              onChange={(e) => { setToClientFilter(e.target.value); setCurrentPageNum(1); }}
-              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 shrink-0"
-            >
-              <option value="ALL">All Destination Clients</option>
-              {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
             </select>
 
             <select
@@ -458,7 +461,7 @@ export const OrderListScreen: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                paginatedOrders.map((order) => {
+                paginatedOrders.map(order => {
                   const comm = commodityMap.get(order.commodityId);
                   const fromClient = clientMap.get(order.fromClientId) || '-';
                   const toClient = clientMap.get(order.toClientId) || '-';
@@ -617,7 +620,14 @@ export const OrderListScreen: React.FC = () => {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setOpenActionMenuId(openActionMenuId === order.id ? null : order.id);
+                              if (openActionMenuId === order.id) {
+                                setOpenActionMenuId(null);
+                              } else {
+                                actionMenuTriggerRef.current = e.currentTarget;
+                                setActionMenuOpensUp(false);
+                                setActionMenuMaxHeight(undefined);
+                                setOpenActionMenuId(order.id);
+                              }
                             }}
                             className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-white/80 rounded-lg border border-slate-200/60 shadow-2xs transition-colors cursor-pointer"
                             title="Order Options"
@@ -632,7 +642,11 @@ export const OrderListScreen: React.FC = () => {
                                 className="fixed inset-0 z-20 cursor-default"
                                 onClick={() => setOpenActionMenuId(null)}
                               />
-                              <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-100 text-left">
+                              <div
+                                ref={actionMenuRef}
+                                style={actionMenuMaxHeight === undefined ? undefined : { maxHeight: actionMenuMaxHeight }}
+                                className={`absolute right-0 ${actionMenuOpensUp ? 'bottom-full mb-1' : 'top-full mt-1'} w-48 overflow-y-auto bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-100 text-left`}
+                              >
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -648,20 +662,22 @@ export const OrderListScreen: React.FC = () => {
                                 {order.status === 'PENDING' && !isLabour && (
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setOpenActionMenuId(null);
-                                      navigate('transport-form', {
-                                        prefillOrderId: order.id,
-                                        prefillCommodityId: order.commodityId,
-                                        prefillFromClientId: order.fromClientId,
-                                        prefillToClientId: order.toClientId,
-                                        remainingCapacity: remaining
-                                      });
-                                    }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50 cursor-pointer"
+                                    onClick={() => void handleOrderStatusChange(order, 'COMPLETED')}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50 cursor-pointer"
                                   >
-                                    <Truck className="w-3.5 h-3.5 text-blue-600" />
-                                    <span>Dispatch Truck</span>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Mark Completed</span>
+                                  </button>
+                                )}
+
+                                {order.status === 'COMPLETED' && !isLabour && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleOrderStatusChange(order, 'PENDING')}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50 cursor-pointer"
+                                  >
+                                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                    <span>Mark Pending</span>
                                   </button>
                                 )}
 

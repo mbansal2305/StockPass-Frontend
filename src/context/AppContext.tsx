@@ -8,6 +8,7 @@ import {
   Broker,
   Transporter,
   Order,
+  OrderStatus,
   Transport,
   UserRole,
   MasterEntityType,
@@ -40,15 +41,6 @@ export type NavigationPage =
   | 'bulk-transport'
   | 'master-data'
   | 'employees';
-
-const TRANSPORT_PAGES: NavigationPage[] = [
-  'transport',
-  'transport-payments',
-  'transport-detail',
-  'transport-form',
-  'bulk-transport-list',
-  'bulk-transport'
-];
 
 export interface ToastMessage {
   id: string;
@@ -114,9 +106,10 @@ interface AppContextType {
   masterSearch: (entity: MasterEntityType, search: string, filters?: Record<string, any>) => Promise<any[]>;
   masterList: (entity: MasterEntityType, filters?: Record<string, any>, page?: number, pageSize?: number) => Promise<any[]>;
 
-  // Orders API Operations (/orders/add/, /orders/upd/, /orders/del/, /orders/get/, /orders/lst/, /orders/sel/)
+  // Orders API Operations (/orders/add/, /orders/upd/, /orders/status/upd/, /orders/del/, /orders/get/, /orders/lst/, /orders/sel/)
   orderAdd: (orderData: Partial<Order>) => Promise<Order>;
   orderUpdate: (id: string | number, orderData: Partial<Order>) => Promise<Order>;
+  orderSetStatus: (id: string | number, status: OrderStatus) => Promise<void>;
   orderDelete: (id: string | number) => Promise<void>;
   orderGet: (id: string | number) => Promise<Order>;
   orderListPaginated: (filters?: OrderListSchema) => Promise<PaginatedOrdersResult>;
@@ -258,7 +251,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setTransporters(refreshedTransporters);
     }
 
-    if (TRANSPORT_PAGES.includes(currentPage)) {
+    if (currentPage === 'transport-payments') {
       try {
         const apiTransports = await transportsApi.list({}, {
           clients: refreshedClients,
@@ -323,7 +316,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   useEffect(() => {
-    if (currentPage !== 'transport' && currentPage !== 'transport-payments') return;
+    if (currentPage !== 'transport-payments') return;
 
     let cancelled = false;
     const localTransports = storage.getTransports();
@@ -572,6 +565,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const orderSetStatus = async (id: string | number, status: OrderStatus): Promise<void> => {
+    if (status === 'DRAFT') {
+      throw new Error('Changing an order to draft is not supported');
+    }
+
+    const numericId = typeof id === 'number' ? id : parseInt(String(id).replace(/\D/g, ''), 10);
+    if (!Number.isSafeInteger(numericId)) {
+      throw new Error(`Invalid order ID: ${id}`);
+    }
+
+    await ordersApi.updateStatus({
+      id: numericId,
+      status: status === 'COMPLETED' ? 'completed' : 'pending'
+    });
+    setOrders(previousOrders => {
+      const updatedOrders = previousOrders.map(order =>
+        order.id === String(id) ? { ...order, status } : order
+      );
+      storage.setOrders(updatedOrders);
+      return updatedOrders;
+    });
+  };
+
   const orderDelete = async (id: string | number): Promise<void> => {
     try {
       await ordersApi.delete(id);
@@ -666,6 +682,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         masterList,
         orderAdd,
         orderUpdate,
+        orderSetStatus,
         orderDelete,
         orderGet,
         orderListPaginated,

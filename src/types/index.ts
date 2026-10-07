@@ -86,6 +86,7 @@ export interface BusinessClient {
   address: string;
   city: string;
   pincode: string;
+  maan_no?: string;
   type: ClientType;
   flag: ClientFlag;
   location_url?: string;
@@ -116,6 +117,13 @@ export interface Transporter {
   phone?: string;
   city?: string;
   contactPerson?: string;
+  transaction_type?: string;
+  account_number?: string;
+  account_name?: string;
+  bank?: string;
+  branch?: string;
+  ifsc_code?: string;
+  email?: string;
   notes?: string;
   createdAt?: string;
 }
@@ -229,7 +237,7 @@ export interface TransportItem {
   orderEntryQuantity?: number; // In the transport gross-weight unit
 }
 
-export type TransportStatus = 'PENDING' | 'DELIVERY' | 'FINANCE' | 'PAID';
+export type TransportStatus = 'DRAFT' | 'PENDING' | 'DELIVERY' | 'FINANCE' | 'PAID';
 export type TransportRentType = 'fix' | 'per_unit';
 
 export interface Transport {

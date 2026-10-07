@@ -3,6 +3,7 @@
  * Handles integration with:
  * - POST /orders/add/   -> Add order (OrderCreateSchema)
  * - PATCH /orders/upd/  -> Update order (OrderUpdateSchema)
+ * - PATCH /orders/status/upd/ -> Update order status (OrderStatusUpdateSchema)
  * - GET /orders/get/    -> Get order (OrderGetDeleteSchema)
  * - DELETE /orders/del/ -> Delete order (OrderGetDeleteSchema)
  * - POST /orders/lst/   -> List orders (OrderListSchema)
@@ -31,6 +32,11 @@ export interface PaginatedOrdersResult {
   page: number;
   pageSize: number;
   totalPages: number;
+}
+
+export interface OrderStatusUpdateSchema {
+  id: number;
+  status: 'completed' | 'pending';
 }
 
 export interface OrderClientOption {
@@ -379,6 +385,19 @@ export const ordersApi = {
         return transformBackendOrderToFrontend(item);
       }
       throw err;
+    }
+  },
+
+  /**
+   * PATCH /orders/status/upd/
+   * Updates an existing order's status.
+   */
+  async updateStatus(payload: OrderStatusUpdateSchema): Promise<void> {
+    try {
+      await apiClient.patch<any>('/orders/status/upd/', payload);
+    } catch (err: any) {
+      if (err.status !== 405) throw err;
+      await apiClient.post<any>('/orders/status/upd/', payload);
     }
   },
 
