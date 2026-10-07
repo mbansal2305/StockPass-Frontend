@@ -22,6 +22,18 @@ interface PaymentDraft {
   notes: string;
 }
 
+type ExportPaymentMode = 'advance' | 'paid';
+
+interface ExportPaymentDraft {
+  amount: number;
+  mode: ExportPaymentMode;
+}
+
+const effectivePaymentAmounts = (draft: PaymentDraft, exportPaymentDraft: ExportPaymentDraft) => ({
+  advanceByFirm: draft.advanceByFirm + (exportPaymentDraft.mode === 'advance' ? exportPaymentDraft.amount : 0),
+  finalPaid: exportPaymentDraft.mode === 'paid' ? exportPaymentDraft.amount : draft.finalPaid
+});
+
 const draftFromTransport = (transport: Transport): PaymentDraft => ({
   status: transport.status,
   receivedWeight: transport.receivedWeight || 0,
@@ -66,7 +78,7 @@ export const TransportPaymentsScreen: React.FC = () => {
   const [transporterFilter, setTransporterFilter] = useState('ALL');
   const [billingFirmFilter, setBillingFirmFilter] = useState('ALL');
   const [currentPageNum, setCurrentPageNum] = useState(1);
-  const pageSize = 10;
+  const pageSize = 100;
   const [reloadSequence, setReloadSequence] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -78,6 +90,7 @@ export const TransportPaymentsScreen: React.FC = () => {
     totalPages: 1
   });
   const [drafts, setDrafts] = useState<Record<string, PaymentDraft>>({});
+  const [exportPaymentDrafts, setExportPaymentDrafts] = useState<Record<string, ExportPaymentDraft>>({});
   const [pendingSubmit, setPendingSubmit] = useState<Transport | null>(null);
   const [pendingEdit, setPendingEdit] = useState<Transport | null>(null);
   const [printTransport, setPrintTransport] = useState<Transport | null>(null);
@@ -184,11 +197,22 @@ export const TransportPaymentsScreen: React.FC = () => {
   }, [activeLogoSource]);
 
   const getDraft = (transport: Transport): PaymentDraft => drafts[transport.id] || draftFromTransport(transport);
+  const getExportPaymentDraft = (transport: Transport): ExportPaymentDraft =>
+    exportPaymentDrafts[transport.id] || { amount: 0, mode: 'advance' };
   const updateDraft = (transport: Transport, patch: Partial<PaymentDraft>) => {
     setDrafts(previous => ({
       ...previous,
       [transport.id]: { ...draftFromTransport(transport), ...previous[transport.id], ...patch }
     }));
+  };
+  const updateExportPaymentDraft = (transport: Transport, patch: Partial<ExportPaymentDraft>) => {
+    setExportPaymentDrafts(previous => {
+      const current = previous[transport.id] || { amount: 0, mode: 'advance' };
+      return {
+        ...previous,
+        [transport.id]: { ...current, ...patch }
+      };
+    });
   };
 
   const filteredTransports = useMemo(() => serverPage.results.filter(transport => {
@@ -220,6 +244,7 @@ export const TransportPaymentsScreen: React.FC = () => {
   };
 
   const totalPages = serverPage.totalPages || 1;
+  const isPendingTab = activeStatus === 'PENDING';
   const statusFilterItems = [
     { value: 'DRAFT' as const, label: 'Draft', active: 'bg-slate-200 text-slate-900 border-slate-400 ring-2 ring-slate-400/30', idle: 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200/60', dot: 'bg-slate-400 border-slate-500' },
     { value: 'PENDING' as const, label: 'Pending', active: 'bg-amber-100 text-amber-900 border-amber-300 ring-2 ring-amber-400/30', idle: 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/60', dot: 'bg-amber-500 border-amber-600' },
@@ -231,7 +256,14 @@ export const TransportPaymentsScreen: React.FC = () => {
   const savePayment = async () => {
     if (!pendingSubmit) return;
     const transport = pendingSubmit;
-    const draft = getDraft(transport);
+    const currentDraft = getDraft(transport);
+    const draft = isPendingTab
+      ? currentDraft
+      : { ...draftFromTransport(transport), status: currentDraft.status };
+    const exportPaymentDraft = isPendingTab
+      ? getExportPaymentDraft(transport)
+      : { amount: 0, mode: 'advance' as const };
+    const paymentAmounts = effectivePaymentAmounts(draft, exportPaymentDraft);
     setSavingId(transport.id);
     try {
       await transportsApi.updatePayments({
@@ -242,11 +274,20 @@ export const TransportPaymentsScreen: React.FC = () => {
         rent: draft.rent,
         rentType: draft.rentType,
         advanceByClient: draft.advanceByClient,
-        advanceByFirm: draft.advanceByFirm,
+        advanceByFirm: paymentAmounts.advanceByFirm,
         shortageAmount: draft.shortageAmount,
         extraAmount: draft.extraAmount,
-        finalPaid: draft.finalPaid,
+        finalPaid: paymentAmounts.finalPaid,
         notes: draft.notes
+      });
+      setDrafts(previous => ({
+        ...previous,
+        [transport.id]: { ...draft, ...paymentAmounts }
+      }));
+      setExportPaymentDrafts(previous => {
+        const next = { ...previous };
+        delete next[transport.id];
+        return next;
       });
       await refreshData();
       setReloadSequence(sequence => sequence + 1);
@@ -340,34 +381,35 @@ export const TransportPaymentsScreen: React.FC = () => {
         <table className="w-full min-w-[2160px] table-fixed text-left text-[11px]">
           <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-semibold uppercase text-slate-500">
             <tr>
-              <th className="w-[62px] px-1 py-2"></th>
-              <th className="w-[88px] px-2 py-2">Loading</th>
-              <th className="w-[125px] px-2 py-2">Bill</th>
-              <th className="w-[130px] px-2 py-2">Vehicle</th>
-              <th className="w-[132px] px-2 py-2">Route</th>
-              <th className="w-[82px] px-2 py-2 text-right">Gross Wt</th>
-              <th className="w-[125px] px-2 py-2 text-right">Rcvd Wt</th>
-              <th className="w-[112px] px-2 py-2">Unload Date</th>
-              <th className="w-[190px] px-2 py-2">Agreed Rent</th>
-              <th className="w-[105px] px-2 py-2 text-right">Total Rent</th>
-              <th className="w-[105px] px-2 py-2 text-right">Adv. by Party</th>
-              <th className="w-[95px] px-2 py-2 text-right">Adv. Paid</th>
-              <th className="w-[88px] px-2 py-2 text-right">Shortage</th>
-              <th className="w-[78px] px-2 py-2 text-right">Extra</th>
-              <th className="w-[78px] px-2 py-2 text-right">Paid</th>
-              <th className="w-[95px] px-2 py-2 text-right">Left</th>
+              <th className="sticky left-0 z-20 w-[62px] bg-slate-50 px-1 py-2"></th>
+              <th className="sticky left-[62px] z-20 w-[45px] bg-slate-50 px-2 py-2">Date</th>
+              <th className="sticky left-[107px] z-20 w-[95px] bg-slate-50 px-1 py-2">Bill</th>
+              <th className="sticky left-[202px] z-20 w-[80px] bg-slate-50 px-1 py-2">Vehicle</th>
+              <th className="sticky left-[282px] z-20 w-[90px] bg-slate-50 px-1 py-2">Route</th>
+              <th className="sticky left-[372px] z-20 w-[50px] bg-slate-50 px-1 py-2 text-right">Gross Wt</th>
+              <th className="w-[90px] px-2 py-2 text-right">Rcvd Wt</th>
+              <th className="w-[100px] px-2 py-2">Unload Date</th>
+              <th className="w-[120px] px-2 py-2">Agreed Rent</th>
+              <th className="w-[80px] px-2 py-2 text-right">Total Rent</th>
+              <th className="w-[80px] px-2 py-2 text-right">Adv. by Party</th>
+              <th className="w-[80px] px-2 py-2 text-right">Adv. Paid</th>
+              <th className="w-[80px] px-2 py-2 text-right">Shortage</th>
+              <th className="w-[80px] px-2 py-2 text-right">Extra</th>
+              <th className="w-[80px] px-2 py-2 text-right">Paid</th>
+              <th className="w-[75px] px-2 py-2 text-right">Left</th>
+              {isPendingTab && <th className="w-[120px] px-1 py-2">Export Amtount</th>}
               <th className="w-[145px] px-2 py-2">Notes</th>
-              <th className="w-[100px] px-2 py-2">Status</th>
-              <th className="w-[85px] px-2 py-2 text-center">Submit</th>
+              <th className="w-[82px] px-1 py-2">Status</th>
+              <th className="w-[68px] px-1 py-2 text-center">Submit</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {isLoading ? (
-              <tr><td colSpan={19} className="py-10 text-center text-xs text-slate-500">Loading transports...</td></tr>
+              <tr><td colSpan={isPendingTab ? 20 : 19} className="py-10 text-center text-xs text-slate-500">Loading transports...</td></tr>
             ) : loadError ? (
-              <tr><td colSpan={19} className="py-10 text-center text-xs text-red-600">{loadError}</td></tr>
+              <tr><td colSpan={isPendingTab ? 20 : 19} className="py-10 text-center text-xs text-red-600">{loadError}</td></tr>
             ) : filteredTransports.length === 0 ? (
-              <tr><td colSpan={19} className="py-10 text-center text-xs text-slate-500">No transport payments match these filters.</td></tr>
+              <tr><td colSpan={isPendingTab ? 20 : 19} className="py-10 text-center text-xs text-slate-500">No transport payments match these filters.</td></tr>
             ) : filteredTransports.map(transport => {
               const draft = getDraft(transport);
               const gross = Number(transport.grossWeight) || 0;
@@ -375,9 +417,18 @@ export const TransportPaymentsScreen: React.FC = () => {
               const differenceQtl = quantityToQuintals(received - gross, transport.grossWeightUnit);
               const billableQuantity = received > 0 ? Math.min(gross, received) : gross;
               const totalRent = Math.trunc(draft.rentType === 'per_unit' ? billableQuantity * draft.rent : draft.rent);
-              const left = totalRent - draft.advanceByClient - draft.advanceByFirm - draft.shortageAmount - draft.finalPaid + draft.extraAmount;
+              const exportPaymentDraft = getExportPaymentDraft(transport);
+              const paymentAmounts = effectivePaymentAmounts(draft, exportPaymentDraft);
+              const left = totalRent - draft.advanceByClient - paymentAmounts.advanceByFirm - draft.shortageAmount - paymentAmounts.finalPaid + draft.extraAmount;
               const party = clientMap.get(transport.billingFirmId) || '-';
               const carrier = transporterMap.get(transport.transporterId) || '-';
+              const displayedParty = party.length > 15 ? `${party.slice(0, 15)}...` : party;
+              const displayedCarrier = carrier.length > 12 ? `${carrier.slice(0, 12)}...` : carrier;
+              const formattedLoadingDate = formatDate(transport.loadingDate);
+              const loadingYear = formattedLoadingDate.match(/\b\d{4}\b$/)?.[0];
+              const loadingDateLabel = loadingYear
+                ? formattedLoadingDate.slice(0, -loadingYear.length).trim()
+                : formattedLoadingDate;
               const from = clientMap.get(transport.fromClientId) || '-';
               const to = clientMap.get(transport.toClientId) || '-';
               const rowColor = draft.status === 'PENDING'
@@ -389,6 +440,15 @@ export const TransportPaymentsScreen: React.FC = () => {
                 : draft.status === 'FINANCE'
                 ? 'bg-purple-50/50 hover:bg-purple-100/60'
                 : 'bg-emerald-50/50 hover:bg-emerald-100/60';
+              const stickyRowColor = draft.status === 'PENDING'
+                ? 'bg-amber-50'
+                : draft.status === 'DRAFT'
+                ? 'bg-slate-50'
+                : draft.status === 'DELIVERY'
+                ? 'bg-blue-50'
+                : draft.status === 'FINANCE'
+                ? 'bg-purple-50'
+                : 'bg-emerald-50';
               const statusSelectColor = draft.status === 'PENDING'
                 ? 'border-amber-300 bg-amber-50 text-amber-900'
                 : draft.status === 'DRAFT'
@@ -400,7 +460,7 @@ export const TransportPaymentsScreen: React.FC = () => {
                 : 'border-emerald-300 bg-emerald-50 text-emerald-900';
               return (
                 <tr key={transport.id} className={`align-top ${rowColor}`}>
-                  <td className="px-1 py-2 text-center">
+                  <td className={`sticky left-0 z-10 px-1 py-2 text-center ${stickyRowColor}`}>
                     <div className="flex items-center justify-center gap-0.5">
                     <button type="button" title="Edit transport" aria-label={`Edit transport ${transport.billNumber}`} onClick={() => setPendingEdit(transport)} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
                       <Edit2 className="h-3.5 w-3.5" />
@@ -410,20 +470,23 @@ export const TransportPaymentsScreen: React.FC = () => {
                     </button>
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-2 py-2 text-slate-600">{formatDate(transport.loadingDate)}</td>
-                  <td className="px-2 py-2">
+                  <td className={`sticky left-[62px] z-10 whitespace-nowrap px-2 py-2 text-slate-600 ${stickyRowColor}`} title={formattedLoadingDate}>
+                    <div className="w-full">{loadingDateLabel}</div>
+                    {loadingYear && <div className="w-full">{loadingYear}</div>}
+                  </td>
+                  <td className={`sticky left-[107px] z-10 px-1 py-2 ${stickyRowColor}`}>
                     <div className="font-mono font-semibold text-slate-900">{transport.billNumber}</div>
-                    <div className="truncate text-[10px] text-slate-500" title={party}>{party}</div>
+                    <div className="truncate text-[10px] text-slate-500" title={party}>{displayedParty}</div>
                   </td>
-                  <td className="px-2 py-2">
+                  <td className={`sticky left-[202px] z-10 px-1 py-2 ${stickyRowColor}`}>
                     <div className="truncate font-mono text-slate-800" title={transport.vehicleNumber}>{transport.vehicleNumber}</div>
-                    <div className="truncate text-[10px] text-slate-500" title={carrier}>{carrier}</div>
+                    <div className="truncate text-[10px] text-slate-500" title={carrier}>{displayedCarrier}</div>
                   </td>
-                  <td className="px-2 py-2">
+                  <td className={`sticky left-[282px] z-10 px-1 py-2 ${stickyRowColor}`}>
                     <div className="truncate text-slate-700" title={from}>{from}</div>
                     <div className="truncate text-[10px] text-slate-500" title={to}>→ {to}</div>
                   </td>
-                  <td className="whitespace-nowrap px-2 py-2 text-right font-semibold tabular-nums text-slate-800">
+                  <td className={`sticky left-[372px] z-10 whitespace-nowrap px-1 py-2 text-right font-semibold tabular-nums text-slate-800 ${stickyRowColor}`}>
                     {formatQuantityWithUnit(gross, transport.grossWeightUnit)}
                   </td>
                   <td className="px-2 py-2 text-right">
@@ -431,7 +494,8 @@ export const TransportPaymentsScreen: React.FC = () => {
                       <DecimalInput
                         value={draft.receivedWeight}
                         onChange={receivedWeight => updateDraft(transport, { receivedWeight })}
-                        className="w-[72px] rounded border border-slate-300 px-1 py-1 text-right text-[11px] tabular-nums text-slate-900"
+                        disabled={!isPendingTab}
+                        className="w-[72px] rounded border border-slate-300 px-1 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70"
                       />
                       <span className="text-[9px] text-slate-500">{unitName(transport.grossWeightUnit)}</span>
                     </div>
@@ -440,27 +504,36 @@ export const TransportPaymentsScreen: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-2 py-2">
-                    <input type="date" value={draft.unloadDate} onChange={event => updateDraft(transport, { unloadDate: event.target.value })} className="w-full min-w-[115px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900" />
+                    <input type="date" value={draft.unloadDate} onChange={event => updateDraft(transport, { unloadDate: event.target.value })} disabled={!isPendingTab} className="w-full min-w-[115px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" />
                   </td>
                   <td className="px-2 py-2">
                     <div className="flex items-center gap-1">
                       <div className="inline-flex shrink-0 rounded border border-slate-200 bg-slate-100 p-0.5">
-                        <button type="button" aria-pressed={draft.rentType === 'per_unit'} onClick={() => updateDraft(transport, { rentType: 'per_unit' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold ${draft.rentType === 'per_unit' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Per {unitName(transport.grossWeightUnit)}</button>
-                        <button type="button" aria-pressed={draft.rentType === 'fix'} onClick={() => updateDraft(transport, { rentType: 'fix' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold ${draft.rentType === 'fix' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Fix</button>
+                        <button type="button" disabled={!isPendingTab} aria-pressed={draft.rentType === 'per_unit'} onClick={() => updateDraft(transport, { rentType: 'per_unit' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold disabled:cursor-not-allowed disabled:opacity-70 ${draft.rentType === 'per_unit' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Per {unitName(transport.grossWeightUnit)}</button>
+                        <button type="button" disabled={!isPendingTab} aria-pressed={draft.rentType === 'fix'} onClick={() => updateDraft(transport, { rentType: 'fix' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold disabled:cursor-not-allowed disabled:opacity-70 ${draft.rentType === 'fix' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Fix</button>
                       </div>
-                      <DecimalInput value={draft.rent} onChange={rent => updateDraft(transport, { rent })} className="min-w-0 flex-1 rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" />
+                      <DecimalInput value={draft.rent} onChange={rent => updateDraft(transport, { rent })} disabled={!isPendingTab} className="w-[85px] shrink-0 rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" />
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-right font-semibold tabular-nums text-slate-800">{formatCurrency(totalRent)}</td>
-                  <td className="px-2 py-2"><DecimalInput aria-label="Advance by party" value={draft.advanceByClient} onChange={advanceByClient => updateDraft(transport, { advanceByClient })} className="w-full min-w-[82px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><DecimalInput aria-label="Advance paid" value={draft.advanceByFirm} onChange={advanceByFirm => updateDraft(transport, { advanceByFirm })} className="w-full min-w-[78px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><DecimalInput aria-label="Shortage" value={draft.shortageAmount} onChange={shortageAmount => updateDraft(transport, { shortageAmount })} className="w-full min-w-[74px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><DecimalInput aria-label="Extra" value={draft.extraAmount} onChange={extraAmount => updateDraft(transport, { extraAmount })} className="w-full min-w-[70px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><DecimalInput aria-label="Paid" value={draft.finalPaid} onChange={finalPaid => updateDraft(transport, { finalPaid })} className="w-full min-w-[70px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Advance by party" value={draft.advanceByClient} onChange={advanceByClient => updateDraft(transport, { advanceByClient })} disabled={!isPendingTab} className="ml-auto block w-[85px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Advance paid" value={paymentAmounts.advanceByFirm} onChange={advanceByFirm => updateDraft(transport, { advanceByFirm: Math.max(0, advanceByFirm - (exportPaymentDraft.mode === 'advance' ? exportPaymentDraft.amount : 0)) })} disabled={!isPendingTab} className="ml-auto block w-[85px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Shortage" value={draft.shortageAmount} onChange={shortageAmount => updateDraft(transport, { shortageAmount })} disabled={!isPendingTab} className="ml-auto block w-[85px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Extra" value={draft.extraAmount} onChange={extraAmount => updateDraft(transport, { extraAmount })} disabled={!isPendingTab} className="ml-auto block w-[85px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Paid" value={paymentAmounts.finalPaid} onChange={finalPaid => exportPaymentDraft.mode === 'paid' ? updateExportPaymentDraft(transport, { amount: finalPaid }) : updateDraft(transport, { finalPaid })} disabled={!isPendingTab} className="ml-auto block w-[85px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
                   <td className={`whitespace-nowrap px-2 py-2 text-right font-semibold tabular-nums ${left < 100 ? 'text-emerald-700' : 'text-red-700'}`}>{formatCurrency(left)}</td>
-                  <td className="px-2 py-2"><input aria-label="Payment notes" value={draft.notes} onChange={event => updateDraft(transport, { notes: event.target.value })} className="w-full min-w-[150px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900" /></td>
-                  <td className="px-2 py-2">
-                    <select value={draft.status} onChange={event => updateDraft(transport, { status: event.target.value as TransportStatus })} className={`w-full rounded border px-1.5 py-1 text-[10px] font-semibold ${statusSelectColor}`}>
+                  {isPendingTab && <td className="px-1 py-2">
+                    <div className="flex items-center gap-1">
+                      <div className="inline-flex shrink-0 rounded border border-slate-200 bg-slate-100 p-0.5">
+                        <button type="button" aria-pressed={exportPaymentDraft.mode === 'advance'} onClick={() => updateExportPaymentDraft(transport, { mode: 'advance' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold ${exportPaymentDraft.mode === 'advance' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Adv</button>
+                        <button type="button" aria-pressed={exportPaymentDraft.mode === 'paid'} onClick={() => updateExportPaymentDraft(transport, { mode: 'paid' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold ${exportPaymentDraft.mode === 'paid' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Paid</button>
+                      </div>
+                      <DecimalInput aria-label="Export amount" value={exportPaymentDraft.amount} onChange={amount => updateExportPaymentDraft(transport, { amount })} className={`w-[72px] shrink-0 rounded px-1 py-1 text-right text-[11px] tabular-nums text-slate-900 ${exportPaymentDraft.amount > 0 ? 'border-2 border-green-600' : 'border border-slate-300'}`} />
+                    </div>
+                  </td>}
+                  <td className="px-2 py-2"><input aria-label="Payment notes" value={draft.notes} onChange={event => updateDraft(transport, { notes: event.target.value })} disabled={!isPendingTab} className="w-full min-w-[150px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
+                  <td className="px-1 py-2">
+                    <select value={draft.status} onChange={event => updateDraft(transport, { status: event.target.value as TransportStatus })} className={`w-full rounded border px-1 py-1 text-[10px] font-semibold ${statusSelectColor}`}>
                       <option value="DRAFT">Draft</option>
                       <option value="PENDING">Pending</option>
                       <option value="DELIVERY">Delivery</option>
@@ -468,8 +541,8 @@ export const TransportPaymentsScreen: React.FC = () => {
                       <option value="PAID">Paid</option>
                     </select>
                   </td>
-                  <td className="px-2 py-2">
-                    <button type="button" disabled={savingId === transport.id} onClick={() => setPendingSubmit(transport)} className="w-full rounded bg-slate-900 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+                  <td className="px-1 py-2">
+                    <button type="button" disabled={savingId === transport.id} onClick={() => setPendingSubmit(transport)} className="w-full rounded bg-slate-900 px-1 py-1.5 text-[9px] font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
                       {savingId === transport.id ? 'Saving...' : 'Submit'}
                     </button>
                   </td>
