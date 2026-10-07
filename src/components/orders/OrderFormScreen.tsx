@@ -5,6 +5,7 @@ import { ordersApi, OrderClientOption } from '../../api/orders';
 import { storage } from '../../services/storage';
 import { getUnitLabel } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
+import { SearchableSelect } from '../common/SearchableSelect';
 import { ArrowLeft, Save, AlertCircle, ArrowDownLeft, ArrowUpRight, CheckCircle2, Loader2 } from 'lucide-react';
 
 export const OrderFormScreen: React.FC = () => {
@@ -91,7 +92,8 @@ export const OrderFormScreen: React.FC = () => {
         const fallbackClients = clients.map(client => ({
           id: client.id,
           name: client.name,
-          city: client.city
+          city: client.city,
+          type: client.type
         }));
         setRouteClients({ fromClient: fallbackClients, toClient: fallbackClients });
       }
@@ -449,19 +451,18 @@ export const OrderFormScreen: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Commodity *</label>
-              <select
+              <label htmlFor="order-commodity" className="block text-xs font-medium text-slate-700 mb-1">Commodity *</label>
+              <SearchableSelect
+                id="order-commodity"
                 value={formData.commodityId}
-                onChange={(e) => setFormData({ ...formData, commodityId: e.target.value })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
-              >
-                <option value="">Select Commodity</option>
-                {commodities.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.type})
-                  </option>
-                ))}
-              </select>
+                onChange={(commodityId) => setFormData({ ...formData, commodityId })}
+                placeholder="Select or search commodity"
+                options={commodities.map(commodity => ({
+                  id: commodity.id,
+                  label: `${commodity.name} (${commodity.type})`,
+                  searchText: commodity.type
+                }))}
+              />
               {errors.commodityId && (
                 <p className="text-[10px] text-red-600 mt-1">{errors.commodityId}</p>
               )}
@@ -482,48 +483,46 @@ export const OrderFormScreen: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label htmlFor="order-origin" className="block text-xs font-medium text-slate-700 mb-1">
                 Dispatch Origin (From Client / Godown) *
                 {formData.type === 'PURCHASE ORDER' && (
                   <span className="ml-1 text-[10px] text-emerald-600 font-normal">(Primary Supplier / Mandi)</span>
                 )}
               </label>
-              <select
+              <SearchableSelect
+                id="order-origin"
                 value={formData.fromClientId}
-                onChange={(e) => setFormData({ ...formData, fromClientId: e.target.value })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
-              >
-                <option value="">Select Origin Location / Client</option>
-                {routeClients.fromClient.map((cli) => (
-                  <option key={cli.id} value={cli.id}>
-                    {cli.name} ({cli.city})
-                  </option>
-                ))}
-              </select>
+                onChange={(fromClientId) => setFormData({ ...formData, fromClientId })}
+                placeholder="Select or search origin"
+                options={routeClients.fromClient.map(client => ({
+                  id: client.id,
+                  label: `${client.name}${client.city ? ` (${client.city})` : ''}`,
+                  searchText: `${client.city || ''} ${client.type || ''}`
+                }))}
+              />
               {errors.fromClientId && (
                 <p className="text-[10px] text-red-600 mt-1">{errors.fromClientId}</p>
               )}
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label htmlFor="order-destination" className="block text-xs font-medium text-slate-700 mb-1">
                 Destination Consignee (To Client / Godown) *
                 {formData.type === 'SALES ORDER' && (
                   <span className="ml-1 text-[10px] text-blue-600 font-normal">(Primary Buyer / Mill)</span>
                 )}
               </label>
-              <select
+              <SearchableSelect
+                id="order-destination"
                 value={formData.toClientId}
-                onChange={(e) => setFormData({ ...formData, toClientId: e.target.value })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
-              >
-                <option value="">Select Destination Consignee</option>
-                {routeClients.toClient.map((cli) => (
-                  <option key={cli.id} value={cli.id}>
-                    {cli.name} ({cli.city})
-                  </option>
-                ))}
-              </select>
+                onChange={(toClientId) => setFormData({ ...formData, toClientId })}
+                placeholder="Select or search destination"
+                options={routeClients.toClient.map(client => ({
+                  id: client.id,
+                  label: `${client.name}${client.city ? ` (${client.city})` : ''}`,
+                  searchText: `${client.city || ''} ${client.type || ''}`
+                }))}
+              />
               {errors.toClientId && (
                 <p className="text-[10px] text-red-600 mt-1 flex items-center gap-1">
                   <AlertCircle className="w-2.5 h-2.5" /> {errors.toClientId}

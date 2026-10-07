@@ -43,6 +43,7 @@ export interface OrderClientOption {
   id: string;
   name: string;
   city?: string;
+  type?: string;
 }
 
 export interface OrderClientOptions {
@@ -62,7 +63,8 @@ function normalizeOrderClientOptions(value: any): OrderClientOption[] {
     return [{
       id: String(id),
       name: String(name),
-      city: client.city ? String(client.city) : undefined
+      city: client.city ? String(client.city) : undefined,
+      type: client.type || client.client_type ? String(client.type || client.client_type) : undefined
     }];
   });
 }

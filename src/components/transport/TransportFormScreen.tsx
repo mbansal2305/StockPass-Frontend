@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { formatQuantityWithUnit, formatCurrency } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
+import { SearchableSelect } from '../common/SearchableSelect';
 
 const isFlagEnabled = (value: boolean | string | undefined): boolean => {
   if (typeof value === 'boolean') return value;
@@ -603,33 +604,33 @@ export const TransportFormScreen: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Billing Entity (My Firm) *</label>
-              <select
+              <label htmlFor="transport-billing-firm" className="block text-xs font-medium text-slate-700 mb-1">Billing Entity (My Firm) *</label>
+              <SearchableSelect
+                id="transport-billing-firm"
                 value={formData.billingFirmId}
-                onChange={(e) => setFormData({ ...formData, billingFirmId: e.target.value })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white font-medium"
-              >
-                {billingFirms.map((cli) => (
-                  <option key={cli.id} value={cli.id}>
-                    {cli.name} ({cli.city})
-                  </option>
-                ))}
-              </select>
+                onChange={(billingFirmId) => setFormData({ ...formData, billingFirmId })}
+                placeholder="Select or search billing firm"
+                options={billingFirms.map(firm => ({
+                  id: firm.id,
+                  label: `${firm.name}${firm.city ? ` (${firm.city})` : ''}`,
+                  searchText: firm.city
+                }))}
+              />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Commodity *</label>
-              <select
+              <label htmlFor="transport-commodity" className="block text-xs font-medium text-slate-700 mb-1">Commodity *</label>
+              <SearchableSelect
+                id="transport-commodity"
                 value={formData.commodityId}
-                onChange={(e) => handleCommodityChange(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white font-medium"
-              >
-                {commodities.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.type})
-                  </option>
-                ))}
-              </select>
+                onChange={handleCommodityChange}
+                placeholder="Select or search commodity"
+                options={commodities.map(commodity => ({
+                  id: commodity.id,
+                  label: `${commodity.name} (${commodity.type})`,
+                  searchText: commodity.type
+                }))}
+              />
             </div>
           </div>
         </div>
@@ -642,33 +643,33 @@ export const TransportFormScreen: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Loading Origin (From Client / Godown) *</label>
-              <select
+              <label htmlFor="transport-loading-origin" className="block text-xs font-medium text-slate-700 mb-1">Loading Origin (From Client / Godown) *</label>
+              <SearchableSelect
+                id="transport-loading-origin"
                 value={formData.fromClientId}
-                onChange={(e) => setFormData({ ...formData, fromClientId: e.target.value })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
-              >
-                {locations.map((cli) => (
-                  <option key={cli.id} value={cli.id}>
-                    {cli.name} ({cli.city})
-                  </option>
-                ))}
-              </select>
+                onChange={(fromClientId) => setFormData({ ...formData, fromClientId })}
+                placeholder="Select or search loading origin"
+                options={locations.map(location => ({
+                  id: location.id,
+                  label: `${location.name}${location.city ? ` (${location.city})` : ''}`,
+                  searchText: `${location.city || ''} ${location.clientType || ''}`
+                }))}
+              />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Unloading Destination (To Consignee) *</label>
-              <select
+              <label htmlFor="transport-unloading-destination" className="block text-xs font-medium text-slate-700 mb-1">Unloading Destination (To Consignee) *</label>
+              <SearchableSelect
+                id="transport-unloading-destination"
                 value={formData.toClientId}
-                onChange={(e) => setFormData({ ...formData, toClientId: e.target.value })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
-              >
-                {locations.map((cli) => (
-                  <option key={cli.id} value={cli.id}>
-                    {cli.name} ({cli.city})
-                  </option>
-                ))}
-              </select>
+                onChange={(toClientId) => setFormData({ ...formData, toClientId })}
+                placeholder="Select or search unloading destination"
+                options={locations.map(location => ({
+                  id: location.id,
+                  label: `${location.name}${location.city ? ` (${location.city})` : ''}`,
+                  searchText: `${location.city || ''} ${location.clientType || ''}`
+                }))}
+              />
               {errors.toClientId && (
                 <p className="text-[10px] text-red-600 mt-1">{errors.toClientId}</p>
               )}
