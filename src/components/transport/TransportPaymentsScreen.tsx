@@ -30,8 +30,8 @@ const draftFromTransport = (transport: Transport): PaymentDraft => ({
   rentType: transport.rentType || 'per_unit',
   advanceByClient: transport.advanceByClient || 0,
   advanceByFirm: transport.advanceByFirm || 0,
-  shortageAmount: transport.extraPaid || 0,
-  extraAmount: transport.shortage || 0,
+  shortageAmount: transport.shortage || 0,
+  extraAmount: transport.extraPaid || 0,
   finalPaid: transport.finalPaid || 0,
   notes: transport.notes || ''
 });

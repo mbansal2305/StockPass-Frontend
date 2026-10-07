@@ -596,8 +596,8 @@ export const transportsApi = {
     appendValue(form, 'rent_type', payment.rentType);
     appendValue(form, 'adv_by_client', roundToTwoDecimals(payment.advanceByClient));
     appendValue(form, 'adv_by_firm', roundToTwoDecimals(payment.advanceByFirm));
-    appendValue(form, 'extra_Paid', roundToTwoDecimals(payment.shortageAmount));
-    appendValue(form, 'shortage', roundToTwoDecimals(payment.extraAmount));
+    appendValue(form, 'shortage', roundToTwoDecimals(payment.shortageAmount));
+    appendValue(form, 'extra_paid', roundToTwoDecimals(payment.extraAmount));
     appendValue(form, 'final_paid', roundToTwoDecimals(payment.finalPaid));
     appendValue(form, 'status', payment.status.toLowerCase());
     form.append('notes', payment.notes);
