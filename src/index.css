@@ -31,7 +31,7 @@
 @media print {
   @page {
     size: A4 portrait;
-    margin: 14mm;
+    margin: 8mm;
   }
 
   body * {
@@ -59,6 +59,7 @@
     border: 0 !important;
     padding: 0 !important;
     box-shadow: none !important;
+    break-inside: avoid;
   }
 
   .no-print {

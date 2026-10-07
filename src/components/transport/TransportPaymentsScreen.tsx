@@ -66,6 +66,7 @@ export const TransportPaymentsScreen: React.FC = () => {
     clients,
     transporters,
     orders,
+    currentUser,
     refreshData,
     showToast,
     transportGet,
@@ -591,10 +592,7 @@ export const TransportPaymentsScreen: React.FC = () => {
         const firm = clientMap.get(printTransport.billingFirmId) || 'Billing Firm';
         const firmDetails = logoClient;
         const firmLogo = resolvedLogoSource;
-        const commodity = commodityMap.get(printTransport.commodityId)?.name || '-';
         const transporter = transporterMap.get(printTransport.transporterId) || '-';
-        const from = clientMap.get(printTransport.fromClientId) || '-';
-        const to = clientMap.get(printTransport.toClientId) || '-';
         const initials = firm.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
         const today = new Date();
         const billDate = formatDate(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
@@ -614,13 +612,13 @@ export const TransportPaymentsScreen: React.FC = () => {
                 </div>
               </div>
 
-              <header className="flex items-center gap-4 border-b-2 border-slate-900 pb-5">
-                <div aria-label="Firm logo" className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden border border-slate-300 bg-slate-50 text-lg font-bold text-slate-500 print:border-0 print:bg-white">
+              <header className="flex items-center gap-4 border-b-2 border-slate-900 pb-5 print:gap-3 print:pb-2">
+                <div aria-label="Firm logo" className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden border border-slate-300 bg-slate-50 text-lg font-bold text-slate-500 print:h-12 print:w-12 print:border-0 print:bg-white">
                   {firmLogo ? <img key={firmLogo} src={firmLogo} alt={`${firm} logo`} onError={() => setLogoSourceIndex(index => Math.min(index + 1, logoSources.length))} className="h-full w-full object-contain" /> : initials || 'LOGO'}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Transport settlement</p>
-                  <h1 className="mt-1 break-words text-xl font-bold text-slate-950">{firm}</h1>
+                  <h1 className="mt-1 break-words text-xl font-bold text-slate-950 print:text-lg">{firm}</h1>
                   {firmDetails && <p className="mt-1 text-xs text-slate-600">{[firmDetails.address, firmDetails.city, firmDetails.pincode].filter(Boolean).join(', ')}</p>}
                   {firmDetails?.phone && <p className="mt-0.5 text-xs text-slate-600">Phone: {firmDetails.phone}</p>}
                   {firmDetails?.gstin && <p className="mt-0.5 text-xs text-slate-600">GSTIN: {firmDetails.gstin}</p>}
@@ -635,34 +633,32 @@ export const TransportPaymentsScreen: React.FC = () => {
                 </div>
               </header>
 
-              <section className="grid grid-cols-2 gap-x-8 gap-y-4 border-b border-slate-200 py-5 sm:grid-cols-4">
+              <section className="grid grid-cols-2 gap-x-8 gap-y-4 border-b border-slate-200 py-5 print:gap-y-2 print:py-2 sm:grid-cols-2">
                 <div><p className="text-[10px] font-semibold uppercase text-slate-500">Transporter</p><p className="mt-1 text-sm font-semibold text-slate-900">{transporter}</p></div>
                 <div><p className="text-[10px] font-semibold uppercase text-slate-500">Vehicle number</p><p className="mt-1 font-mono text-sm font-semibold text-slate-900">{printTransport.vehicleNumber}</p></div>
-                <div><p className="text-[10px] font-semibold uppercase text-slate-500">Commodity</p><p className="mt-1 text-sm font-semibold text-slate-900">{commodity}</p></div>
-                <div><p className="text-[10px] font-semibold uppercase text-slate-500">Route</p><p className="mt-1 text-sm font-semibold text-slate-900">{from} to {to}</p></div>
               </section>
 
-              <section className="py-5">
-                <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">Weight and freight</h2>
+              <section className="py-5 print:py-2">
+                <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700 print:mb-1">Weight and freight</h2>
                 <div className="overflow-hidden border border-slate-200">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 text-[10px] font-semibold uppercase text-slate-500">
-                      <tr><th className="px-3 py-2">Gross weight</th><th className="px-3 py-2">Received weight</th><th className="px-3 py-2 text-right">Difference</th><th className="px-3 py-2 text-right">Rate</th><th className="px-3 py-2 text-right">Freight amount</th></tr>
+                      <tr><th className="px-3 py-2 print:py-1">Gross weight</th><th className="px-3 py-2 print:py-1">Received weight</th><th className="px-3 py-2 text-right print:py-1">Difference</th><th className="px-3 py-2 text-right print:py-1">Rate</th><th className="px-3 py-2 text-right print:py-1">Freight amount</th></tr>
                     </thead>
                     <tbody><tr className="font-semibold text-slate-900">
-                      <td className="px-3 py-3">{formatQuantityWithUnit(gross, printTransport.grossWeightUnit)}</td>
-                      <td className="px-3 py-3">{formatQuantityWithUnit(received, printTransport.grossWeightUnit)}</td>
-                      <td className="px-3 py-3 text-right">{difference > 0 ? '+' : ''}{difference.toFixed(2)} Qtl</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(printDraft.rent)}{printDraft.rentType === 'per_unit' ? ` / ${unitName(printTransport.grossWeightUnit)}` : ' (fixed)'}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(totalRent)}</td>
+                      <td className="px-3 py-3 print:py-1">{formatQuantityWithUnit(gross, printTransport.grossWeightUnit)}</td>
+                      <td className="px-3 py-3 print:py-1">{formatQuantityWithUnit(received, printTransport.grossWeightUnit)}</td>
+                      <td className="px-3 py-3 text-right print:py-1">{difference > 0 ? '+' : ''}{difference.toFixed(2)} Qtl</td>
+                      <td className="px-3 py-3 text-right print:py-1">{formatCurrency(printDraft.rent)}{printDraft.rentType === 'per_unit' ? ` / ${unitName(printTransport.grossWeightUnit)}` : ' (fixed)'}</td>
+                      <td className="px-3 py-3 text-right print:py-1">{formatCurrency(totalRent)}</td>
                     </tr></tbody>
                   </table>
                 </div>
               </section>
 
-              <section className="ml-auto max-w-sm border-t border-slate-200 pt-4">
-                <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-700">Settlement</h2>
-                <dl className="space-y-2 text-xs">
+              <section className="ml-auto max-w-sm border-t border-slate-200 pt-4 print:pt-2">
+                <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-700 print:mb-1">Settlement</h2>
+                <dl className="space-y-2 text-xs print:space-y-1">
                   <div className="flex justify-between gap-4"><dt className="text-slate-600">Freight amount</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(totalRent)}</dd></div>
                   <div className="flex justify-between gap-4"><dt className="text-slate-600">Hamali (advance by party)</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.advanceByClient)}</dd></div>
                   <div className="flex justify-between gap-4"><dt className="text-slate-600">Advance paid by firm</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.advanceByFirm)}</dd></div>
@@ -673,8 +669,9 @@ export const TransportPaymentsScreen: React.FC = () => {
                 </dl>
               </section>
 
-              {printDraft.notes && <p className="mt-6 border-t border-slate-200 pt-3 text-xs text-slate-600">Notes: {printDraft.notes}</p>}
-              <footer className="mt-14 grid grid-cols-2 gap-12 text-center text-[10px] text-slate-500">
+              {printDraft.notes && <p className="mt-6 border-t border-slate-200 pt-3 text-xs text-slate-600 print:mt-3 print:pt-2">Notes: {printDraft.notes}</p>}
+              <p className="mt-4 text-xs text-slate-600 print:mt-2">Bill Generated by: <span className="font-semibold text-slate-900">{currentUser?.name || 'Operator'}</span></p>
+              <footer className="mt-14 grid grid-cols-2 gap-12 text-center text-[10px] text-slate-500 print:mt-8 print:gap-8">
                 <div className="border-t border-slate-300 pt-2">Transporter signature</div>
                 <div className="border-t border-slate-300 pt-2">Authorised signatory</div>
               </footer>
