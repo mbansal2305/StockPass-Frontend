@@ -131,7 +131,7 @@ const BillHisaabPreview: React.FC<{
       <article className="bill-hisaab-paper mx-auto max-w-3xl border border-slate-200 bg-white p-6 shadow-2xl sm:p-8">
         <div className="no-print mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Bill Hisaab preview</h2>
+            <h2 className="text-sm font-semibold text-slate-900">Bill Hisaab Preview</h2>
             <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-600">
               <span className="break-all font-mono">{filename}</span>
               <button
