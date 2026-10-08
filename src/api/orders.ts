@@ -14,6 +14,7 @@ import { apiClient } from './client';
 import { roundToTwoDecimals } from '../utils/numbers';
 import {
   Order,
+  OrderTransport,
   OrderType,
   OrderStatus,
   QuantityUnit,
@@ -119,6 +120,29 @@ export function transformBackendOrderToFrontend(raw: any): Order {
   const toClientId = getRelationId(raw.to_client ?? raw.toClientId);
   const commodityId = getRelationId(raw.commodity ?? raw.commodityId);
   const brokerId = getRelationId(raw.broker ?? raw.brokerId);
+  const orderTransports: OrderTransport[] | undefined = Array.isArray(raw.order_transports)
+    ? raw.order_transports.map((transport: any) => {
+      const rawGrossWeightUnit = String(transport.gross_wt_unit || 'mt').toLowerCase();
+      const grossWeightUnit: QuantityUnit = rawGrossWeightUnit === 'kg' || rawGrossWeightUnit === 'kilogram'
+        ? 'kg'
+        : rawGrossWeightUnit === 'quintal' || rawGrossWeightUnit === 'qtl'
+        ? 'quintal'
+        : 'mt';
+      return {
+        id: String(transport.id),
+        billNumber: String(transport.bill_no || ''),
+        billingFirmName: transport.billing_firm ? String(transport.billing_firm) : undefined,
+        loadingDate: transport.loading_date ?? null,
+        unloadDate: transport.unload_date ?? null,
+        vehicleNumber: String(transport.vehicle_no || ''),
+        transporterName: String(transport.transporter || ''),
+        grossWeightUnit,
+        grossWeight: Number(transport.quantity) || 0,
+        orderEntryQuantity: Number(transport.order_entry) || 0,
+        status: String(transport.status || '')
+      };
+    })
+    : undefined;
 
   // Quantities & Rates
   const rate = Number(raw.rate) || 0;
@@ -157,6 +181,9 @@ export function transformBackendOrderToFrontend(raw: any): Order {
     fromClientId,
     toClientId,
     commodityId,
+    commodityName: typeof raw.commodity === 'string' ? raw.commodity : raw.commodityName,
+    commodityType: raw.commodity_type ? String(raw.commodity_type) : raw.commodityType,
+    orderTransports,
     rate,
     quantity,
     unit,

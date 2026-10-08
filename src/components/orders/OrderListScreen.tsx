@@ -42,6 +42,7 @@ export const OrderListScreen: React.FC = () => {
     navigate,
     pageParams,
     orderDelete,
+    orderGet,
     orderSetStatus,
     orderListPaginated
   } = useApp();
@@ -217,6 +218,16 @@ export const OrderListScreen: React.FC = () => {
       setReloadSequence(sequence => sequence + 1);
     } catch (err: any) {
       showToast(err.message || `Failed to mark order ${status.toLowerCase()}`, 'error');
+    }
+  };
+
+  const handleOrderEdit = async (order: Order) => {
+    setOpenActionMenuId(null);
+    try {
+      await orderGet(order.id);
+      navigate('order-form', { orderId: order.id });
+    } catch (err: any) {
+      showToast(err.message || 'Failed to load order details', 'error');
     }
   };
 
@@ -684,10 +695,7 @@ export const OrderListScreen: React.FC = () => {
                                 {!isLabour && (
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setOpenActionMenuId(null);
-                                      navigate('order-form', { orderId: order.id });
-                                    }}
+                                    onClick={() => void handleOrderEdit(order)}
                                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
                                   >
                                     <Edit2 className="w-3.5 h-3.5 text-slate-400" />

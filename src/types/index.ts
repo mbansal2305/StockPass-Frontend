@@ -213,6 +213,7 @@ export interface Order {
   commodityId: string;
   commodityName?: string;
   commodityType?: string;
+  orderTransports?: OrderTransport[];
   rate: number; // in ₹ per selected unit
   quantity: number; // in selected unit
   unit?: QuantityUnit; // 'mt' | 'quintal' | 'kg'
@@ -228,6 +229,20 @@ export interface Order {
   notes?: string;
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface OrderTransport {
+  id: string;
+  billNumber: string;
+  billingFirmName?: string;
+  loadingDate?: string | null;
+  unloadDate?: string | null;
+  vehicleNumber: string;
+  transporterName: string;
+  grossWeightUnit: QuantityUnit;
+  grossWeight: number;
+  orderEntryQuantity: number;
+  status: string;
 }
 
 export interface TransportItem {

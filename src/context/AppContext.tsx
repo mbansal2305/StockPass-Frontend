@@ -599,16 +599,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const orderGet = async (id: string | number): Promise<Order> => {
+  const orderGet = useCallback(async (id: string | number): Promise<Order> => {
     try {
-      return await ordersApi.get(id);
+      const order = await ordersApi.get(id);
+      const resolvedOrder = resolveOrderRelations(order, clients, commodities, brokers);
+      setOrders(previousOrders => {
+        const existingIndex = previousOrders.findIndex(
+          existing => existing.id === resolvedOrder.id || existing.id === String(id)
+        );
+        const updatedOrders = [...previousOrders];
+        if (existingIndex >= 0) updatedOrders[existingIndex] = resolvedOrder;
+        else updatedOrders.unshift(resolvedOrder);
+        storage.setOrders(updatedOrders);
+        return updatedOrders;
+      });
+      return resolvedOrder;
     } catch (err) {
       console.warn(`Backend order get for ${id} failed, using local store:`, err);
       const local = storage.getOrders().find(o => o.id === String(id));
       if (!local) throw err;
-      return local;
+      return resolveOrderRelations(local, clients, commodities, brokers);
     }
-  };
+  }, [clients, commodities, brokers]);
 
   const transportGet = async (id: string): Promise<Transport> => {
     const transport = await transportsApi.get(id, { clients, commodities, orders, transporters });
