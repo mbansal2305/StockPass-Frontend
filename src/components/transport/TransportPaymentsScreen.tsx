@@ -104,7 +104,7 @@ export const TransportPaymentsScreen: React.FC = () => {
     let isCurrent = true;
     setIsLoading(true);
     setLoadError('');
-    transportsApi.listPaginated({
+    transportsApi.listPaymentsPaginated({
       status: activeStatus,
       commodity: commodityFilter === 'ALL' ? undefined : commodityFilter,
       transporter: transporterFilter === 'ALL' ? undefined : transporterFilter,

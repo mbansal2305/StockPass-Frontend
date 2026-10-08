@@ -64,6 +64,7 @@ export interface BulkTransportCreatePayload {
   title: string;
   loadingDate?: string;
   billNumber?: string;
+  totalReceivedWeight?: number;
   orderId?: string;
   billingFirmId?: string;
   transporterId?: string;
@@ -78,6 +79,7 @@ export interface BulkTransportUpdatePayload {
   title?: string;
   loadingDate?: string;
   billNumber?: string;
+  totalReceivedWeight?: number;
   orderId?: string;
   billingFirmId?: string;
   transporterId?: string;
@@ -92,6 +94,7 @@ export interface BulkTransportDetail {
   title: string;
   loadingDate?: string;
   billNumber?: string;
+  totalReceivedWeight?: number;
   orderId?: string;
   billingFirmId?: string;
   transporterId?: string;
@@ -341,6 +344,7 @@ function toBulkTransportFormData(
     title?: string;
     loadingDate?: string;
     billNumber?: string;
+    totalReceivedWeight?: number;
     orderId?: string;
     billingFirmId?: string;
     transporterId?: string;
@@ -357,6 +361,7 @@ function toBulkTransportFormData(
   if (payload.title !== undefined) form.append('title', payload.title);
   appendValue(form, 'loading_date', payload.loadingDate);
   appendValue(form, 'bill_no', payload.billNumber);
+  appendValue(form, 'total_rcvd_wt', payload.totalReceivedWeight === undefined ? undefined : roundToTwoDecimals(payload.totalReceivedWeight));
   appendValue(form, 'order', payload.orderId ? numericId(payload.orderId) : undefined);
   appendValue(form, 'billing_firm', payload.billingFirmId ? numericId(payload.billingFirmId) : undefined);
   appendValue(form, 'transporter', payload.transporterId ? numericId(payload.transporterId) : undefined);
@@ -378,6 +383,9 @@ function unwrapBulkTransport(value: any, lookups: TransportLookups): BulkTranspo
     title: String(bulkTransport?.title ?? ''),
     loadingDate: bulkTransport?.loading_date ?? bulkTransport?.loadingDate ?? undefined,
     billNumber: bulkTransport?.bill_no ?? bulkTransport?.billNumber ?? undefined,
+    totalReceivedWeight: bulkTransport?.total_rcvd_wt == null && bulkTransport?.totalReceivedWeight == null
+      ? undefined
+      : Number(bulkTransport.total_rcvd_wt ?? bulkTransport.totalReceivedWeight),
     orderId: relationId(bulkTransport?.order, (lookups.orders || []).map(order => ({ id: order.id, name: order.orderNumber })),),
     billingFirmId: relationId(bulkTransport?.billing_firm, lookups.clients),
     transporterId: relationId(bulkTransport?.transporter, lookups.transporters),
@@ -410,6 +418,28 @@ function unwrapPage(value: any): { results: any[]; total: number; page: number; 
     page: Number(page?.page) || 1,
     pageSize,
     totalPages: Number(page?.total_pages ?? page?.totalPages) || Math.ceil(total / pageSize) || 1
+  };
+}
+
+async function listPaginatedFromEndpoint(
+  endpoint: string,
+  filters: TransportListFilters,
+  lookups: TransportLookups
+): Promise<PaginatedTransportsResult> {
+  const page = filters.page || 1;
+  const pageSize = filters.pageSize || 100;
+  const form = new FormData();
+  appendValue(form, 'transporter', filters.transporter ? numericId(filters.transporter) : undefined);
+  appendValue(form, 'status', filters.status?.toLowerCase());
+  appendValue(form, 'commodity', filters.commodity ? numericId(filters.commodity) : undefined);
+  appendValue(form, 'billing_firm', filters.billingFirm ? numericId(filters.billingFirm) : undefined);
+  appendValue(form, 'page', page);
+  appendValue(form, 'page_size', pageSize);
+  const response = await apiClient.postForm<any>(endpoint, form);
+  const parsed = unwrapPage(response);
+  return {
+    ...parsed,
+    results: parsed.results.map(transport => transformBackendTransport(transport, lookups))
   };
 }
 
@@ -649,21 +679,11 @@ export const transportsApi = {
   },
 
   async listPaginated(filters: TransportListFilters = {}, lookups: TransportLookups = {}): Promise<PaginatedTransportsResult> {
-    const page = filters.page || 1;
-    const pageSize = filters.pageSize || 100;
-    const form = new FormData();
-    appendValue(form, 'transporter', filters.transporter ? numericId(filters.transporter) : undefined);
-    appendValue(form, 'status', filters.status?.toLowerCase());
-    appendValue(form, 'commodity', filters.commodity ? numericId(filters.commodity) : undefined);
-    appendValue(form, 'billing_firm', filters.billingFirm ? numericId(filters.billingFirm) : undefined);
-    appendValue(form, 'page', page);
-    appendValue(form, 'page_size', pageSize);
-    const response = await apiClient.postForm<any>('/transports/lst', form);
-    const parsed = unwrapPage(response);
-    return {
-      ...parsed,
-      results: parsed.results.map(transport => transformBackendTransport(transport, lookups))
-    };
+    return listPaginatedFromEndpoint('/transports/lst', filters, lookups);
+  },
+
+  async listPaymentsPaginated(filters: TransportListFilters = {}, lookups: TransportLookups = {}): Promise<PaginatedTransportsResult> {
+    return listPaginatedFromEndpoint('/transports/payments/lst', filters, lookups);
   },
 
   async search(keyword: string, lookups: TransportLookups = {}): Promise<Transport[]> {
