@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp, NavigationPage } from '../../context/AppContext';
+import stockpassLogo from '../../stockpasslogo.png';
 import {
   LayoutDashboard,
   ClipboardList,
@@ -107,13 +108,11 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
           </button>
 
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-sm tracking-tight shadow-xs">
-              V
-            </div>
+            <img src={stockpassLogo} alt="StockPass logo" className="w-8 h-8 object-contain" />
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-sm text-slate-900 tracking-tight leading-none">
-                  Vistar Mandi & Logistics
+                  StockPass
                 </span>
                 <span className={`w-2 h-2 rounded-full ${isBackendConnected ? 'bg-emerald-500' : 'bg-amber-400'}`} title={isBackendConnected ? 'Connected to ngrok API' : 'Using Local/Offline store'} />
               </div>
