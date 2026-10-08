@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { zipSync } from 'fflate';
 import { useApp } from '../../context/AppContext';
 import { Transport, TransportRentType, QuantityUnit, TransportStatus } from '../../types';
 import { apiClient, PaginatedTransportsResult, TransportClientOption, transportsApi } from '../../api';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
-import { Edit2, FilterX, Printer, Search, X } from 'lucide-react';
+import { Edit2, FileSpreadsheet, FilterX, Printer, Search, X } from 'lucide-react';
 import { getImageSource } from '../../utils/images';
 
 interface PaymentDraft {
@@ -29,10 +30,32 @@ interface ExportPaymentDraft {
   mode: ExportPaymentMode;
 }
 
+interface SubmittedPaymentRow {
+  draft: PaymentDraft;
+  exportPaymentDraft: ExportPaymentDraft;
+  exportLocked: boolean;
+}
+
 const effectivePaymentAmounts = (draft: PaymentDraft, exportPaymentDraft: ExportPaymentDraft) => ({
   advanceByFirm: draft.advanceByFirm + (exportPaymentDraft.mode === 'advance' ? exportPaymentDraft.amount : 0),
   finalPaid: exportPaymentDraft.mode === 'paid' ? exportPaymentDraft.amount : draft.finalPaid
 });
+
+const paymentDraftsEqual = (left: PaymentDraft, right: PaymentDraft): boolean =>
+  left.status === right.status
+  && left.receivedWeight === right.receivedWeight
+  && left.unloadDate === right.unloadDate
+  && left.rent === right.rent
+  && left.rentType === right.rentType
+  && left.advanceByClient === right.advanceByClient
+  && left.advanceByFirm === right.advanceByFirm
+  && left.shortageAmount === right.shortageAmount
+  && left.extraAmount === right.extraAmount
+  && left.finalPaid === right.finalPaid
+  && left.notes === right.notes;
+
+const exportPaymentDraftsEqual = (left: ExportPaymentDraft, right: ExportPaymentDraft): boolean =>
+  left.amount === right.amount && left.mode === right.mode;
 
 const draftFromTransport = (transport: Transport): PaymentDraft => ({
   status: transport.status,
@@ -60,6 +83,96 @@ const unitName = (unit: QuantityUnit | undefined): string => {
   return 'Qtl';
 };
 
+const formatExportDate = (date: Date): string =>
+  `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+
+const createSheetName = (name: string, existingNames: Set<string>): string => {
+  const baseName = name.replace(/[\\/?*:[\]\x00-\x1f]/g, ' ').trim().replace(/^'+|'+$/g, '').slice(0, 31) || 'Billing Firm';
+  let sheetName = baseName;
+  let suffix = 2;
+  while (existingNames.has(sheetName.toLowerCase())) {
+    const suffixText = ` (${suffix})`;
+    sheetName = `${baseName.slice(0, 31 - suffixText.length)}${suffixText}`;
+    suffix += 1;
+  }
+  existingNames.add(sheetName.toLowerCase());
+  return sheetName;
+};
+
+const xmlEscape = (value: string): string => value
+  .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&apos;');
+
+const excelColumnName = (columnIndex: number): string => {
+  let index = columnIndex + 1;
+  let name = '';
+  while (index > 0) {
+    const remainder = (index - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    index = Math.floor((index - 1) / 26);
+  }
+  return name;
+};
+
+const worksheetXml = (rows: (string | number)[][]): string => {
+  const xmlRows = rows.map((row, rowIndex) => {
+    const cells = row.map((value, columnIndex) => {
+      if (value === '') return '';
+      const cellReference = `${excelColumnName(columnIndex)}${rowIndex + 1}`;
+      if (typeof value === 'number') return `<c r="${cellReference}"><v>${value}</v></c>`;
+      return `<c r="${cellReference}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
+    }).join('');
+    return `<row r="${rowIndex + 1}">${cells}</row>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${xmlRows}</sheetData></worksheet>`;
+};
+
+const downloadXlsx = (sheets: { name: string; rows: (string | number)[][] }[], fileName: string): void => {
+  const sheetOverrides = sheets.map((_, index) =>
+    `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+  ).join('');
+  const sheetReferences = sheets.map((sheet, index) =>
+    `<sheet name="${xmlEscape(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`
+  ).join('');
+  const sheetRelationships = sheets.map((_, index) =>
+    `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+  ).join('');
+  const files: Record<string, Uint8Array> = {
+    '[Content_Types].xml': new TextEncoder().encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheetOverrides}</Types>`
+    ),
+    '_rels/.rels': new TextEncoder().encode(
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'
+    ),
+    'xl/workbook.xml': new TextEncoder().encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheetReferences}</sheets></workbook>`
+    ),
+    'xl/_rels/workbook.xml.rels': new TextEncoder().encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheetRelationships}</Relationships>`
+    )
+  };
+  sheets.forEach((sheet, index) => {
+    files[`xl/worksheets/sheet${index + 1}.xml`] = new TextEncoder().encode(worksheetXml(sheet.rows));
+  });
+
+  const archive = zipSync(files);
+  const buffer = archive.buffer.slice(archive.byteOffset, archive.byteOffset + archive.byteLength) as ArrayBuffer;
+  const objectUrl = URL.createObjectURL(new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  }));
+  const downloadLink = document.createElement('a');
+  downloadLink.href = objectUrl;
+  downloadLink.download = fileName;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+};
+
 export const TransportPaymentsScreen: React.FC = () => {
   const {
     commodities,
@@ -67,7 +180,6 @@ export const TransportPaymentsScreen: React.FC = () => {
     transporters,
     orders,
     currentUser,
-    refreshData,
     showToast,
     transportGet,
     navigate
@@ -80,7 +192,6 @@ export const TransportPaymentsScreen: React.FC = () => {
   const [billingFirmFilter, setBillingFirmFilter] = useState('ALL');
   const [currentPageNum, setCurrentPageNum] = useState(1);
   const pageSize = 100;
-  const [reloadSequence, setReloadSequence] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [serverPage, setServerPage] = useState<PaginatedTransportsResult>({
@@ -92,9 +203,10 @@ export const TransportPaymentsScreen: React.FC = () => {
   });
   const [drafts, setDrafts] = useState<Record<string, PaymentDraft>>({});
   const [exportPaymentDrafts, setExportPaymentDrafts] = useState<Record<string, ExportPaymentDraft>>({});
-  const [pendingSubmit, setPendingSubmit] = useState<Transport | null>(null);
+  const [submittedRows, setSubmittedRows] = useState<Record<string, SubmittedPaymentRow>>({});
   const [pendingEdit, setPendingEdit] = useState<Transport | null>(null);
   const [printTransport, setPrintTransport] = useState<Transport | null>(null);
+  const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
   const [billingFirmOptions, setBillingFirmOptions] = useState<TransportClientOption[]>([]);
   const [logoSourceIndex, setLogoSourceIndex] = useState(0);
   const [resolvedLogoSource, setResolvedLogoSource] = useState('');
@@ -132,7 +244,6 @@ export const TransportPaymentsScreen: React.FC = () => {
     billingFirmFilter,
     currentPageNum,
     pageSize,
-    reloadSequence,
     clients,
     commodities,
     orders,
@@ -147,15 +258,65 @@ export const TransportPaymentsScreen: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
+  const isPendingTab = activeStatus === 'PENDING';
   const commodityMap = useMemo(() => new Map(commodities.map(item => [item.id, item])), [commodities]);
   const clientMap = useMemo(() => new Map(clients.map(item => [item.id, item.name])), [clients]);
   const transporterMap = useMemo(() => new Map(transporters.map(item => [item.id, item.name])), [transporters]);
+  const exportableTransports = useMemo(() => isPendingTab
+    ? serverPage.results.filter(transport => {
+      const submittedRow = submittedRows[transport.id];
+      return submittedRow?.exportLocked && submittedRow.exportPaymentDraft.amount > 0;
+    })
+    : [], [isPendingTab, serverPage.results, submittedRows]);
   const logoClient = printTransport ? clients.find(client => client.id === printTransport.billingFirmId) : undefined;
   const logoFirmOption = printTransport ? billingFirmOptions.find(client => client.id === printTransport.billingFirmId) : undefined;
   const logoSources = [logoClient?.imageUrl, logoFirmOption?.imageUrl, logoClient?.image, logoClient?.profile_picture, logoFirmOption?.image]
     .map(getImageSource)
     .filter((source, index, sources) => source && sources.indexOf(source) === index);
   const activeLogoSource = logoSources[logoSourceIndex] || '';
+
+  const exportPaymentsToExcel = () => {
+    if (exportableTransports.length === 0) return;
+
+    try {
+      const rowsByBillingFirm = new Map<string, Transport[]>();
+      exportableTransports.forEach(transport => {
+        const billingFirmName = transport.billingFirmName || clientMap.get(transport.billingFirmId) || 'Billing Firm';
+        const transports = rowsByBillingFirm.get(billingFirmName) || [];
+        transports.push(transport);
+        rowsByBillingFirm.set(billingFirmName, transports);
+      });
+
+      const existingSheetNames = new Set<string>();
+      const sheets = Array.from(rowsByBillingFirm, ([billingFirmName, transports]) => {
+        const rows = transports.map(transport => {
+          const bank = transport.transporterBank;
+          const submittedExportAmount = submittedRows[transport.id].exportPaymentDraft.amount;
+          const referenceNumber = `B${transport.billNumber}${transport.vehicleNumber}`.toUpperCase();
+          const row: (string | number)[] = Array(28).fill('');
+          row[0] = String(bank?.transactionType || '').toUpperCase();
+          row[2] = String(bank?.accountNumber || '').toUpperCase();
+          row[3] = submittedExportAmount;
+          row[4] = String(bank?.accountName || '').toUpperCase();
+          row[12] = referenceNumber;
+          row[13] = referenceNumber;
+          row[22] = formatExportDate(new Date());
+          row[24] = String(bank?.ifscCode || '').toUpperCase();
+          row[25] = String(bank?.bank || '').toUpperCase();
+          row[26] = String(bank?.branch || '').toUpperCase();
+          row[27] = String(bank?.email || '').toLowerCase();
+          return row;
+        });
+        return { name: createSheetName(billingFirmName, existingSheetNames), rows };
+      });
+
+      const today = new Date();
+      const dateStamp = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+      downloadXlsx(sheets, `Transport_Payments_${dateStamp}.xlsx`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to export transport payments', 'error');
+    }
+  };
 
   useEffect(() => {
     if (!activeLogoSource) {
@@ -245,7 +406,6 @@ export const TransportPaymentsScreen: React.FC = () => {
   };
 
   const totalPages = serverPage.totalPages || 1;
-  const isPendingTab = activeStatus === 'PENDING';
   const statusFilterItems = [
     { value: 'DRAFT' as const, label: 'Draft', active: 'bg-slate-200 text-slate-900 border-slate-400 ring-2 ring-slate-400/30', idle: 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200/60', dot: 'bg-slate-400 border-slate-500' },
     { value: 'PENDING' as const, label: 'Pending', active: 'bg-amber-100 text-amber-900 border-amber-300 ring-2 ring-amber-400/30', idle: 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/60', dot: 'bg-amber-500 border-amber-600' },
@@ -254,9 +414,7 @@ export const TransportPaymentsScreen: React.FC = () => {
     { value: 'PAID' as const, label: 'Paid', active: 'bg-emerald-100 text-emerald-900 border-emerald-300 ring-2 ring-emerald-400/30', idle: 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/60', dot: 'bg-emerald-500 border-emerald-600' }
   ];
 
-  const savePayment = async () => {
-    if (!pendingSubmit) return;
-    const transport = pendingSubmit;
+  const savePayment = async (transport: Transport) => {
     const currentDraft = getDraft(transport);
     const draft = isPendingTab
       ? currentDraft
@@ -281,18 +439,14 @@ export const TransportPaymentsScreen: React.FC = () => {
         finalPaid: paymentAmounts.finalPaid,
         notes: draft.notes
       });
-      setDrafts(previous => ({
+      setSubmittedRows(previous => ({
         ...previous,
-        [transport.id]: { ...draft, ...paymentAmounts }
+        [transport.id]: {
+          draft,
+          exportPaymentDraft,
+          exportLocked: isPendingTab
+        }
       }));
-      setExportPaymentDrafts(previous => {
-        const next = { ...previous };
-        delete next[transport.id];
-        return next;
-      });
-      await refreshData();
-      setReloadSequence(sequence => sequence + 1);
-      setPendingSubmit(null);
       showToast(`Payment saved for ${transport.billNumber}`, 'success');
     } catch (error: any) {
       showToast(error.message || 'Failed to save transport payment', 'error');
@@ -350,6 +504,15 @@ export const TransportPaymentsScreen: React.FC = () => {
             <FilterX className="h-3.5 w-3.5" /> Reset
           </button>
         )}
+        <button
+          type="button"
+          disabled={exportableTransports.length === 0}
+          onClick={exportPaymentsToExcel}
+          className="inline-flex items-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          <FileSpreadsheet className="h-3.5 w-3.5" />
+          Export to Excel
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs">
@@ -413,12 +576,20 @@ export const TransportPaymentsScreen: React.FC = () => {
               <tr><td colSpan={isPendingTab ? 20 : 19} className="py-10 text-center text-xs text-slate-500">No transport payments match these filters.</td></tr>
             ) : filteredTransports.map(transport => {
               const draft = getDraft(transport);
+              const submittedRow = submittedRows[transport.id];
+              const exportPaymentDraft = getExportPaymentDraft(transport);
+              const baselineDraft = submittedRow?.draft || draftFromTransport(transport);
+              const baselineExportPaymentDraft = submittedRow?.exportPaymentDraft || { amount: 0, mode: 'advance' as const };
+              const hasChanges = isPendingTab
+                ? !paymentDraftsEqual(draft, baselineDraft)
+                  || !exportPaymentDraftsEqual(exportPaymentDraft, baselineExportPaymentDraft)
+                : draft.status !== baselineDraft.status;
+              const exportLocked = submittedRow?.exportLocked === true;
               const gross = Number(transport.grossWeight) || 0;
               const received = Number(draft.receivedWeight) || 0;
               const differenceQtl = quantityToQuintals(received - gross, transport.grossWeightUnit);
               const billableQuantity = received > 0 ? Math.min(gross, received) : gross;
               const totalRent = Math.trunc(draft.rentType === 'per_unit' ? billableQuantity * draft.rent : draft.rent);
-              const exportPaymentDraft = getExportPaymentDraft(transport);
               const paymentAmounts = effectivePaymentAmounts(draft, exportPaymentDraft);
               const left = totalRent - draft.advanceByClient - paymentAmounts.advanceByFirm - draft.shortageAmount - paymentAmounts.finalPaid + draft.extraAmount;
               const party = clientMap.get(transport.billingFirmId) || '-';
@@ -432,7 +603,10 @@ export const TransportPaymentsScreen: React.FC = () => {
                 : formattedLoadingDate;
               const from = clientMap.get(transport.fromClientId) || '-';
               const to = clientMap.get(transport.toClientId) || '-';
-              const rowColor = draft.status === 'PENDING'
+              const isFocusedRow = focusedRowId === transport.id;
+              const rowColor = isFocusedRow
+                ? 'bg-sky-100 hover:bg-sky-100'
+                : draft.status === 'PENDING'
                 ? 'bg-amber-50/50 hover:bg-amber-100/60'
                 : draft.status === 'DRAFT'
                 ? 'bg-slate-50 hover:bg-slate-100'
@@ -441,7 +615,9 @@ export const TransportPaymentsScreen: React.FC = () => {
                 : draft.status === 'FINANCE'
                 ? 'bg-purple-50/50 hover:bg-purple-100/60'
                 : 'bg-emerald-50/50 hover:bg-emerald-100/60';
-              const stickyRowColor = draft.status === 'PENDING'
+              const stickyRowColor = isFocusedRow
+                ? 'bg-sky-100'
+                : draft.status === 'PENDING'
                 ? 'bg-amber-50'
                 : draft.status === 'DRAFT'
                 ? 'bg-slate-50'
@@ -450,6 +626,17 @@ export const TransportPaymentsScreen: React.FC = () => {
                 : draft.status === 'FINANCE'
                 ? 'bg-purple-50'
                 : 'bg-emerald-50';
+              const stickyRowHoverColor = isFocusedRow
+                ? 'group-hover:bg-sky-100'
+                : draft.status === 'PENDING'
+                ? 'group-hover:bg-amber-100/60'
+                : draft.status === 'DRAFT'
+                ? 'group-hover:bg-slate-100'
+                : draft.status === 'DELIVERY'
+                ? 'group-hover:bg-blue-100'
+                : draft.status === 'FINANCE'
+                ? 'group-hover:bg-purple-100/60'
+                : 'group-hover:bg-emerald-100/60';
               const statusSelectColor = draft.status === 'PENDING'
                 ? 'border-amber-300 bg-amber-50 text-amber-900'
                 : draft.status === 'DRAFT'
@@ -460,8 +647,17 @@ export const TransportPaymentsScreen: React.FC = () => {
                 ? 'border-purple-300 bg-purple-50 text-purple-900'
                 : 'border-emerald-300 bg-emerald-50 text-emerald-900';
               return (
-                <tr key={transport.id} className={`align-top ${rowColor}`}>
-                  <td className={`sticky left-0 z-10 px-1 py-2 text-center ${stickyRowColor}`}>
+                <tr
+                  key={transport.id}
+                  className={`group align-top ${rowColor} ${isFocusedRow ? '[&>td]:bg-sky-100 [&>td]:border-y [&>td]:border-sky-200' : ''}`}
+                  onFocusCapture={() => setFocusedRowId(transport.id)}
+                  onBlurCapture={event => {
+                    if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) {
+                      setFocusedRowId(null);
+                    }
+                  }}
+                >
+                  <td className={`sticky left-0 z-10 px-1 py-2 text-center ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="flex items-center justify-center gap-0.5">
                     <button type="button" title="Edit transport" aria-label={`Edit transport ${transport.billNumber}`} onClick={() => setPendingEdit(transport)} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
                       <Edit2 className="h-3.5 w-3.5" />
@@ -471,23 +667,23 @@ export const TransportPaymentsScreen: React.FC = () => {
                     </button>
                     </div>
                   </td>
-                  <td className={`sticky left-[62px] z-10 whitespace-nowrap px-2 py-2 text-slate-600 ${stickyRowColor}`} title={formattedLoadingDate}>
+                  <td className={`sticky left-[62px] z-10 whitespace-nowrap px-2 py-2 text-slate-600 ${stickyRowColor} ${stickyRowHoverColor}`} title={formattedLoadingDate}>
                     <div className="w-full">{loadingDateLabel}</div>
                     {loadingYear && <div className="w-full">{loadingYear}</div>}
                   </td>
-                  <td className={`sticky left-[107px] z-10 px-1 py-2 ${stickyRowColor}`}>
+                  <td className={`sticky left-[107px] z-10 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="font-mono font-semibold text-slate-900">{transport.billNumber}</div>
                     <div className="truncate text-[10px] text-slate-500" title={party}>{displayedParty}</div>
                   </td>
-                  <td className={`sticky left-[202px] z-10 px-1 py-2 ${stickyRowColor}`}>
+                  <td className={`sticky left-[202px] z-10 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="truncate font-mono text-slate-800" title={transport.vehicleNumber}>{transport.vehicleNumber}</div>
                     <div className="truncate text-[10px] text-slate-500" title={carrier}>{displayedCarrier}</div>
                   </td>
-                  <td className={`sticky left-[282px] z-10 px-1 py-2 ${stickyRowColor}`}>
+                  <td className={`sticky left-[282px] z-10 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="truncate text-slate-700" title={from}>{from}</div>
                     <div className="truncate text-[10px] text-slate-500" title={to}>→ {to}</div>
                   </td>
-                  <td className={`sticky left-[372px] z-10 whitespace-nowrap px-1 py-2 text-right font-semibold tabular-nums text-slate-800 ${stickyRowColor}`}>
+                  <td className={`sticky left-[372px] z-10 whitespace-nowrap px-1 py-2 text-right font-semibold tabular-nums text-slate-800 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     {formatQuantityWithUnit(gross, transport.grossWeightUnit)}
                   </td>
                   <td className="px-2 py-2 text-right">
@@ -526,10 +722,10 @@ export const TransportPaymentsScreen: React.FC = () => {
                   {isPendingTab && <td className="px-1 py-2">
                     <div className="flex items-center gap-1">
                       <div className="inline-flex shrink-0 rounded border border-slate-200 bg-slate-100 p-0.5">
-                        <button type="button" aria-pressed={exportPaymentDraft.mode === 'advance'} onClick={() => updateExportPaymentDraft(transport, { mode: 'advance' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold ${exportPaymentDraft.mode === 'advance' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Adv</button>
-                        <button type="button" aria-pressed={exportPaymentDraft.mode === 'paid'} onClick={() => updateExportPaymentDraft(transport, { mode: 'paid' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold ${exportPaymentDraft.mode === 'paid' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Paid</button>
+                        <button type="button" disabled={exportLocked || savingId === transport.id} aria-pressed={exportPaymentDraft.mode === 'advance'} onClick={() => updateExportPaymentDraft(transport, { mode: 'advance' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold disabled:cursor-not-allowed ${exportPaymentDraft.mode === 'advance' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Adv</button>
+                        <button type="button" disabled={exportLocked || savingId === transport.id} aria-pressed={exportPaymentDraft.mode === 'paid'} onClick={() => updateExportPaymentDraft(transport, { mode: 'paid' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold disabled:cursor-not-allowed ${exportPaymentDraft.mode === 'paid' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Paid</button>
                       </div>
-                      <DecimalInput aria-label="Export amount" value={exportPaymentDraft.amount} onChange={amount => updateExportPaymentDraft(transport, { amount })} className={`w-[72px] shrink-0 rounded px-1 py-1 text-right text-[11px] tabular-nums text-slate-900 ${exportPaymentDraft.amount > 0 ? 'border-2 border-green-600' : 'border border-slate-300'}`} />
+                      <DecimalInput aria-label="Export amount" value={exportPaymentDraft.amount} onChange={amount => updateExportPaymentDraft(transport, { amount })} disabled={exportLocked || savingId === transport.id} className={`w-[72px] shrink-0 rounded px-1 py-1 text-right text-[11px] tabular-nums disabled:cursor-not-allowed ${exportLocked ? 'border-2 border-green-600 bg-green-50 text-green-800' : exportPaymentDraft.amount > 0 ? 'border-2 border-green-600 text-slate-900' : 'border border-slate-300 text-slate-900'}`} />
                     </div>
                   </td>}
                   <td className="px-2 py-2"><input aria-label="Payment notes" value={draft.notes} onChange={event => updateDraft(transport, { notes: event.target.value })} disabled={!isPendingTab} className="w-full min-w-[150px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
@@ -543,8 +739,8 @@ export const TransportPaymentsScreen: React.FC = () => {
                     </select>
                   </td>
                   <td className="px-1 py-2">
-                    <button type="button" disabled={savingId === transport.id} onClick={() => setPendingSubmit(transport)} className="w-full rounded bg-slate-900 px-1 py-1.5 text-[9px] font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
-                      {savingId === transport.id ? 'Saving...' : 'Submit'}
+                    <button type="button" disabled={savingId === transport.id || !hasChanges} onClick={() => void savePayment(transport)} className={`w-full rounded px-1 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${submittedRow && !hasChanges ? 'bg-emerald-700 hover:bg-emerald-700' : 'bg-slate-900 hover:bg-slate-700'}`}>
+                      {savingId === transport.id ? 'Saving...' : submittedRow && !hasChanges ? 'Submitted' : 'Submit'}
                     </button>
                   </td>
                 </tr>
@@ -680,15 +876,6 @@ export const TransportPaymentsScreen: React.FC = () => {
         );
       })()}
 
-      <ConfirmationModal
-        isOpen={Boolean(pendingSubmit)}
-        title="Submit transport payment changes?"
-        message={`This saves payment details for ${pendingSubmit?.billNumber || 'this consignment'} with the selected status.`}
-        confirmLabel="Submit Changes"
-        variant="primary"
-        onConfirm={() => void savePayment()}
-        onCancel={() => setPendingSubmit(null)}
-      />
       <ConfirmationModal
         isOpen={Boolean(pendingEdit)}
         title="Leave payments and edit transport?"

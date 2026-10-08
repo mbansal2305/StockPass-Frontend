@@ -1,4 +1,4 @@
-import { BusinessClient, Commodity, Order, QuantityUnit, Transport, TransportItem, TransportRentType, TransportStatus, Transporter } from '../types';
+import { BusinessClient, Commodity, Order, QuantityUnit, Transport, TransportBankDetails, TransportItem, TransportRentType, TransportStatus, Transporter } from '../types';
 import { apiClient } from './client';
 import { transformBackendOrderToFrontend } from './orders';
 import { roundToTwoDecimals } from '../utils/numbers';
@@ -175,16 +175,30 @@ export function transformBackendTransport(raw: any, lookups: TransportLookups = 
       orderEntryQuantity: Number(item.order_entry ?? item.orderEntryQuantity ?? 0)
     };
   });
+  const rawTransporterBank = raw?.transporter_bank ?? raw?.transporterBank;
+  const transporterBank: TransportBankDetails | null = rawTransporterBank && typeof rawTransporterBank === 'object'
+    ? {
+      transactionType: rawTransporterBank.transaction_type ?? rawTransporterBank.transactionType,
+      accountNumber: rawTransporterBank.account_number ?? rawTransporterBank.accountNumber,
+      accountName: rawTransporterBank.account_name ?? rawTransporterBank.accountName,
+      ifscCode: rawTransporterBank.ifsc_code ?? rawTransporterBank.ifscCode,
+      bank: rawTransporterBank.bank,
+      branch: rawTransporterBank.branch,
+      email: rawTransporterBank.email
+    }
+    : null;
 
   return {
     id: String(raw?.id ?? raw?.pk ?? ''),
     billNumber: String(raw?.bill_no ?? raw?.bill_number ?? raw?.billNumber ?? ''),
     billingFirmId: relationId(raw?.billing_firm ?? raw?.billingFirmId, lookups.clients),
+    billingFirmName: raw?.billing_firm?.name ?? raw?.billing_firm_name ?? raw?.billingFirmName ?? undefined,
     commodityId: relationId(raw?.commodity ?? raw?.commodityId, lookups.commodities),
     fromClientId: relationId(raw?.from_client ?? raw?.fromClientId, lookups.clients),
     toClientId: relationId(raw?.to_client ?? raw?.toClientId, lookups.clients),
     vehicleNumber: String(raw?.vehicle_no ?? raw?.vehicle_number ?? raw?.vehicleNumber ?? ''),
     transporterId: relationId(raw?.transporter ?? raw?.transporterId, lookups.transporters),
+    transporterBank,
     grossWeight: Number(raw?.gross_wt ?? raw?.gross_weight ?? raw?.grossWeight ?? 0),
     grossWeightUnit: (raw?.gross_wt_unit ?? raw?.grossWeightUnit ?? 'mt') as QuantityUnit,
     bagNumbers: Number(raw?.bag_nos ?? raw?.bag_numbers ?? raw?.bagNumbers ?? 0),

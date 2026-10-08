@@ -240,15 +240,27 @@ export interface TransportItem {
 export type TransportStatus = 'DRAFT' | 'PENDING' | 'DELIVERY' | 'FINANCE' | 'PAID';
 export type TransportRentType = 'fix' | 'per_unit';
 
+export interface TransportBankDetails {
+  transactionType?: string;
+  accountNumber?: string;
+  accountName?: string;
+  ifscCode?: string;
+  bank?: string;
+  branch?: string;
+  email?: string;
+}
+
 export interface Transport {
   id: string;
   billNumber: string;
   billingFirmId: string;
+  billingFirmName?: string;
   commodityId: string;
   fromClientId: string;
   toClientId: string;
   vehicleNumber: string;
   transporterId: string;
+  transporterBank?: TransportBankDetails | null;
   grossWeight: number; // Value in grossWeightUnit
   grossWeightUnit?: QuantityUnit;
   bagNumbers?: number;
