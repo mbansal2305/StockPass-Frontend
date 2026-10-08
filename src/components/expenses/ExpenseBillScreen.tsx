@@ -27,6 +27,7 @@ interface ExpenseAddition {
 interface ExpenseBill {
   firmId: string;
   includeFirmAddress: boolean;
+  weightUnit: 'Qtl' | 'Mt' | 'Kg';
   billNumber: string;
   clientId: string;
   transporterId: string;
@@ -68,6 +69,8 @@ const numericValue = (value: string): number => value.trim() ? Number(value) || 
 const roundedInteger = (value: number): number => Math.round(value);
 const displayNumber = (value: number, fractionDigits = 2): string =>
   value.toLocaleString('en-IN', { maximumFractionDigits: fractionDigits });
+const formatClientType = (type: string): string =>
+  type.split('_').filter(Boolean).map(part => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`).join(' ');
 
 const calculateBillTotals = (items: ExpenseItem[], additions: ExpenseAddition[]) => {
   const totalBags = items.reduce((sum, item) => sum + numericValue(item.bags), 0);
@@ -106,6 +109,7 @@ const createInitialBill = (): ExpenseBill => {
   return {
     firmId: '',
     includeFirmAddress: false,
+    weightUnit: 'Qtl',
     billNumber: '',
     clientId: '',
     transporterId: '',
@@ -155,7 +159,7 @@ const ExpenseBillPreview: React.FC<{
     calculateBillTotals(bill.items, bill.additions);
   const additions = bill.additions.filter(item => item.custom || item.type !== commissionType);
   const commission = bill.additions.find(item => !item.custom && item.type === commissionType);
-  const ratePerQuintal = totalNetWeight ? grandTotal / totalNetWeight : 0;
+  const ratePerUnit = totalNetWeight ? grandTotal / totalNetWeight : 0;
   const netWeight = bill.grossWeight || bill.bardanWeight
     ? numericValue(bill.grossWeight) - numericValue(bill.bardanWeight)
     : null;
@@ -204,16 +208,16 @@ const ExpenseBillPreview: React.FC<{
             <p className="flex justify-between gap-3"><span className="font-semibold">Driver Contact:</span><span className="text-right">{bill.driverContact || '-'}</span></p>
           </div>
           <div className="w-full space-y-2 border border-slate-300 p-3">
-            <p className="flex justify-between gap-3"><span className="font-semibold">Gross weight:</span><span className="text-right">{bill.grossWeight || '-'}</span></p>
-            <p className="flex justify-between gap-3"><span className="font-semibold">Bardan weight:</span><span className="text-right">{bill.bardanWeight || '-'}</span></p>
-            <p className="flex justify-between gap-3"><span className="font-semibold">Net weight:</span><span className="text-right">{netWeight === null ? '-' : displayNumber(netWeight)}</span></p>
+            <p className="flex justify-between gap-3"><span className="font-semibold">Gross weight ({bill.weightUnit}):</span><span className="text-right">{bill.grossWeight || '-'}</span></p>
+            <p className="flex justify-between gap-3"><span className="font-semibold">Bardan weight ({bill.weightUnit}):</span><span className="text-right">{bill.bardanWeight || '-'}</span></p>
+            <p className="flex justify-between gap-3"><span className="font-semibold">Net weight ({bill.weightUnit}):</span><span className="text-right">{netWeight === null ? '-' : displayNumber(netWeight)}</span></p>
           </div>
         </section>
 
         <table className="mb-2 w-full table-fixed border-collapse text-xs">
           <thead>
             <tr className="bg-slate-100 text-left">
-              {['Date', 'Product / Description', 'Bags', 'Net Wt', 'Rate', 'Amount'].map(label => (
+              {['Date', 'Product / Description', 'Bags', `Net Wt (${bill.weightUnit})`, 'Rate', 'Amount'].map(label => (
                 <th key={label} className="border border-slate-700 px-2 py-2 font-bold">{label}</th>
               ))}
             </tr>
@@ -272,7 +276,7 @@ const ExpenseBillPreview: React.FC<{
               </p>
             )}
             <p className="border-t border-slate-400 pt-1 text-base font-bold">Grand Total: {displayNumber(grandTotal)}</p>
-            <p className="font-semibold">Rate: {displayNumber(ratePerQuintal)}</p>
+            <p className="font-semibold">Rate / {bill.weightUnit}: {displayNumber(ratePerUnit)}</p>
           </div>
         </section>
       </article>
@@ -320,7 +324,12 @@ export const ExpenseBillScreen: React.FC = () => {
   const clientOptions: SearchableOption[] = useMemo(
     () => clients.map(client => ({
       id: client.id,
-      label: [client.name, client.type, client.maanNo, client.city].filter(Boolean).join(' · '),
+      label: [
+        client.name,
+        client.maanNo,
+        client.city,
+        client.type ? `(${formatClientType(client.type)})` : ''
+      ].filter(Boolean).join(' · '),
       searchText: `${client.name} ${client.type} ${client.maanNo} ${client.city}`
     })),
     [clients]
@@ -481,13 +490,37 @@ export const ExpenseBillScreen: React.FC = () => {
             </label>
           </div>
           <div className="space-y-4">
-            <label className="block text-xs font-semibold text-slate-600">Gross Weight
-              <DecimalField label="Gross weight" value={bill.grossWeight} onChange={value => setBill(current => ({ ...current, grossWeight: value }))} className="mt-1.5" />
+            <label className="block text-xs font-semibold text-slate-600">Gross Weight ({bill.weightUnit})
+              <div className="mt-1.5 flex items-center gap-2">
+                <DecimalField
+                  label={`Gross weight (${bill.weightUnit})`}
+                  value={bill.grossWeight}
+                  onChange={value => setBill(current => ({ ...current, grossWeight: value }))}
+                  className="min-w-0 flex-1"
+                />
+                <div role="group" aria-label="Weight unit" className="inline-flex shrink-0 rounded-md border border-slate-300 bg-slate-50 p-0.5">
+                  {(['Qtl', 'Mt', 'Kg'] as const).map(unit => (
+                    <button
+                      key={unit}
+                      type="button"
+                      aria-pressed={bill.weightUnit === unit}
+                      onClick={() => setBill(current => ({ ...current, weightUnit: unit }))}
+                      className={`rounded px-2 py-2 text-[11px] font-semibold transition-colors ${
+                        bill.weightUnit === unit
+                          ? 'bg-slate-900 text-white shadow-sm'
+                          : 'text-slate-600 hover:bg-white'
+                      }`}
+                    >
+                      {unit}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </label>
-            <label className="block text-xs font-semibold text-slate-600">Bardan Weight
-              <DecimalField label="Bardan weight" value={bill.bardanWeight} onChange={value => setBill(current => ({ ...current, bardanWeight: value }))} className="mt-1.5" />
+            <label className="block text-xs font-semibold text-slate-600">Bardan Weight ({bill.weightUnit})
+              <DecimalField label={`Bardan weight (${bill.weightUnit})`} value={bill.bardanWeight} onChange={value => setBill(current => ({ ...current, bardanWeight: value }))} className="mt-1.5" />
             </label>
-            <div className="text-xs font-semibold text-slate-600">Net Weight
+            <div className="text-xs font-semibold text-slate-600">Net Weight ({bill.weightUnit})
               <div className="mt-1.5 flex h-[38px] items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 text-sm text-slate-800">{netWeight === null ? '' : displayNumber(netWeight)}</div>
             </div>
           </div>
@@ -520,7 +553,7 @@ export const ExpenseBillScreen: React.FC = () => {
               <th className="border border-slate-200 px-2 py-2">Date</th>
               <th className="border border-slate-200 px-2 py-2">Product</th>
               <th className="border border-slate-200 px-2 py-2">Bags</th>
-              <th className="border border-slate-200 px-2 py-2">Net Wt</th>
+              <th className="border border-slate-200 px-2 py-2">Net Wt ({bill.weightUnit})</th>
               <th className="border border-slate-200 px-2 py-2">Rate</th>
               <th className="border border-slate-200 px-2 py-2 text-right">Amount</th>
               <th className="border border-slate-200 px-2 py-2"><span className="sr-only">Remove</span></th>
@@ -652,7 +685,7 @@ export const ExpenseBillScreen: React.FC = () => {
               </div>
             )}
             <p className="text-base font-bold text-slate-900">Grand Total <strong className="ml-4">{displayNumber(grandTotal)}</strong></p>
-            <p className="font-semibold text-slate-700">Rate<strong className="ml-4 text-slate-900">{displayNumber(totalNetWeight ? grandTotal / totalNetWeight : 0)}</strong></p>
+            <p className="font-semibold text-slate-700">Rate / {bill.weightUnit}<strong className="ml-4 text-slate-900">{displayNumber(totalNetWeight ? grandTotal / totalNetWeight : 0)}</strong></p>
           </div>
         </div>
       </section>

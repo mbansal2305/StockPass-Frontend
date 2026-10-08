@@ -41,6 +41,7 @@ export type NavigationPage =
   | 'bulk-transport'
   | 'master-data'
   | 'expenses'
+  | 'bill-hisaab'
   | 'employees';
 
 export interface ToastMessage {

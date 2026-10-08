@@ -7,6 +7,7 @@ import {
   Truck,
   WalletCards,
   ReceiptText,
+  FileText,
   Layers,
   Database,
   Users,
@@ -58,6 +59,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
       case 'bulk-transport': return 'Bulk Transport Dispatch';
       case 'master-data': return 'Master Data Repository';
       case 'expenses': return 'Expense Bills';
+      case 'bill-hisaab': return 'Bill Hisaab';
       case 'employees': return 'Employee Management & Access Control';
       default: return 'Dashboard';
     }
@@ -77,7 +79,8 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
         { id: 'transport' as NavigationPage, label: 'Transport', icon: Truck },
         { id: 'transport-payments' as NavigationPage, label: 'Transport Payments', icon: WalletCards },
         { id: 'bulk-transport-list' as NavigationPage, label: 'Bulk Transports', icon: Layers },
-        { id: 'expenses' as NavigationPage, label: 'Expenses', icon: ReceiptText }
+        { id: 'expenses' as NavigationPage, label: 'Expenses', icon: ReceiptText },
+        { id: 'bill-hisaab' as NavigationPage, label: 'Bill Hisaab', icon: FileText }
       ]
     },
     {

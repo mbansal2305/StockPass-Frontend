@@ -15,6 +15,7 @@ import { BulkTransportListScreen } from './components/transport/BulkTransportLis
 import { MasterDataScreen } from './components/master/MasterDataScreen';
 import { EmployeeScreen } from './components/employees/EmployeeScreen';
 import { ExpenseBillScreen } from './components/expenses/ExpenseBillScreen';
+import { BillHisaabScreen } from './components/bill-hisaab/BillHisaabScreen';
 
 const MainRouter: React.FC = () => {
   const { currentUser, currentPage } = useApp();
@@ -37,6 +38,7 @@ const MainRouter: React.FC = () => {
       {currentPage === 'bulk-transport' && <BulkTransportScreen />}
       {currentPage === 'master-data' && <MasterDataScreen />}
       {currentPage === 'expenses' && <ExpenseBillScreen />}
+      {currentPage === 'bill-hisaab' && <BillHisaabScreen />}
       {currentPage === 'employees' && <EmployeeScreen />}
     </AppShell>
   );

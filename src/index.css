@@ -39,6 +39,11 @@
     margin: 8mm;
   }
 
+  @page bill-hisaab {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
   body * {
     visibility: hidden !important;
   }
@@ -46,7 +51,9 @@
   .payment-bill-print-root,
   .payment-bill-print-root *,
   .expense-bill-print-root,
-  .expense-bill-print-root * {
+  .expense-bill-print-root *,
+  .bill-hisaab-print-root,
+  .bill-hisaab-print-root * {
     visibility: visible !important;
   }
 
@@ -80,6 +87,25 @@
   }
 
   .expense-bill-paper {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    border: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .bill-hisaab-print-root {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: white !important;
+    page: bill-hisaab;
+  }
+
+  .bill-hisaab-paper {
     width: 100% !important;
     max-width: none !important;
     margin: 0 !important;
