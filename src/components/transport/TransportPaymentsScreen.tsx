@@ -6,7 +6,7 @@ import { apiClient, PaginatedTransportsResult, TransportClientOption, transports
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
-import { Edit2, FileSpreadsheet, FilterX, Printer, Search, X } from 'lucide-react';
+import { Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, X } from 'lucide-react';
 import { getImageSource } from '../../utils/images';
 
 interface PaymentDraft {
@@ -192,6 +192,7 @@ export const TransportPaymentsScreen: React.FC = () => {
   const [billingFirmFilter, setBillingFirmFilter] = useState('ALL');
   const [currentPageNum, setCurrentPageNum] = useState(1);
   const pageSize = 100;
+  const [refreshSequence, setRefreshSequence] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [serverPage, setServerPage] = useState<PaginatedTransportsResult>({
@@ -207,6 +208,7 @@ export const TransportPaymentsScreen: React.FC = () => {
   const [pendingEdit, setPendingEdit] = useState<Transport | null>(null);
   const [printTransport, setPrintTransport] = useState<Transport | null>(null);
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [billingFirmOptions, setBillingFirmOptions] = useState<TransportClientOption[]>([]);
   const [logoSourceIndex, setLogoSourceIndex] = useState(0);
   const [resolvedLogoSource, setResolvedLogoSource] = useState('');
@@ -244,6 +246,7 @@ export const TransportPaymentsScreen: React.FC = () => {
     billingFirmFilter,
     currentPageNum,
     pageSize,
+    refreshSequence,
     clients,
     commodities,
     orders,
@@ -513,6 +516,16 @@ export const TransportPaymentsScreen: React.FC = () => {
           <FileSpreadsheet className="h-3.5 w-3.5" />
           Export to Excel
         </button>
+        <button
+          type="button"
+          aria-label={`Refresh ${activeStatus.toLowerCase()} transport payments`}
+          title={`Refresh ${activeStatus.toLowerCase()} transport payments`}
+          disabled={isLoading}
+          onClick={() => setRefreshSequence(sequence => sequence + 1)}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs">
@@ -604,8 +617,19 @@ export const TransportPaymentsScreen: React.FC = () => {
               const from = clientMap.get(transport.fromClientId) || '-';
               const to = clientMap.get(transport.toClientId) || '-';
               const isFocusedRow = focusedRowId === transport.id;
+              const isHoveredRow = hoveredRowId === transport.id;
               const rowColor = isFocusedRow
                 ? 'bg-sky-100 hover:bg-sky-100'
+                : isHoveredRow && draft.status === 'PENDING'
+                ? 'bg-amber-100/60 hover:bg-amber-100/60'
+                : isHoveredRow && draft.status === 'DRAFT'
+                ? 'bg-slate-100 hover:bg-slate-100'
+                : isHoveredRow && draft.status === 'DELIVERY'
+                ? 'bg-blue-100 hover:bg-blue-100'
+                : isHoveredRow && draft.status === 'FINANCE'
+                ? 'bg-purple-100/60 hover:bg-purple-100/60'
+                : isHoveredRow
+                ? 'bg-emerald-100/60 hover:bg-emerald-100/60'
                 : draft.status === 'PENDING'
                 ? 'bg-amber-50/50 hover:bg-amber-100/60'
                 : draft.status === 'DRAFT'
@@ -617,6 +641,16 @@ export const TransportPaymentsScreen: React.FC = () => {
                 : 'bg-emerald-50/50 hover:bg-emerald-100/60';
               const stickyRowColor = isFocusedRow
                 ? 'bg-sky-100'
+                : isHoveredRow && draft.status === 'PENDING'
+                ? 'bg-amber-100/60'
+                : isHoveredRow && draft.status === 'DRAFT'
+                ? 'bg-slate-100'
+                : isHoveredRow && draft.status === 'DELIVERY'
+                ? 'bg-blue-100'
+                : isHoveredRow && draft.status === 'FINANCE'
+                ? 'bg-purple-100/60'
+                : isHoveredRow
+                ? 'bg-emerald-100/60'
                 : draft.status === 'PENDING'
                 ? 'bg-amber-50'
                 : draft.status === 'DRAFT'
@@ -637,6 +671,27 @@ export const TransportPaymentsScreen: React.FC = () => {
                 : draft.status === 'FINANCE'
                 ? 'group-hover:bg-purple-100/60'
                 : 'group-hover:bg-emerald-100/60';
+              const stickyBackgroundColor = isFocusedRow
+                ? '#e0f2fe'
+                : isHoveredRow && draft.status === 'PENDING'
+                ? '#fef3c7'
+                : isHoveredRow && draft.status === 'DRAFT'
+                ? '#f1f5f9'
+                : isHoveredRow && draft.status === 'DELIVERY'
+                ? '#dbeafe'
+                : isHoveredRow && draft.status === 'FINANCE'
+                ? '#f3e8ff'
+                : isHoveredRow
+                ? '#d1fae5'
+                : draft.status === 'PENDING'
+                ? '#fffbeb'
+                : draft.status === 'DRAFT'
+                ? '#f8fafc'
+                : draft.status === 'DELIVERY'
+                ? '#eff6ff'
+                : draft.status === 'FINANCE'
+                ? '#faf5ff'
+                : '#ecfdf5';
               const statusSelectColor = draft.status === 'PENDING'
                 ? 'border-amber-300 bg-amber-50 text-amber-900'
                 : draft.status === 'DRAFT'
@@ -650,6 +705,8 @@ export const TransportPaymentsScreen: React.FC = () => {
                 <tr
                   key={transport.id}
                   className={`group align-top ${rowColor} ${isFocusedRow ? '[&>td]:bg-sky-100 [&>td]:border-y [&>td]:border-sky-200' : ''}`}
+                  onMouseEnter={() => setHoveredRowId(transport.id)}
+                  onMouseLeave={() => setHoveredRowId(null)}
                   onFocusCapture={() => setFocusedRowId(transport.id)}
                   onBlurCapture={event => {
                     if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) {
@@ -657,7 +714,7 @@ export const TransportPaymentsScreen: React.FC = () => {
                     }
                   }}
                 >
-                  <td className={`sticky left-0 z-10 px-1 py-2 text-center ${stickyRowColor} ${stickyRowHoverColor}`}>
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-0 z-20 px-1 py-2 text-center ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="flex items-center justify-center gap-0.5">
                     <button type="button" title="Edit transport" aria-label={`Edit transport ${transport.billNumber}`} onClick={() => setPendingEdit(transport)} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
                       <Edit2 className="h-3.5 w-3.5" />
@@ -667,23 +724,23 @@ export const TransportPaymentsScreen: React.FC = () => {
                     </button>
                     </div>
                   </td>
-                  <td className={`sticky left-[62px] z-10 whitespace-nowrap px-2 py-2 text-slate-600 ${stickyRowColor} ${stickyRowHoverColor}`} title={formattedLoadingDate}>
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[62px] z-20 whitespace-nowrap px-2 py-2 text-slate-600 ${stickyRowColor} ${stickyRowHoverColor}`} title={formattedLoadingDate}>
                     <div className="w-full">{loadingDateLabel}</div>
                     {loadingYear && <div className="w-full">{loadingYear}</div>}
                   </td>
-                  <td className={`sticky left-[107px] z-10 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[107px] z-20 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="font-mono font-semibold text-slate-900">{transport.billNumber}</div>
                     <div className="truncate text-[10px] text-slate-500" title={party}>{displayedParty}</div>
                   </td>
-                  <td className={`sticky left-[202px] z-10 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[202px] z-20 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="truncate font-mono text-slate-800" title={transport.vehicleNumber}>{transport.vehicleNumber}</div>
                     <div className="truncate text-[10px] text-slate-500" title={carrier}>{displayedCarrier}</div>
                   </td>
-                  <td className={`sticky left-[282px] z-10 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[282px] z-20 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="truncate text-slate-700" title={from}>{from}</div>
                     <div className="truncate text-[10px] text-slate-500" title={to}>→ {to}</div>
                   </td>
-                  <td className={`sticky left-[372px] z-10 whitespace-nowrap px-1 py-2 text-right font-semibold tabular-nums text-slate-800 ${stickyRowColor} ${stickyRowHoverColor}`}>
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[372px] z-20 whitespace-nowrap px-1 py-2 text-right font-semibold tabular-nums text-slate-800 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     {formatQuantityWithUnit(gross, transport.grossWeightUnit)}
                   </td>
                   <td className="px-2 py-2 text-right">
