@@ -141,6 +141,15 @@ const relationId = (value: any, entities: Array<{ id: string; name: string }> = 
   return entities.find(entity => entity.id === raw || entity.name.trim().toLowerCase() === normalized)?.id || raw;
 };
 
+const relationName = (value: any): string | undefined => {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'object') {
+    const name = value.name ?? value.label;
+    return name === undefined || name === null ? undefined : String(name);
+  }
+  return typeof value === 'string' ? value : undefined;
+};
+
 const normalizeStatus = (value: unknown): TransportStatus => {
   const status = String(value || '').toUpperCase();
   if (status === 'DRAFT' || status === 'DELIVERY' || status === 'FINANCE' || status === 'PAID') return status;
@@ -168,11 +177,20 @@ export function transformBackendTransport(raw: any, lookups: TransportLookups = 
   const items: TransportItem[] = rawItems.map((item: any) => {
     const orderValue = item.order_id ?? item.orderId ?? item.order ?? '';
     const orderId = relationId(orderValue, orders.map(order => ({ id: order.id, name: order.orderNumber })));
+    const orderSize = item.order_size ?? item.orderSize;
+    const orderSizeRemaining = item.order_size_rem ?? item.orderSizeRemaining;
     return {
       id: item.id === undefined || item.id === null ? undefined : Number(item.id),
       orderId,
       allocatedQuantity: Number(item.quantity ?? item.allocated_quantity ?? item.allocatedQuantity ?? 0),
-      orderEntryQuantity: Number(item.order_entry ?? item.orderEntryQuantity ?? 0)
+      orderEntryQuantity: Number(item.order_entry ?? item.orderEntryQuantity ?? 0),
+      orderNumber: item.order === undefined || item.order === null ? undefined : String(item.order),
+      orderType: item.order_type ?? item.orderType,
+      orderSize: orderSize === undefined ? undefined : Number(orderSize),
+      orderSizeUnit: item.order_size_unit ?? item.orderSizeUnit,
+      orderSizeRemaining: orderSizeRemaining === undefined ? undefined : Number(orderSizeRemaining),
+      orderCommodity: item.order_commodity ?? item.orderCommodity,
+      orderCommodityType: item.order_commodity_type ?? item.orderCommodityType
     };
   });
   const rawTransporterBank = raw?.transporter_bank ?? raw?.transporterBank;
@@ -191,13 +209,18 @@ export function transformBackendTransport(raw: any, lookups: TransportLookups = 
   return {
     id: String(raw?.id ?? raw?.pk ?? ''),
     billNumber: String(raw?.bill_no ?? raw?.bill_number ?? raw?.billNumber ?? ''),
-    billingFirmId: relationId(raw?.billing_firm ?? raw?.billingFirmId, lookups.clients),
-    billingFirmName: raw?.billing_firm?.name ?? raw?.billing_firm_name ?? raw?.billingFirmName ?? undefined,
-    commodityId: relationId(raw?.commodity ?? raw?.commodityId, lookups.commodities),
-    fromClientId: relationId(raw?.from_client ?? raw?.fromClientId, lookups.clients),
-    toClientId: relationId(raw?.to_client ?? raw?.toClientId, lookups.clients),
+    billingFirmId: relationId(raw?.billing_firm_id ?? raw?.billingFirmId ?? raw?.billing_firm, lookups.clients),
+    billingFirmName: relationName(raw?.billing_firm) ?? raw?.billing_firm_name ?? raw?.billingFirmName ?? undefined,
+    commodityId: relationId(raw?.commodity_id ?? raw?.commodityId ?? raw?.commodity, lookups.commodities),
+    commodityName: relationName(raw?.commodity) ?? raw?.commodity_name ?? raw?.commodityName ?? undefined,
+    commodityType: raw?.commodity_type ?? raw?.commodityType ?? undefined,
+    fromClientId: relationId(raw?.from_client_id ?? raw?.fromClientId ?? raw?.from_client, lookups.clients),
+    fromClientName: relationName(raw?.from_client) ?? raw?.from_client_name ?? raw?.fromClientName ?? undefined,
+    toClientId: relationId(raw?.to_client_id ?? raw?.toClientId ?? raw?.to_client, lookups.clients),
+    toClientName: relationName(raw?.to_client) ?? raw?.to_client_name ?? raw?.toClientName ?? undefined,
     vehicleNumber: String(raw?.vehicle_no ?? raw?.vehicle_number ?? raw?.vehicleNumber ?? ''),
-    transporterId: relationId(raw?.transporter ?? raw?.transporterId, lookups.transporters),
+    transporterId: relationId(raw?.transporter_id ?? raw?.transporterId ?? raw?.transporter, lookups.transporters),
+    transporterName: relationName(raw?.transporter) ?? raw?.transporter_name ?? raw?.transporterName ?? undefined,
     transporterBank,
     grossWeight: Number(raw?.gross_wt ?? raw?.gross_weight ?? raw?.grossWeight ?? 0),
     grossWeightUnit: (raw?.gross_wt_unit ?? raw?.grossWeightUnit ?? 'mt') as QuantityUnit,
@@ -668,7 +691,7 @@ export const transportsApi = {
     const form = new FormData();
     appendValue(form, 'id', numericId(id));
     appendValue(form, 'status', status.toLowerCase());
-    const response = await apiClient.patchForm<any>('/transports/upd', form);
+    const response = await apiClient.patchForm<any>('/transports/status/upd', form);
     return unwrapTransport(response, {});
   },
 

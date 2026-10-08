@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { QuantityUnit, Transport, TransportRentType, TransportStatus, TransportItem } from '../../types';
-import { TransportClientOption, transportsApi } from '../../api';
+import { masterApi, TransportClientOption, transportsApi } from '../../api';
 import {
   ArrowLeft,
   Save,
@@ -64,7 +64,7 @@ export const TransportFormScreen: React.FC = () => {
   } = useApp();
 
   const editingTransportId = pageParams.transportId;
-  const existingTransport = editingTransportId ? transports.find(t => t.id === editingTransportId) : null;
+  const existingTransport = editingTransportId ? transports.find(t => sameId(t.id, editingTransportId)) : null;
 
   // Context prefill from order if navigated via "Create Transport" button
   const prefillOrderId = pageParams.prefillOrderId;
@@ -111,10 +111,51 @@ export const TransportFormScreen: React.FC = () => {
   const [destinationReceiptFile, setDestinationReceiptFile] = useState<File | null>(null);
   const [billingFirms, setBillingFirms] = useState<TransportClientOption[]>([]);
   const [locations, setLocations] = useState<TransportClientOption[]>([]);
+  const [selectionCommodities, setSelectionCommodities] = useState(commodities);
   const [agencyOptions, setAgencyOptions] = useState(transporters);
   const [salesOrders, setSalesOrders] = useState(orders.filter(order => order.type === 'SALES ORDER'));
   const [purchaseOrders, setPurchaseOrders] = useState(orders.filter(order => order.type === 'PURCHASE ORDER'));
   const contractOrders = [...salesOrders, ...purchaseOrders];
+  const getFallbackOption = (id: string, name?: string, city?: string): TransportClientOption[] =>
+    id && !locations.some(location => sameId(location.id, id)) && name
+      ? [{ id, name, city }]
+      : [];
+  const billingFirmOptions = [
+    ...billingFirms,
+    ...(existingTransport?.billingFirmId && existingTransport.billingFirmName
+      && !billingFirms.some(firm => sameId(firm.id, existingTransport.billingFirmId))
+      ? [{ id: existingTransport.billingFirmId, name: existingTransport.billingFirmName }]
+      : [])
+  ];
+  const commodityOptions = [
+    ...selectionCommodities,
+    ...(existingTransport?.commodityId && existingTransport.commodityName
+      && !selectionCommodities.some(commodity => sameId(commodity.id, existingTransport.commodityId))
+      ? [{
+        id: existingTransport.commodityId,
+        name: existingTransport.commodityName,
+        type: existingTransport.commodityType || ''
+      }]
+      : [])
+  ];
+  const locationOptions = [
+    ...locations,
+    ...getFallbackOption(existingTransport?.fromClientId || '', existingTransport?.fromClientName),
+    ...getFallbackOption(existingTransport?.toClientId || '', existingTransport?.toClientName)
+  ];
+  const agencyOptionsWithFallback = [
+    ...agencyOptions,
+    ...(existingTransport?.transporterId && existingTransport.transporterName
+      && !agencyOptions.some(agency => sameId(agency.id, existingTransport.transporterId))
+      ? [{
+        id: existingTransport.transporterId,
+        name: existingTransport.transporterName,
+        agency: existingTransport.transporterName,
+        phone_number: '',
+        phone: ''
+      }]
+      : [])
+  ];
 
   const sourceClientName = locations.find(location => location.id === formData.fromClientId)?.name || 'Selected origin';
   const destinationClientName = locations.find(location => location.id === formData.toClientId)?.name || 'Selected destination';
@@ -134,8 +175,9 @@ export const TransportFormScreen: React.FC = () => {
       transportsApi.selectLocations(),
       transportsApi.selectAgencyOptions(),
       transportsApi.selectSalesOrders({ clients, commodities }),
-      transportsApi.selectPurchaseOrders({ clients, commodities })
-    ]).then(([firmsResult, locationsResult, agenciesResult, salesResult, purchasesResult]) => {
+      transportsApi.selectPurchaseOrders({ clients, commodities }),
+      masterApi.selectCommodities()
+    ]).then(([firmsResult, locationsResult, agenciesResult, salesResult, purchasesResult, commoditiesResult]) => {
       if (cancelled) return;
       const nextFirms = firmsResult.status === 'fulfilled' ? firmsResult.value : fallbackFirms;
       const nextLocations = locationsResult.status === 'fulfilled' ? locationsResult.value : fallbackLocations;
@@ -146,11 +188,13 @@ export const TransportFormScreen: React.FC = () => {
       const nextPurchaseOrders = purchasesResult.status === 'fulfilled'
         ? purchasesResult.value
         : orders.filter(order => order.type === 'PURCHASE ORDER');
+      const nextCommodities = commoditiesResult.status === 'fulfilled' ? commoditiesResult.value : commodities;
       setBillingFirms(nextFirms);
       setLocations(nextLocations);
       setAgencyOptions(nextAgencies);
       setSalesOrders(nextSalesOrders);
       setPurchaseOrders(nextPurchaseOrders);
+      setSelectionCommodities(nextCommodities);
       setFormData(current => ({
         ...current,
         billingFirmId: current.billingFirmId || nextFirms[0]?.id || '',
@@ -163,7 +207,7 @@ export const TransportFormScreen: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [clients, orders, transporters]);
+  }, [clients, commodities, orders, transporters]);
 
   useEffect(() => {
     if (existingTransport) {
@@ -303,29 +347,36 @@ export const TransportFormScreen: React.FC = () => {
     });
   };
 
+  const getItemOrderType = (item: TransportItem): 'SALES ORDER' | 'PURCHASE ORDER' | undefined => {
+    const apiType = item.orderType?.toLowerCase();
+    if (apiType?.includes('sales')) return 'SALES ORDER';
+    if (apiType?.includes('purchase')) return 'PURCHASE ORDER';
+    return undefined;
+  };
   const orderTypeById = new Map(contractOrdersForCommodity.map(order => [order.id.trim(), order.type]));
   const findOrderForItem = (orderId: string) => contractOrdersForCommodity.find(order => sameId(order.id, orderId));
-  const getOrderType = (orderId: string): 'SALES ORDER' | 'PURCHASE ORDER' | undefined => {
-    const normalizedId = String(orderId).trim();
+  const getOrderType = (item: TransportItem): 'SALES ORDER' | 'PURCHASE ORDER' | undefined => {
+    const normalizedId = String(item.orderId).trim();
     const directMatch = orderTypeById.get(normalizedId);
     if (directMatch) return directMatch;
-    return findOrderForItem(orderId)?.type === 'SALES ORDER' ? 'SALES ORDER'
-      : findOrderForItem(orderId)?.type === 'PURCHASE ORDER' ? 'PURCHASE ORDER'
-      : undefined;
+    const lookedUpType = findOrderForItem(item.orderId)?.type;
+    return lookedUpType === 'SALES ORDER' || lookedUpType === 'PURCHASE ORDER'
+      ? lookedUpType
+      : getItemOrderType(item);
   };
   const salesAllocated = items.reduce((sum, item) => {
-    return getOrderType(item.orderId) === 'SALES ORDER' ? sum + (Number(item.allocatedQuantity) || 0) : sum;
+    return getOrderType(item) === 'SALES ORDER' ? sum + (Number(item.allocatedQuantity) || 0) : sum;
   }, 0);
   const purchaseAllocated = items.reduce((sum, item) => {
-    return getOrderType(item.orderId) === 'PURCHASE ORDER' ? sum + (Number(item.allocatedQuantity) || 0) : sum;
+    return getOrderType(item) === 'PURCHASE ORDER' ? sum + (Number(item.allocatedQuantity) || 0) : sum;
   }, 0);
-  const hasSalesItems = items.some(item => getOrderType(item.orderId) === 'SALES ORDER');
-  const hasPurchaseItems = items.some(item => getOrderType(item.orderId) === 'PURCHASE ORDER');
+  const hasSalesItems = items.some(item => getOrderType(item) === 'SALES ORDER');
+  const hasPurchaseItems = items.some(item => getOrderType(item) === 'PURCHASE ORDER');
   const renderAllocationGroup = (orderType: 'SALES ORDER' | 'PURCHASE ORDER') => {
     const orderOptions = orderType === 'SALES ORDER' ? salesOrdersForCommodity : purchaseOrdersForCommodity;
     const groupItems = items
       .map((item, index) => ({ item, index }))
-      .filter(({ item }) => getOrderType(item.orderId) === orderType);
+      .filter(({ item }) => getOrderType(item) === orderType);
 
     return (
       <div className="space-y-3">
@@ -356,9 +407,15 @@ export const TransportFormScreen: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {groupItems.map(({ item, index }) => {
                   const order = findOrderForItem(item.orderId);
-                  const remaining = order?.remQuantity === undefined
+                  const remaining = order?.remQuantity !== undefined
+                    ? convertQuantityUnit(order.remQuantity, order.remQuantityUnit || 'mt', formData.grossWeightUnit)
+                    : item.orderSizeRemaining === undefined
                     ? undefined
-                    : convertQuantityUnit(order.remQuantity, order.remQuantityUnit || 'mt', formData.grossWeightUnit);
+                    : convertQuantityUnit(
+                      item.orderSizeRemaining,
+                      item.orderSizeUnit || 'mt',
+                      formData.grossWeightUnit
+                    );
                   return (
                   <tr key={item.id ?? `${orderType}-${index}`}>
                     <td className="px-3 py-2">
@@ -367,6 +424,9 @@ export const TransportFormScreen: React.FC = () => {
                         onChange={(event) => handleItemOrderChange(index, event.target.value)}
                         className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white text-slate-900"
                       >
+                        {!orderOptions.some(option => sameId(option.id, item.orderId)) && (
+                          <option value={item.orderId}>{item.orderNumber || item.orderId}</option>
+                        )}
                         {orderOptions.map(order => (
                           <option key={order.id} value={order.id}>
                             {order.orderNumber}{order.selectorClientName ? ` (${order.selectorClientName})` : ''}
@@ -582,7 +642,7 @@ export const TransportFormScreen: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, transporterId: e.target.value })}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white font-medium"
               >
-                {agencyOptions.map((t) => (
+                {agencyOptionsWithFallback.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name} ({t.city || 'Depot'})
                   </option>
@@ -610,7 +670,7 @@ export const TransportFormScreen: React.FC = () => {
                 value={formData.billingFirmId}
                 onChange={(billingFirmId) => setFormData({ ...formData, billingFirmId })}
                 placeholder="Select or search billing firm"
-                options={billingFirms.map(firm => ({
+                options={billingFirmOptions.map(firm => ({
                   id: firm.id,
                   label: `${firm.name}${firm.city ? ` (${firm.city})` : ''}`,
                   searchText: firm.city
@@ -625,7 +685,7 @@ export const TransportFormScreen: React.FC = () => {
                 value={formData.commodityId}
                 onChange={handleCommodityChange}
                 placeholder="Select or search commodity"
-                options={commodities.map(commodity => ({
+                options={commodityOptions.map(commodity => ({
                   id: commodity.id,
                   label: `${commodity.name} (${commodity.type})`,
                   searchText: commodity.type
@@ -649,7 +709,7 @@ export const TransportFormScreen: React.FC = () => {
                 value={formData.fromClientId}
                 onChange={(fromClientId) => setFormData({ ...formData, fromClientId })}
                 placeholder="Select or search loading origin"
-                options={locations.map(location => ({
+                options={locationOptions.map(location => ({
                   id: location.id,
                   label: `${location.name}${location.city ? ` (${location.city})` : ''}`,
                   searchText: `${location.city || ''} ${location.clientType || ''}`
@@ -664,7 +724,7 @@ export const TransportFormScreen: React.FC = () => {
                 value={formData.toClientId}
                 onChange={(toClientId) => setFormData({ ...formData, toClientId })}
                 placeholder="Select or search unloading destination"
-                options={locations.map(location => ({
+                options={locationOptions.map(location => ({
                   id: location.id,
                   label: `${location.name}${location.city ? ` (${location.city})` : ''}`,
                   searchText: `${location.city || ''} ${location.clientType || ''}`

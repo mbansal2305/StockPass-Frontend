@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { zipSync } from 'fflate';
 import { useApp } from '../../context/AppContext';
 import { Transport, TransportRentType, QuantityUnit, TransportStatus } from '../../types';
-import { apiClient, PaginatedTransportsResult, TransportClientOption, transportsApi } from '../../api';
+import { PaginatedTransportsResult, TransportClientOption, transportsApi } from '../../api';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
 import { Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, X } from 'lucide-react';
-import { getImageSource } from '../../utils/images';
+import { TransportPaymentBill } from './TransportPaymentBill';
 
 interface PaymentDraft {
   status: TransportStatus;
@@ -210,8 +210,6 @@ export const TransportPaymentsScreen: React.FC = () => {
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [billingFirmOptions, setBillingFirmOptions] = useState<TransportClientOption[]>([]);
-  const [logoSourceIndex, setLogoSourceIndex] = useState(0);
-  const [resolvedLogoSource, setResolvedLogoSource] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -262,6 +260,8 @@ export const TransportPaymentsScreen: React.FC = () => {
   }, []);
 
   const isPendingTab = activeStatus === 'PENDING';
+  const isPaidTab = activeStatus === 'PAID';
+  const canManagePaidTransports = currentUser?.role === 'OWNER';
   const commodityMap = useMemo(() => new Map(commodities.map(item => [item.id, item])), [commodities]);
   const clientMap = useMemo(() => new Map(clients.map(item => [item.id, item.name])), [clients]);
   const transporterMap = useMemo(() => new Map(transporters.map(item => [item.id, item.name])), [transporters]);
@@ -271,13 +271,6 @@ export const TransportPaymentsScreen: React.FC = () => {
       return submittedRow?.exportLocked && submittedRow.exportPaymentDraft.amount > 0;
     })
     : [], [isPendingTab, serverPage.results, submittedRows]);
-  const logoClient = printTransport ? clients.find(client => client.id === printTransport.billingFirmId) : undefined;
-  const logoFirmOption = printTransport ? billingFirmOptions.find(client => client.id === printTransport.billingFirmId) : undefined;
-  const logoSources = [logoClient?.imageUrl, logoFirmOption?.imageUrl, logoClient?.image, logoClient?.profile_picture, logoFirmOption?.image]
-    .map(getImageSource)
-    .filter((source, index, sources) => source && sources.indexOf(source) === index);
-  const activeLogoSource = logoSources[logoSourceIndex] || '';
-
   const exportPaymentsToExcel = () => {
     if (exportableTransports.length === 0) return;
 
@@ -320,46 +313,6 @@ export const TransportPaymentsScreen: React.FC = () => {
       showToast(error instanceof Error ? error.message : 'Failed to export transport payments', 'error');
     }
   };
-
-  useEffect(() => {
-    if (!activeLogoSource) {
-      setResolvedLogoSource('');
-      return;
-    }
-    if (!/^https?:\/\//i.test(activeLogoSource)) {
-      setResolvedLogoSource(activeLogoSource);
-      return;
-    }
-
-    let cancelled = false;
-    let objectUrl = '';
-    setResolvedLogoSource('');
-    const headers = new Headers({ 'ngrok-skip-browser-warning': 'true' });
-    const accessToken = apiClient.getAccessToken();
-    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
-
-    fetch(activeLogoSource, { headers })
-      .then(async response => {
-        if (!response.ok) throw new Error(`Logo request failed (${response.status})`);
-        const imageBlob = await response.blob();
-        if (imageBlob.type.includes('text/html')) throw new Error('Logo request returned an HTML page');
-        const contentType = imageBlob.type.startsWith('image/') ? imageBlob.type : 'image/jpeg';
-        return new Blob([imageBlob], { type: contentType });
-      })
-      .then(imageBlob => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(imageBlob);
-        setResolvedLogoSource(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setLogoSourceIndex(index => index + 1);
-      });
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [activeLogoSource]);
 
   const getDraft = (transport: Transport): PaymentDraft => drafts[transport.id] || draftFromTransport(transport);
   const getExportPaymentDraft = (transport: Transport): ExportPaymentDraft =>
@@ -418,6 +371,11 @@ export const TransportPaymentsScreen: React.FC = () => {
   ];
 
   const savePayment = async (transport: Transport) => {
+    if (isPaidTab && !canManagePaidTransports) {
+      showToast('Only owners and admins can update paid transports.', 'error');
+      return;
+    }
+
     const currentDraft = getDraft(transport);
     const draft = isPendingTab
       ? currentDraft
@@ -716,10 +674,12 @@ export const TransportPaymentsScreen: React.FC = () => {
                 >
                   <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-0 z-20 px-1 py-2 text-center ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="flex items-center justify-center gap-0.5">
-                    <button type="button" title="Edit transport" aria-label={`Edit transport ${transport.billNumber}`} onClick={() => setPendingEdit(transport)} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" title="Print payment bill" aria-label={`Print payment bill ${transport.billNumber}`} onClick={() => { setLogoSourceIndex(0); setPrintTransport(transport); }} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
+                    {(!isPaidTab || canManagePaidTransports) && (
+                      <button type="button" title="Edit transport" aria-label={`Edit transport ${transport.billNumber}`} onClick={() => setPendingEdit(transport)} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button type="button" title="Print payment bill" aria-label={`Print payment bill ${transport.billNumber}`} onClick={() => setPrintTransport(transport)} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
                       <Printer className="h-3.5 w-3.5" />
                     </button>
                     </div>
@@ -787,7 +747,7 @@ export const TransportPaymentsScreen: React.FC = () => {
                   </td>}
                   <td className="px-2 py-2"><input aria-label="Payment notes" value={draft.notes} onChange={event => updateDraft(transport, { notes: event.target.value })} disabled={!isPendingTab} className="w-full min-w-[150px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
                   <td className="px-1 py-2">
-                    <select value={draft.status} onChange={event => updateDraft(transport, { status: event.target.value as TransportStatus })} className={`w-full rounded border px-1 py-1 text-[10px] font-semibold ${statusSelectColor}`}>
+                    <select value={isPaidTab && !canManagePaidTransports ? transport.status : draft.status} onChange={event => updateDraft(transport, { status: event.target.value as TransportStatus })} disabled={isPaidTab && !canManagePaidTransports} className={`w-full rounded border px-1 py-1 text-[10px] font-semibold disabled:cursor-not-allowed disabled:opacity-70 ${statusSelectColor}`}>
                       <option value="DRAFT">Draft</option>
                       <option value="PENDING">Pending</option>
                       <option value="DELIVERY">Delivery</option>
@@ -796,7 +756,7 @@ export const TransportPaymentsScreen: React.FC = () => {
                     </select>
                   </td>
                   <td className="px-1 py-2">
-                    <button type="button" disabled={savingId === transport.id || !hasChanges} onClick={() => void savePayment(transport)} className={`w-full rounded px-1 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${submittedRow && !hasChanges ? 'bg-emerald-700 hover:bg-emerald-700' : 'bg-slate-900 hover:bg-slate-700'}`}>
+                    <button type="button" disabled={savingId === transport.id || !hasChanges || (isPaidTab && !canManagePaidTransports)} onClick={() => void savePayment(transport)} className={`w-full rounded px-1 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${submittedRow && !hasChanges ? 'bg-emerald-700 hover:bg-emerald-700' : 'bg-slate-900 hover:bg-slate-700'}`}>
                       {savingId === transport.id ? 'Saving...' : submittedRow && !hasChanges ? 'Submitted' : 'Submit'}
                     </button>
                   </td>
@@ -834,104 +794,17 @@ export const TransportPaymentsScreen: React.FC = () => {
         </div>
       )}
 
-      {printTransport && (() => {
-        const printDraft = getDraft(printTransport);
-        const gross = Number(printTransport.grossWeight) || 0;
-        const received = Number(printDraft.receivedWeight) || 0;
-        const difference = quantityToQuintals(received - gross, printTransport.grossWeightUnit);
-        const billableQuantity = received > 0 ? Math.min(gross, received) : gross;
-        const totalRent = Math.trunc(printDraft.rentType === 'per_unit' ? billableQuantity * printDraft.rent : printDraft.rent);
-        const balance = totalRent - printDraft.advanceByClient - printDraft.advanceByFirm - printDraft.shortageAmount - printDraft.finalPaid + printDraft.extraAmount;
-        const firm = clientMap.get(printTransport.billingFirmId) || 'Billing Firm';
-        const firmDetails = logoClient;
-        const firmLogo = resolvedLogoSource;
-        const transporter = transporterMap.get(printTransport.transporterId) || '-';
-        const initials = firm.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
-        const today = new Date();
-        const billDate = formatDate(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
-
-        return (
-          <div className="payment-bill-print-root fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4 sm:p-8">
-            <article className="payment-bill-paper mx-auto max-w-3xl border border-slate-200 bg-white p-6 shadow-2xl sm:p-10">
-              <div className="no-print mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
-                <h2 className="text-sm font-semibold text-slate-900">Payment bill preview</h2>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700">
-                    <Printer className="h-4 w-4" /> Print / Save PDF
-                  </button>
-                  <button type="button" title="Close preview" aria-label="Close bill preview" onClick={() => setPrintTransport(null)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              <header className="flex items-center gap-4 border-b-2 border-slate-900 pb-5 print:gap-3 print:pb-2">
-                <div aria-label="Firm logo" className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden border border-slate-300 bg-slate-50 text-lg font-bold text-slate-500 print:h-12 print:w-12 print:border-0 print:bg-white">
-                  {firmLogo ? <img key={firmLogo} src={firmLogo} alt={`${firm} logo`} onError={() => setLogoSourceIndex(index => Math.min(index + 1, logoSources.length))} className="h-full w-full object-contain" /> : initials || 'LOGO'}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Transport settlement</p>
-                  <h1 className="mt-1 break-words text-xl font-bold text-slate-950 print:text-lg">{firm}</h1>
-                  {firmDetails && <p className="mt-1 text-xs text-slate-600">{[firmDetails.address, firmDetails.city, firmDetails.pincode].filter(Boolean).join(', ')}</p>}
-                  {firmDetails?.phone && <p className="mt-0.5 text-xs text-slate-600">Phone: {firmDetails.phone}</p>}
-                  {firmDetails?.gstin && <p className="mt-0.5 text-xs text-slate-600">GSTIN: {firmDetails.gstin}</p>}
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Bill no.</p>
-                  <p className="mt-1 font-mono text-sm font-bold text-slate-900">{printTransport.billNumber}</p>
-                  <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Bill Date</p>
-                  <p className="mt-1 text-xs font-medium text-slate-800">{billDate}</p>
-                  <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Unloading Date</p>
-                  <p className="mt-1 text-xs font-medium text-slate-800">{formatDate(printDraft.unloadDate)}</p>
-                </div>
-              </header>
-
-              <section className="grid grid-cols-2 gap-x-8 gap-y-4 border-b border-slate-200 py-5 print:gap-y-2 print:py-2 sm:grid-cols-2">
-                <div><p className="text-[10px] font-semibold uppercase text-slate-500">Transporter</p><p className="mt-1 text-sm font-semibold text-slate-900">{transporter}</p></div>
-                <div><p className="text-[10px] font-semibold uppercase text-slate-500">Vehicle number</p><p className="mt-1 font-mono text-sm font-semibold text-slate-900">{printTransport.vehicleNumber}</p></div>
-              </section>
-
-              <section className="py-5 print:py-2">
-                <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700 print:mb-1">Weight and freight</h2>
-                <div className="overflow-hidden border border-slate-200">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-[10px] font-semibold uppercase text-slate-500">
-                      <tr><th className="px-3 py-2 print:py-1">Gross weight</th><th className="px-3 py-2 print:py-1">Received weight</th><th className="px-3 py-2 text-right print:py-1">Difference</th><th className="px-3 py-2 text-right print:py-1">Rate</th><th className="px-3 py-2 text-right print:py-1">Freight amount</th></tr>
-                    </thead>
-                    <tbody><tr className="font-semibold text-slate-900">
-                      <td className="px-3 py-3 print:py-1">{formatQuantityWithUnit(gross, printTransport.grossWeightUnit)}</td>
-                      <td className="px-3 py-3 print:py-1">{formatQuantityWithUnit(received, printTransport.grossWeightUnit)}</td>
-                      <td className="px-3 py-3 text-right print:py-1">{difference > 0 ? '+' : ''}{difference.toFixed(2)} Qtl</td>
-                      <td className="px-3 py-3 text-right print:py-1">{formatCurrency(printDraft.rent)}{printDraft.rentType === 'per_unit' ? ` / ${unitName(printTransport.grossWeightUnit)}` : ' (fixed)'}</td>
-                      <td className="px-3 py-3 text-right print:py-1">{formatCurrency(totalRent)}</td>
-                    </tr></tbody>
-                  </table>
-                </div>
-              </section>
-
-              <section className="ml-auto max-w-sm border-t border-slate-200 pt-4 print:pt-2">
-                <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-700 print:mb-1">Settlement</h2>
-                <dl className="space-y-2 text-xs print:space-y-1">
-                  <div className="flex justify-between gap-4"><dt className="text-slate-600">Freight amount</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(totalRent)}</dd></div>
-                  <div className="flex justify-between gap-4"><dt className="text-slate-600">Hamali (advance by party)</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.advanceByClient)}</dd></div>
-                  <div className="flex justify-between gap-4"><dt className="text-slate-600">Advance paid by firm</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.advanceByFirm)}</dd></div>
-                  <div className="flex justify-between gap-4"><dt className="text-slate-600">Shortage</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.shortageAmount)}</dd></div>
-                  <div className="flex justify-between gap-4"><dt className="text-slate-600">Extra charges</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.extraAmount)}</dd></div>
-                  <div className="flex justify-between gap-4 border-b border-slate-200 pb-2"><dt className="text-slate-600">Paid</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.finalPaid)}</dd></div>
-                  <div className="flex justify-between gap-4 pt-1 text-sm font-bold"><dt className="text-slate-900">Balance due</dt><dd className="font-mono text-slate-900">{formatCurrency(balance)}</dd></div>
-                </dl>
-              </section>
-
-              {printDraft.notes && <p className="mt-6 border-t border-slate-200 pt-3 text-xs text-slate-600 print:mt-3 print:pt-2">Notes: {printDraft.notes}</p>}
-              <p className="mt-4 text-xs text-slate-600 print:mt-2">Bill Generated by: <span className="font-semibold text-slate-900">{currentUser?.name || 'Operator'}</span></p>
-              <footer className="mt-14 grid grid-cols-2 gap-12 text-center text-[10px] text-slate-500 print:mt-8 print:gap-8">
-                <div className="border-t border-slate-300 pt-2">Transporter signature</div>
-                <div className="border-t border-slate-300 pt-2">Authorised signatory</div>
-              </footer>
-            </article>
-          </div>
-        );
-      })()}
+      {printTransport && (
+        <TransportPaymentBill
+          transport={printTransport}
+          draft={getDraft(printTransport)}
+          clients={clients}
+          transporters={transporters}
+          billingFirmOptions={billingFirmOptions}
+          currentUser={currentUser}
+          onClose={() => setPrintTransport(null)}
+        />
+      )}
 
       <ConfirmationModal
         isOpen={Boolean(pendingEdit)}

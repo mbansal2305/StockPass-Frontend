@@ -116,10 +116,10 @@ export function transformBackendOrderToFrontend(raw: any): Order {
     return String(val);
   };
 
-  const fromClientId = getRelationId(raw.from_client ?? raw.fromClientId);
-  const toClientId = getRelationId(raw.to_client ?? raw.toClientId);
-  const commodityId = getRelationId(raw.commodity ?? raw.commodityId);
-  const brokerId = getRelationId(raw.broker ?? raw.brokerId);
+  const fromClientId = getRelationId(raw.from_client_id ?? raw.fromClientId ?? raw.from_client);
+  const toClientId = getRelationId(raw.to_client_id ?? raw.toClientId ?? raw.to_client);
+  const commodityId = getRelationId(raw.commodity_id ?? raw.commodityId ?? raw.commodity);
+  const brokerId = getRelationId(raw.broker_id ?? raw.brokerId ?? raw.broker);
   const orderTransports: OrderTransport[] | undefined = Array.isArray(raw.order_transports)
     ? raw.order_transports.map((transport: any) => {
       const rawGrossWeightUnit = String(transport.gross_wt_unit || 'mt').toLowerCase();
@@ -179,10 +179,13 @@ export function transformBackendOrderToFrontend(raw: any): Order {
     type,
     orderNumber,
     fromClientId,
+    fromClientName: typeof raw.from_client === 'string' ? raw.from_client : raw.from_client_name,
     toClientId,
+    toClientName: typeof raw.to_client === 'string' ? raw.to_client : raw.to_client_name,
     commodityId,
     commodityName: typeof raw.commodity === 'string' ? raw.commodity : raw.commodityName,
     commodityType: raw.commodity_type ? String(raw.commodity_type) : raw.commodityType,
+    brokerName: typeof raw.broker === 'string' ? raw.broker : raw.broker_name,
     orderTransports,
     rate,
     quantity,

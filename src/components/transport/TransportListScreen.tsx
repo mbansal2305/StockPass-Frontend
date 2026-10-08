@@ -69,6 +69,7 @@ export const TransportListScreen: React.FC = () => {
     nextStatus: TransportStatus;
   } | null>(null);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const isPaidTab = activeTab === 'PAID';
 
   // Lookups
   const commodityMap = useMemo(() => new Map(commodities.map(c => [c.id, c])), [commodities]);
@@ -442,7 +443,7 @@ export const TransportListScreen: React.FC = () => {
                       key={t.id}
                       onClick={(event) => {
                         if ((event.target as HTMLElement).closest('button, a, input, select')) return;
-                        void openTransport(t.id, 'transport-form');
+                        void openTransport(t.id, 'transport-detail');
                       }}
                       className={`${rowBgClass} transition-colors cursor-pointer`}
                     >
@@ -575,17 +576,19 @@ export const TransportListScreen: React.FC = () => {
                                   </button>
                                 )}
 
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenActionMenuId(null);
-                                    void openTransport(t.id, 'transport-form');
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5 text-slate-400" />
-                                  <span>Edit Consignment</span>
-                                </button>
+                                {(!isPaidTab || isOwner) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenActionMenuId(null);
+                                      void openTransport(t.id, 'transport-form');
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>Edit Consignment</span>
+                                  </button>
+                                )}
 
                                 {isOwner && (
                                   <>

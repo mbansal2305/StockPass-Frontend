@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Order, OrderType, OrderStatus, QuantityUnit } from '../../types';
+import { Broker, Commodity, Order, OrderType, OrderStatus, QuantityUnit } from '../../types';
 import { ordersApi, OrderClientOption } from '../../api/orders';
+import { masterApi } from '../../api';
 import { storage } from '../../services/storage';
 import { getUnitLabel } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
@@ -61,6 +62,32 @@ export const OrderFormScreen: React.FC = () => {
     fromClient: OrderClientOption[];
     toClient: OrderClientOption[];
   }>({ fromClient: [], toClient: [] });
+  const [commodityOptions, setCommodityOptions] = useState<Commodity[]>(commodities);
+  const [brokerOptions, setBrokerOptions] = useState<Broker[]>(brokers);
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    Promise.allSettled([
+      masterApi.selectCommodities(),
+      masterApi.selectBrokers()
+    ]).then(([commoditiesResult, brokersResult]) => {
+      if (!isCurrent) return;
+      const nextCommodities = commoditiesResult.status === 'fulfilled' ? commoditiesResult.value : commodities;
+      const nextBrokers = brokersResult.status === 'fulfilled' ? brokersResult.value : brokers;
+      setCommodityOptions(nextCommodities);
+      setBrokerOptions(nextBrokers);
+      setFormData(current => ({
+        ...current,
+        commodityId: current.commodityId || nextCommodities[0]?.id || '',
+        brokerId: current.brokerId || nextBrokers[0]?.id || ''
+      }));
+    });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [commodities, brokers]);
 
   useEffect(() => {
     if (!selectedTypeConfirmed) return;
@@ -78,12 +105,8 @@ export const OrderFormScreen: React.FC = () => {
         setRouteClients({ fromClient, toClient });
         setFormData(prev => ({
           ...prev,
-          fromClientId: fromClient.some(client => client.id === prev.fromClientId)
-            ? prev.fromClientId
-            : fromClient[0]?.id || '',
-          toClientId: toClient.some(client => client.id === prev.toClientId)
-            ? prev.toClientId
-            : toClient[0]?.id || ''
+          fromClientId: prev.fromClientId || fromClient[0]?.id || '',
+          toClientId: prev.toClientId || toClient[0]?.id || ''
         }));
       } catch (err) {
         if (!isCurrent) return;
@@ -104,6 +127,48 @@ export const OrderFormScreen: React.FC = () => {
       isCurrent = false;
     };
   }, [formData.type, existingOrder, clients, selectedTypeConfirmed]);
+
+  const commoditySelectionOptions = [
+    ...commodityOptions,
+    ...commodities.filter(commodity => !commodityOptions.some(option => option.id === commodity.id)),
+    ...(existingOrder?.commodityId && !commodityOptions.some(item => item.id === existingOrder.commodityId)
+      ? [{
+        id: existingOrder.commodityId,
+        name: existingOrder.commodityName || existingOrder.commodityId,
+        type: existingOrder.commodityType || ''
+      }]
+      : [])
+  ];
+  const brokerSelectionOptions = [
+    ...brokerOptions,
+    ...brokers.filter(broker => !brokerOptions.some(option => option.id === broker.id)),
+    ...(existingOrder?.brokerId && !brokerOptions.some(item => item.id === existingOrder.brokerId)
+      ? [{
+        id: existingOrder.brokerId,
+        name: existingOrder.brokerName || existingOrder.brokerId,
+        phone_number: '',
+        phone: ''
+      }]
+      : [])
+  ];
+  const fromClientSelectionOptions = [
+    ...routeClients.fromClient,
+    ...(existingOrder?.fromClientId && !routeClients.fromClient.some(item => item.id === existingOrder.fromClientId)
+      ? [{
+        id: existingOrder.fromClientId,
+        name: existingOrder.fromClientName || existingOrder.fromClientId
+      }]
+      : [])
+  ];
+  const toClientSelectionOptions = [
+    ...routeClients.toClient,
+    ...(existingOrder?.toClientId && !routeClients.toClient.some(item => item.id === existingOrder.toClientId)
+      ? [{
+        id: existingOrder.toClientId,
+        name: existingOrder.toClientName || existingOrder.toClientId
+      }]
+      : [])
+  ];
 
   useEffect(() => {
     if (existingOrder || !selectedTypeConfirmed || formData.type !== 'PURCHASE ORDER') {
@@ -457,7 +522,7 @@ export const OrderFormScreen: React.FC = () => {
                 value={formData.commodityId}
                 onChange={(commodityId) => setFormData({ ...formData, commodityId })}
                 placeholder="Select or search commodity"
-                options={commodities.map(commodity => ({
+                options={commoditySelectionOptions.map(commodity => ({
                   id: commodity.id,
                   label: `${commodity.name} (${commodity.type})`,
                   searchText: commodity.type
@@ -494,7 +559,7 @@ export const OrderFormScreen: React.FC = () => {
                 value={formData.fromClientId}
                 onChange={(fromClientId) => setFormData({ ...formData, fromClientId })}
                 placeholder="Select or search origin"
-                options={routeClients.fromClient.map(client => ({
+                options={fromClientSelectionOptions.map(client => ({
                   id: client.id,
                   label: `${client.name}${client.city ? ` (${client.city})` : ''}`,
                   searchText: `${client.city || ''} ${client.type || ''}`
@@ -517,7 +582,7 @@ export const OrderFormScreen: React.FC = () => {
                 value={formData.toClientId}
                 onChange={(toClientId) => setFormData({ ...formData, toClientId })}
                 placeholder="Select or search destination"
-                options={routeClients.toClient.map(client => ({
+                options={toClientSelectionOptions.map(client => ({
                   id: client.id,
                   label: `${client.name}${client.city ? ` (${client.city})` : ''}`,
                   searchText: `${client.city || ''} ${client.type || ''}`
@@ -655,7 +720,7 @@ export const OrderFormScreen: React.FC = () => {
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
               >
                 <option value="">Direct Deal (No Broker)</option>
-                {brokers.map((b) => (
+                {brokerSelectionOptions.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name} ({b.city || 'Mandi'})
                   </option>

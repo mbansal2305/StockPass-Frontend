@@ -209,10 +209,13 @@ export interface Order {
   type: OrderType;
   orderNumber: string;
   fromClientId: string;
+  fromClientName?: string;
   toClientId: string;
+  toClientName?: string;
   commodityId: string;
   commodityName?: string;
   commodityType?: string;
+  brokerName?: string;
   orderTransports?: OrderTransport[];
   rate: number; // in ₹ per selected unit
   quantity: number; // in selected unit
@@ -250,6 +253,13 @@ export interface TransportItem {
   orderId: string;
   allocatedQuantity: number; // In the transport gross-weight unit
   orderEntryQuantity?: number; // In the transport gross-weight unit
+  orderNumber?: string;
+  orderType?: string;
+  orderSize?: number;
+  orderSizeUnit?: QuantityUnit;
+  orderSizeRemaining?: number;
+  orderCommodity?: string;
+  orderCommodityType?: string;
 }
 
 export type TransportStatus = 'DRAFT' | 'PENDING' | 'DELIVERY' | 'FINANCE' | 'PAID';
@@ -271,10 +281,15 @@ export interface Transport {
   billingFirmId: string;
   billingFirmName?: string;
   commodityId: string;
+  commodityName?: string;
+  commodityType?: string;
   fromClientId: string;
+  fromClientName?: string;
   toClientId: string;
+  toClientName?: string;
   vehicleNumber: string;
   transporterId: string;
+  transporterName?: string;
   transporterBank?: TransportBankDetails | null;
   grossWeight: number; // Value in grossWeightUnit
   grossWeightUnit?: QuantityUnit;

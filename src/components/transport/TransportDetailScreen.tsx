@@ -15,18 +15,36 @@ import {
   ArrowRight,
   ExternalLink,
   CheckCircle2,
-  X,
   Plus
 } from 'lucide-react';
 import { StatusStepper } from '../common/StatusStepper';
 import { ConfirmationModal } from '../common/ConfirmationModal';
+import { TransportPaymentBill } from './TransportPaymentBill';
 import {
   formatCurrency,
-  formatWeight,
   formatQuantityWithUnit,
   formatDate,
   getTransportStatusBadge
 } from '../../utils/formatters';
+
+const convertWeightUnit = (quantity: number, fromUnit: string, toUnit: string): number => {
+  const metricTons = fromUnit === 'kg' ? quantity / 1000 : fromUnit === 'quintal' ? quantity / 10 : quantity;
+  if (toUnit === 'kg') return metricTons * 1000;
+  if (toUnit === 'quintal') return metricTons * 10;
+  return metricTons;
+};
+
+const getShortUnitLabel = (unit?: string): string =>
+  unit === 'quintal' ? 'Qtl' : unit === 'kg' ? 'Kg' : 'Mt';
+
+const formatShortUnitQuantity = (quantity: number, unit?: string): string =>
+  `${Number(quantity).toLocaleString('en-IN', { maximumFractionDigits: 2 })} ${getShortUnitLabel(unit)}`;
+
+const getOrderTypeLabel = (type?: string): string => {
+  if (type?.toLowerCase() === 'sales_order') return 'Sales Order';
+  if (type?.toLowerCase() === 'purchase_order') return 'Purchase Order';
+  return type || 'Direct';
+};
 
 const displayFlag = (value: boolean | string | undefined): string => {
   if (typeof value === 'boolean') return value ? 'Available' : 'No';
@@ -44,7 +62,8 @@ export const TransportDetailScreen: React.FC = () => {
     navigate,
     currentUser,
     refreshData,
-    showToast
+    showToast,
+    transportGet
   } = useApp();
 
   const isOwner = currentUser?.role === 'OWNER';
@@ -57,7 +76,7 @@ export const TransportDetailScreen: React.FC = () => {
   // Status Change Confirmation
   const [pendingStatusTarget, setPendingStatusTarget] = useState<TransportStatus | null>(null);
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
-  const [biltyModalOpen, setBiltyModalOpen] = useState(false);
+  const [paymentBillOpen, setPaymentBillOpen] = useState(false);
 
   // Lookups
   const commodityMap = useMemo(() => new Map(commodities.map(c => [c.id, c])), [commodities]);
@@ -79,6 +98,7 @@ export const TransportDetailScreen: React.FC = () => {
     );
   }
 
+  const isPaidTransport = transport.status === 'PAID';
   const comm = commodityMap.get(transport.commodityId);
   const transpName = transporterMap.get(transport.transporterId) || '-';
   const fromClient = clientMap.get(transport.fromClientId);
@@ -87,25 +107,54 @@ export const TransportDetailScreen: React.FC = () => {
   const badge = getTransportStatusBadge(transport.status);
 
   // Calculations
-  const grossWeightMt = transport.grossWeightUnit === 'kg'
-    ? (transport.grossWeight || 0) / 1000
-    : transport.grossWeightUnit === 'quintal'
-    ? (transport.grossWeight || 0) / 10
-    : transport.grossWeight || 0;
-  const received = transport.receivedWeight || 0;
-  const weightDiff = received > 0 ? received - grossWeightMt : 0;
-  const totalAdvances = (transport.advanceByClient || 0) + (transport.advanceByFirm || 0);
-  const outstandingRent = Math.max(0, transport.rent - totalAdvances - (transport.finalPaid || 0));
+  const grossWeight = transport.grossWeight || 0;
+  const receivedWeight = transport.receivedWeight || 0;
+  const weightDifference = grossWeight - receivedWeight;
+  const weightDifferenceInQuintals = convertWeightUnit(
+    Math.abs(weightDifference),
+    transport.grossWeightUnit || 'mt',
+    'quintal'
+  );
+  const bhartiKg = transport.bagNumbers
+    ? (
+      convertWeightUnit(grossWeight, transport.grossWeightUnit || 'mt', 'kg')
+      - transport.bagNumbers * ((transport.bagWeight || 0) / 1000)
+    ) / transport.bagNumbers
+    : null;
+  const rentableWeight = receivedWeight > 0 ? Math.min(grossWeight, receivedWeight) : grossWeight;
+  const calculatedRent = transport.rentType === 'fix'
+    ? transport.rent
+    : rentableWeight * transport.rent;
+  const dues = calculatedRent
+    - (transport.advanceByFirm || 0)
+    - (transport.advanceByClient || 0)
+    - (transport.shortage || 0)
+    + (transport.extraPaid || 0)
+    - (transport.finalPaid || 0);
 
   const handleConfirmStatusChange = async () => {
     if (!pendingStatusTarget) return;
+    if (transport.status === 'PAID' && !isOwner) {
+      setPendingStatusTarget(null);
+      return;
+    }
     try {
       await transportsApi.updateStatus(transport.id, pendingStatusTarget);
-      await refreshData();
+      await transportGet(transport.id);
       showToast(`Status updated to ${pendingStatusTarget}`, 'success');
       setPendingStatusTarget(null);
     } catch (error: any) {
       showToast(error.message || 'Failed to update transport status', 'error');
+    }
+  };
+
+  const handleEdit = async () => {
+    if (transport.status === 'PAID' && !isOwner) return;
+    try {
+      await transportGet(transport.id);
+      navigate('transport-form', { transportId: transport.id });
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : 'Failed to load transport details', 'error');
     }
   };
 
@@ -150,21 +199,23 @@ export const TransportDetailScreen: React.FC = () => {
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
             type="button"
-            onClick={() => setBiltyModalOpen(true)}
+            onClick={() => setPaymentBillOpen(true)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5 text-blue-600" />
-            Print Bilty / Challan
+            Print Bill
           </button>
 
-          <button
-            type="button"
-            onClick={() => navigate('transport-form', { transportId: transport.id })}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
-          >
-            <Edit2 className="w-3.5 h-3.5" />
-            Edit
-          </button>
+          {(!isPaidTransport || isOwner) && (
+            <button
+              type="button"
+              onClick={() => void handleEdit()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+              Edit
+            </button>
+          )}
 
           {isOwner && (
             <button
@@ -192,9 +243,9 @@ export const TransportDetailScreen: React.FC = () => {
 
         <StatusStepper
           currentStatus={transport.status}
-          canChangeStatus={!isLabour || transport.status === 'PENDING' || transport.status === 'DELIVERY'}
+          canChangeStatus={(!isPaidTransport || isOwner) && (!isLabour || transport.status === 'PENDING' || transport.status === 'DELIVERY')}
           onStatusClick={(nextStatus) => {
-            if (nextStatus !== transport.status) {
+            if (nextStatus !== transport.status && (!isPaidTransport || isOwner)) {
               setPendingStatusTarget(nextStatus);
             }
           }}
@@ -273,6 +324,11 @@ export const TransportDetailScreen: React.FC = () => {
               <span className="text-slate-400 block text-[10px] uppercase font-semibold">Commodity Spec</span>
               <div className="font-medium text-slate-800">{comm?.name || '-'} ({comm?.type})</div>
             </div>
+
+            <div className="pt-2 border-t border-slate-100">
+              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Loading Date</span>
+              <div className="font-medium text-slate-800">{formatDate(transport.loadingDate)}</div>
+            </div>
           </div>
         </div>
 
@@ -294,37 +350,42 @@ export const TransportDetailScreen: React.FC = () => {
               <span className="text-slate-500">Bags / Packing:</span>
               <span className="font-medium text-slate-800 tabular-nums">
                 {transport.bagNumbers ? `${transport.bagNumbers} bags` : '-'}
-                {transport.bagWeight ? ` (@${transport.bagWeight} grams)` : ''}
+                {transport.bagWeight ? ` (@${transport.bagWeight} grams per bag)` : ''}
+              </span>
+            </div>
+
+            <div className="flex justify-between items-center py-1 border-b border-slate-50">
+              <span className="text-slate-500">Bharti (kg):</span>
+              <span className="font-medium text-slate-800 tabular-nums">
+                {bhartiKg === null ? '-' : `${bhartiKg.toFixed(2)} kg`}
               </span>
             </div>
 
             <div className="flex justify-between items-center py-1 border-b border-slate-50">
               <span className="text-slate-500">Received Weight (Unloading):</span>
               <span className="font-bold text-slate-900 tabular-nums text-sm">
-                {transport.receivedWeight ? formatWeight(transport.receivedWeight) : 'Pending unload'}
+                {receivedWeight ? formatQuantityWithUnit(receivedWeight, transport.grossWeightUnit) : 'Pending unload'}
               </span>
             </div>
 
             <div className="flex justify-between items-center py-1">
-              <span className="text-slate-500">Variance / Transit Loss:</span>
+              <span className="text-slate-500">Difference (Gross - Received):</span>
               <span
                 className={`font-semibold tabular-nums ${
-                  Math.abs(weightDiff) > 0.1
+                  weightDifferenceInQuintals > 1
                     ? 'text-rose-700'
-                    : 'text-slate-700'
+                    : 'text-emerald-700'
                 }`}
               >
-                {received > 0 ? (
-                  `${weightDiff >= 0 ? '+' : ''}${formatWeight(weightDiff)} (${(weightDiff * 1000).toFixed(0)} kg)`
-                ) : (
-                  '-'
-                )}
+                {formatQuantityWithUnit(weightDifference, transport.grossWeightUnit)}
               </span>
             </div>
 
             <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 flex justify-between">
               <span>Unload Date:</span>
-              <span className="font-medium text-slate-800">{formatDate(transport.unloadDate)}</span>
+              <span className="font-medium text-slate-800">
+                {transport.unloadDate ? formatDate(transport.unloadDate) : 'Yet to unload'}
+              </span>
             </div>
           </div>
         </div>
@@ -337,9 +398,17 @@ export const TransportDetailScreen: React.FC = () => {
 
           <div className="text-xs space-y-2.5">
             <div className="flex justify-between items-center py-1 border-b border-slate-50">
-              <span className="text-slate-500">Agreed Truck Rent:</span>
+              <span className="text-slate-500">Agreed Rent:</span>
               <span className="font-bold font-mono text-slate-900 tabular-nums text-sm">
                 {formatCurrency(transport.rent)}
+                {transport.rentType === 'fix' ? ' (fixed)' : ` / ${getShortUnitLabel(transport.grossWeightUnit)}`}
+              </span>
+            </div>
+
+            <div className="flex justify-between items-center py-1 border-b border-slate-50">
+              <span className="text-slate-500">Total Rent:</span>
+              <span className="font-bold font-mono text-slate-900 tabular-nums">
+                {formatCurrency(calculatedRent)}
               </span>
             </div>
 
@@ -358,6 +427,20 @@ export const TransportDetailScreen: React.FC = () => {
             </div>
 
             <div className="flex justify-between items-center py-1 border-b border-slate-50">
+              <span className="text-slate-500">Shortage:</span>
+              <span className="font-mono text-slate-700 tabular-nums">
+                {formatCurrency(transport.shortage)}
+              </span>
+            </div>
+
+            <div className="flex justify-between items-center py-1 border-b border-slate-50">
+              <span className="text-slate-500">Extra:</span>
+              <span className="font-mono text-slate-700 tabular-nums">
+                {formatCurrency(transport.extraPaid)}
+              </span>
+            </div>
+
+            <div className="flex justify-between items-center py-1 border-b border-slate-50">
               <span className="text-slate-500">Final Freight Paid:</span>
               <span className="font-mono font-semibold text-emerald-700 tabular-nums">
                 {formatCurrency(transport.finalPaid)}
@@ -365,9 +448,9 @@ export const TransportDetailScreen: React.FC = () => {
             </div>
 
             <div className="flex justify-between items-center py-1.5 bg-slate-50 px-2 rounded-lg">
-              <span className="text-slate-600 font-semibold">Remaining Due Balance:</span>
-              <span className="font-mono font-bold text-slate-900 tabular-nums">
-                {formatCurrency(outstandingRent)}
+              <span className="text-slate-600 font-semibold">Dues:</span>
+              <span className={`font-mono font-bold tabular-nums ${dues <= 100 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                {formatCurrency(dues)}
               </span>
             </div>
           </div>
@@ -442,7 +525,7 @@ export const TransportDetailScreen: React.FC = () => {
               Order Allocations In This Transport ({transport.items.length})
             </h2>
             <p className="text-[11px] text-slate-500">
-              Orders fulfilled by this vehicle consignment. Total allocated MT must match vehicle payload.
+              Orders fulfilled by this vehicle consignment. Quantities are shown in {getShortUnitLabel(transport.grossWeightUnit)}.
             </p>
           </div>
 
@@ -460,52 +543,70 @@ export const TransportDetailScreen: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3">Order Number</th>
+                <th className="px-4 py-3">Order No.</th>
                 <th className="px-4 py-3">Order Type</th>
                 <th className="px-4 py-3">Commodity</th>
-                <th className="px-4 py-3">Total Order Size</th>
-                <th className="px-4 py-3 text-right">Allocated In This Truck</th>
+                <th className="px-4 py-3 text-right">Order Qty</th>
+                <th className="px-4 py-3 text-right">Order Rem</th>
+                <th className="px-4 py-3 text-right">Alloc in this Truck</th>
+                <th className="px-4 py-3 text-right">Order Entry</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {transport.items.map((item, idx) => {
                 const ord = orderMap.get(item.orderId);
-                const itemComm = ord ? commodityMap.get(ord.commodityId) : comm;
+                const itemCommodityName = item.orderCommodity || (ord ? commodityMap.get(ord.commodityId)?.name : comm?.name);
+                const itemCommodityType = item.orderCommodityType || (ord ? commodityMap.get(ord.commodityId)?.type : comm?.type);
+                const orderUnit = item.orderSizeUnit || ord?.unit || 'mt';
+                const orderQuantity = item.orderSize === undefined
+                  ? ord ? convertWeightUnit(ord.quantity, ord.unit || 'mt', transport.grossWeightUnit || 'mt') : undefined
+                  : convertWeightUnit(item.orderSize, orderUnit, transport.grossWeightUnit || 'mt');
+                const remainingQuantity = item.orderSizeRemaining === undefined
+                  ? undefined
+                  : convertWeightUnit(item.orderSizeRemaining, orderUnit, transport.grossWeightUnit || 'mt');
+                const orderNumber = item.orderNumber || ord?.orderNumber || item.orderId;
                 return (
-                  <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
+                  <tr key={item.id ?? idx} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-4 py-3 font-mono font-bold text-slate-900">
-                      {ord ? (
+                      {item.orderId ? (
                         <button
                           type="button"
-                          onClick={() => navigate('order-detail', { orderId: ord.id })}
+                          onClick={() => navigate('order-detail', { orderId: item.orderId })}
                           className="hover:text-blue-600 cursor-pointer"
                         >
-                          {ord.orderNumber}
+                          {orderNumber}
                         </button>
                       ) : (
-                        item.orderId
+                        orderNumber
                       )}
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
-                        {ord?.type || 'Direct'}
+                        {getOrderTypeLabel(item.orderType || ord?.type)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-800">
-                      {itemComm?.name || '-'}
+                      <div>{itemCommodityName || '-'}</div>
+                      {itemCommodityType && <div className="text-[10px] text-slate-500">{itemCommodityType}</div>}
                     </td>
-                    <td className="px-4 py-3 tabular-nums text-slate-600">
-                      {ord ? formatWeight(ord.quantity) : '-'}
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-600">
+                      {orderQuantity === undefined ? '-' : formatShortUnitQuantity(orderQuantity, transport.grossWeightUnit)}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-600">
+                      {remainingQuantity === undefined ? '-' : formatShortUnitQuantity(remainingQuantity, transport.grossWeightUnit)}
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-blue-700 tabular-nums">
-                      {formatWeight(item.allocatedQuantity)}
+                      {formatShortUnitQuantity(item.allocatedQuantity, transport.grossWeightUnit)}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-600">
+                      {formatShortUnitQuantity(item.orderEntryQuantity || 0, transport.grossWeightUnit)}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {ord && (
+                      {item.orderId && (
                         <button
                           type="button"
-                          onClick={() => navigate('order-detail', { orderId: ord.id })}
+                          onClick={() => navigate('order-detail', { orderId: item.orderId })}
                           className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded"
                           title="View Order"
                         >
@@ -521,133 +622,26 @@ export const TransportDetailScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* PRINTABLE BILTY MODAL */}
-      {biltyModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-2xs overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-8">
-            <div className="p-4 bg-slate-100 border-b border-slate-200 flex items-center justify-between no-print">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                Consignment Note / Goods Bilty Preview
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  Print / Save PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBiltyModalOpen(false)}
-                  className="p-1 text-slate-500 hover:text-slate-800 rounded"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Bilty Document Body */}
-            <div className="p-6 space-y-4 text-xs font-sans text-slate-900 bg-white">
-              <div className="text-center border-b border-slate-800 pb-3">
-                <h1 className="text-lg font-black tracking-tight uppercase">
-                  {billingFirm?.name || 'Vistar Mandi & Logistics Trading Co.'}
-                </h1>
-                <p className="text-[11px] text-slate-600">
-                  {billingFirm?.address}, {billingFirm?.city} - {billingFirm?.pincode}
-                </p>
-                {billingFirm?.gstin && (
-                  <p className="text-[11px] font-mono font-medium mt-0.5">GSTIN: {billingFirm.gstin}</p>
-                )}
-                <div className="mt-2 inline-block px-3 py-0.5 border border-slate-900 text-xs font-bold uppercase tracking-wider">
-                  Goods Consignment Note / Bilty
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 border-b border-slate-300 pb-3">
-                <div>
-                  <span className="font-semibold text-slate-500 text-[10px] block">Bilty / Waybill No:</span>
-                  <span className="font-mono text-sm font-bold">{transport.billNumber}</span>
-                  <div className="mt-1">
-                    <span className="font-semibold text-slate-500 text-[10px] block">Mandi Anugya No:</span>
-                    <span className="font-mono font-medium">{displayFlag(transport.anugya)}</span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="font-semibold text-slate-500 text-[10px] block">Date of Dispatch:</span>
-                  <span className="font-medium text-sm">{formatDate(transport.createdAt)}</span>
-                  <div className="mt-1">
-                    <span className="font-semibold text-slate-500 text-[10px] block">Vehicle Number:</span>
-                    <span className="font-mono text-sm font-bold text-slate-900">{transport.vehicleNumber}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 border-b border-slate-300 pb-3">
-                <div className="border-r border-slate-200 pr-2">
-                  <span className="font-bold text-slate-700 block mb-1">CONSIGNOR (Shipped From):</span>
-                  <div className="font-semibold">{fromClient?.name}</div>
-                  <div className="text-slate-600 text-[11px]">{fromClient?.address}, {fromClient?.city}</div>
-                </div>
-                <div>
-                  <span className="font-bold text-slate-700 block mb-1">CONSIGNEE (Delivered To):</span>
-                  <div className="font-semibold">{toClient?.name}</div>
-                  <div className="text-slate-600 text-[11px]">{toClient?.address}, {toClient?.city}</div>
-                </div>
-              </div>
-
-              <div className="border border-slate-300 rounded overflow-hidden">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100 font-bold border-b border-slate-300">
-                    <tr>
-                      <th className="p-2">Commodity Description</th>
-                      <th className="p-2 text-center">Bags</th>
-                      <th className="p-2 text-right">Gross Weight</th>
-                      <th className="p-2 text-right">Freight Rent</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="p-2 font-medium">
-                        {comm?.name} ({comm?.type})
-                      </td>
-                      <td className="p-2 text-center tabular-nums">
-                        {transport.bagNumbers || '-'}
-                      </td>
-                      <td className="p-2 text-right font-bold tabular-nums">
-                        {formatQuantityWithUnit(transport.grossWeight, transport.grossWeightUnit)}
-                      </td>
-                      <td className="p-2 text-right font-mono font-bold tabular-nums">
-                        {formatCurrency(transport.rent)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 pt-2">
-                <div className="space-y-1 text-[11px]">
-                  <div>Carrier: <strong>{transpName}</strong></div>
-                  <div>Gatepass: <span className="font-mono">{displayFlag(transport.gatepass)}</span></div>
-                  <div>Advance by Firm: <span className="font-mono">{formatCurrency(transport.advanceByFirm)}</span></div>
-                </div>
-                <div className="text-right space-y-1 text-[11px]">
-                  <div>Advance by Consignee: <span className="font-mono">{formatCurrency(transport.advanceByClient)}</span></div>
-                  <div className="font-bold text-xs pt-1 border-t border-slate-200">
-                    Balance Due on Unload: {formatCurrency(outstandingRent)}
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-10 grid grid-cols-3 gap-4 text-center text-[10px] text-slate-500">
-                <div className="border-t border-slate-300 pt-1">Driver / Carrier Signature</div>
-                <div className="border-t border-slate-300 pt-1">Weighbridge Operator</div>
-                <div className="border-t border-slate-300 pt-1">Authorised Signatory</div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {paymentBillOpen && (
+        <TransportPaymentBill
+          transport={transport}
+          draft={{
+            receivedWeight: transport.receivedWeight || 0,
+            unloadDate: transport.unloadDate || '',
+            rent: transport.rent || 0,
+            rentType: transport.rentType || 'per_unit',
+            advanceByClient: transport.advanceByClient || 0,
+            advanceByFirm: transport.advanceByFirm || 0,
+            shortageAmount: transport.shortage || 0,
+            extraAmount: transport.extraPaid || 0,
+            finalPaid: transport.finalPaid || 0,
+            notes: transport.notes || ''
+          }}
+          clients={clients}
+          transporters={transporters}
+          currentUser={currentUser}
+          onClose={() => setPaymentBillOpen(false)}
+        />
       )}
 
       {/* Advance Stage Modal */}
