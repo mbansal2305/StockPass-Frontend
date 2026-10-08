@@ -56,6 +56,11 @@ const formatDate = (value: string): string => {
 const numberValue = (value: string): number => value.trim() ? Number(value) || 0 : 0;
 const displayNumber = (value: number): string =>
   value.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const pdfFileName = (form: BillHisaabForm): string =>
+  [form.billNumber, form.partyName, form.vehicleNumber]
+    .map(value => value.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, '').replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .join('-') || 'Bill-Hisaab';
 
 const makeInitialDeductions = (): Deduction[] =>
   deductionFields.map(field => ({
@@ -104,13 +109,39 @@ const BillHisaabPreview: React.FC<{
   onClose: () => void;
 }> = ({ form, logo, onClose }) => {
   const totals = getBillTotals(form);
+  const { showToast } = useApp();
+  const filename = `${pdfFileName(form)}.pdf`;
+  useEffect(() => {
+    const previousTitle = document.title;
+    document.title = pdfFileName(form);
+    return () => {
+      document.title = previousTitle;
+    };
+  }, []);
+  const copyFilename = async () => {
+    try {
+      await navigator.clipboard.writeText(filename);
+      showToast('PDF filename copied', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? `Could not copy filename: ${error.message}` : 'Could not copy filename', 'error');
+    }
+  };
   return (
     <div className="bill-hisaab-print-root fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4 sm:p-8">
       <article className="bill-hisaab-paper mx-auto max-w-3xl border border-slate-200 bg-white p-6 shadow-2xl sm:p-8">
         <div className="no-print mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Bill Hisaab preview</h2>
-            <p className="mt-1 text-xs text-slate-500">Use Save PDF and choose a destination in the print dialog.</p>
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-600">
+              <span className="break-all font-mono">{filename}</span>
+              <button
+                type="button"
+                onClick={copyFilename}
+                className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 font-sans font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Copy Filename
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700">
@@ -320,7 +351,7 @@ export const BillHisaabScreen: React.FC = () => {
             <ReadOnlyValue label="Party Name" value={form.partyName} />
             <ReadOnlyValue label="Firm Name" value={form.firmName} />
             <EditableText label="Broker Name" value={form.brokerName} onChange={value => updateForm('brokerName', value)} />
-            <EditableText label="Vehicle No." value={form.vehicleNumber} onChange={value => updateForm('vehicleNumber', value)} />
+            <ReadOnlyValue label="Vehicle No." value={form.vehicleNumber} />
             <ReadOnlyValue label="Bill No." value={form.billNumber} />
             <EditableDate label="Bill Date" value={form.billDate} onChange={value => updateForm('billDate', value)} />
             <EditableText label="Type" value={form.billType} onChange={value => updateForm('billType', value)} />
@@ -374,11 +405,11 @@ export const BillHisaabScreen: React.FC = () => {
               <DecimalField label="Extra" value={form.extra} onChange={value => updateForm('extra', value)} className="mt-1.5" />
             </label>
             <ReadOnlyValue label="Total Payable" value={displayNumber(totals.totalPayable)} />
-            <label className="text-sm font-semibold text-slate-700">Advance Date
-              <input type="date" value={form.advanceDate} onChange={event => updateForm('advanceDate', event.target.value)} className={`${decimalInputClass} mt-1.5`} />
-            </label>
             <label className="text-sm font-semibold text-slate-700">Advance Paid
               <DecimalField label="Advance paid" value={form.advanceAmount} onChange={value => updateForm('advanceAmount', value)} className="mt-1.5" />
+            </label>
+            <label className="text-sm font-semibold text-slate-700">Advance Date
+              <input type="date" value={form.advanceDate} onChange={event => updateForm('advanceDate', event.target.value)} className={`${decimalInputClass} mt-1.5`} />
             </label>
             <ReadOnlyValue label="Left to be Paid" value={displayNumber(totals.leftToBePaid)} />
             <label className="text-sm font-semibold text-slate-700">GST Amount
