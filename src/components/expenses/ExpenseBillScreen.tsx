@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Printer, Trash2, X } from 'lucide-react';
+import { Plus, Printer, ReceiptText, Trash2, X } from 'lucide-react';
 import { masterApi, SelectionClient, SelectionFirm } from '../../api/master';
 import { transportsApi } from '../../api/transports';
 import { Transporter } from '../../types';
@@ -417,7 +417,7 @@ export const ExpenseBillScreen: React.FC = () => {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Expense Bill</h1>
+          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900"><ReceiptText className="h-5 w-5 text-blue-600" />Expense Bill</h1>
           <p className="mt-1 text-sm text-slate-500">Enter transport and item details, then preview or save the bill as a PDF.</p>
         </div>
         <div className="flex items-center gap-2">

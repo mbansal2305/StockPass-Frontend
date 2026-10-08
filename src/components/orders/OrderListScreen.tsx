@@ -4,6 +4,7 @@ import { Order, OrderType, OrderStatus, OrderListSchema } from '../../types';
 import {
   Search,
   Plus,
+  ShoppingCart,
   ArrowRight,
   Truck,
   Eye,
@@ -237,11 +238,11 @@ export const OrderListScreen: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Orders</h1>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight"><ShoppingCart className="h-5 w-5 text-blue-600" />Orders</h1>
+            {/* <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               API Synced
-            </span>
+            </span> */}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Manage sales and purchase commodity contracts, fulfillment rates, and dispatch quotas.
@@ -250,14 +251,6 @@ export const OrderListScreen: React.FC = () => {
 
         {!isLabour && (
           <div className="flex items-center gap-2 self-start sm:self-auto">
-            <button
-              type="button"
-              onClick={() => navigate('bulk-transport')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
-            >
-              <Truck className="w-3.5 h-3.5 text-blue-600" />
-              Bulk Dispatch
-            </button>
               <button
                 type="button"
                 onClick={() => setShowTypeSelectModal(true)}

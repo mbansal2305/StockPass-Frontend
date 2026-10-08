@@ -3,11 +3,11 @@ import { useApp, NavigationPage } from '../../context/AppContext';
 import stockpassLogo from '../../stockpasslogo.png';
 import {
   LayoutDashboard,
-  ClipboardList,
+  ShoppingCart,
   Truck,
-  WalletCards,
+  Wallet,
   ReceiptText,
-  FileText,
+  Calculator,
   Layers,
   Database,
   Users,
@@ -75,12 +75,12 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
     {
       group: 'OPERATIONS',
       items: [
-        { id: 'orders' as NavigationPage, label: 'Orders', icon: ClipboardList },
+        { id: 'orders' as NavigationPage, label: 'Orders', icon: ShoppingCart },
         { id: 'transport' as NavigationPage, label: 'Transport', icon: Truck },
-        { id: 'transport-payments' as NavigationPage, label: 'Transport Payments', icon: WalletCards },
+        { id: 'transport-payments' as NavigationPage, label: 'Transport Payments', icon: Wallet },
         { id: 'bulk-transport-list' as NavigationPage, label: 'Bulk Transports', icon: Layers },
         { id: 'expenses' as NavigationPage, label: 'Expenses', icon: ReceiptText },
-        { id: 'bill-hisaab' as NavigationPage, label: 'Bill Hisaab', icon: FileText }
+        { id: 'bill-hisaab' as NavigationPage, label: 'Bill Hisaab', icon: Calculator }
       ]
     },
     {

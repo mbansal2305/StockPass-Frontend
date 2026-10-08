@@ -194,7 +194,7 @@ export const TransportListScreen: React.FC = () => {
       {/* Top Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Transport Logistics</h1>
+          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight"><Truck className="h-5 w-5 text-blue-600" />Transport Logistics</h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Monitor truck consignments, gross & received weights, waybills, and freight disbursements.
           </p>

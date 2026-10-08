@@ -6,7 +6,7 @@ import { PaginatedTransportsResult, TransportClientOption, transportsApi } from 
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
-import { Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, X } from 'lucide-react';
+import { Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, Wallet, X } from 'lucide-react';
 import { TransportPaymentBill } from './TransportPaymentBill';
 
 interface PaymentDraft {
@@ -431,7 +431,7 @@ export const TransportPaymentsScreen: React.FC = () => {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Transport Payments</h1>
+        <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight"><Wallet className="h-5 w-5 text-blue-600" />Transport Payments</h1>
         <p className="mt-0.5 text-xs text-slate-500">Review receipts, settle freight, and close consignments.</p>
       </div>
 

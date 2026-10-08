@@ -22,7 +22,8 @@ import {
   Info,
   Globe,
   RefreshCw,
-  MoreVertical
+  MoreVertical,
+  Database
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { getClientFlagBadge, getClientTypeLabel } from '../../utils/formatters';
@@ -684,11 +685,11 @@ export const MasterDataScreen: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Master Data</h1>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight"><Database className="h-5 w-5 text-blue-600" />Master Data</h1>
+            {/* <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               API Synced
-            </span>
+            </span> */}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Maintain commodities, commercial clients, godowns, brokers, and logistics partners.

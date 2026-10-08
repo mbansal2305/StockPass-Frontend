@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Printer, Search, X } from 'lucide-react';
+import { Calculator, Printer, Search, X } from 'lucide-react';
 import { billsApi, BillHisaabSearchResult } from '../../api/bills';
 import { masterApi, SelectionFirm } from '../../api/master';
 import { useApp } from '../../context/AppContext';
@@ -311,7 +311,7 @@ export const BillHisaabScreen: React.FC = () => {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Bill Hisaab</h1>
+          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900"><Calculator className="h-5 w-5 text-blue-600" />Bill Hisaab</h1>
           <p className="mt-1 text-sm text-slate-500">Search for a transport bill, enter settlement details, then save the bill as a PDF.</p>
         </div>
         {form && (
