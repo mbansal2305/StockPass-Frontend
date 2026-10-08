@@ -27,6 +27,31 @@
 import { apiClient } from './client';
 import { Broker, Commodity, MasterEntityType } from '../types';
 
+export interface SelectionFirm {
+  id: string;
+  name: string;
+  profilePicture: string | null;
+  address: string;
+  city: string;
+  pincode: string;
+}
+
+export interface SelectionClient {
+  id: string;
+  name: string;
+  type: string;
+  maanNo: string;
+  city: string;
+}
+
+function getSelectionRows(response: any): any[] {
+  const data = response?.data ?? response;
+  const candidates = [data, data?.results, data?.items, data?.data];
+  const rows = candidates.find(Array.isArray);
+  if (!rows) throw new Error('Invalid selection response');
+  return rows;
+}
+
 export interface PaginatedResult<T = any> {
   results: T[];
   total: number;
@@ -97,6 +122,35 @@ function parsePaginatedResponse<T>(res: any): PaginatedResult<T> {
 }
 
 export const masterApi = {
+  async selectFirms(): Promise<SelectionFirm[]> {
+    const response = await apiClient.get<any>('/master/sel/firms/');
+    return getSelectionRows(response).flatMap((item: any) => {
+      if (!item || item.id === undefined || item.id === null || !item.name) return [];
+      return [{
+        id: String(item.id),
+        name: String(item.name),
+        profilePicture: item.profile_picture ? String(item.profile_picture) : null,
+        address: String(item.address ?? ''),
+        city: String(item.city ?? ''),
+        pincode: String(item.pincode ?? '')
+      }];
+    });
+  },
+
+  async selectAllClients(): Promise<SelectionClient[]> {
+    const response = await apiClient.get<any>('/master/sel/allclients/');
+    return getSelectionRows(response).flatMap((item: any) => {
+      if (!item || item.id === undefined || item.id === null || !item.name) return [];
+      return [{
+        id: String(item.id),
+        name: String(item.name),
+        type: String(item.type ?? ''),
+        maanNo: String(item.maan_no ?? ''),
+        city: String(item.city ?? '')
+      }];
+    });
+  },
+
   /**
    * GET /master/sel/commodity/
    * Returns commodity options for selection controls.

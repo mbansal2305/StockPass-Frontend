@@ -40,6 +40,7 @@ export type NavigationPage =
   | 'bulk-transport-list'
   | 'bulk-transport'
   | 'master-data'
+  | 'expenses'
   | 'employees';
 
 export interface ToastMessage {
