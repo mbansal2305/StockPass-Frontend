@@ -15,8 +15,6 @@ import {
   X,
   MapPin,
   FileText,
-  Filter,
-  RotateCcw,
   Loader2,
   Phone,
   Info,
@@ -28,6 +26,7 @@ import {
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { getClientFlagBadge, getClientTypeBadge, getClientTypeLabel } from '../../utils/formatters';
 import { getImageSource } from '../../utils/images';
+import { masterApi } from '../../api/master';
 
 export const MasterDataScreen: React.FC = () => {
   const {
@@ -46,9 +45,6 @@ export const MasterDataScreen: React.FC = () => {
     masterAdd,
     masterUpdate,
     masterDelete,
-    masterSearch,
-    masterList,
-    isBackendConnected
   } = useApp();
 
   const isOwner = currentUser?.role === 'OWNER';
@@ -56,30 +52,12 @@ export const MasterDataScreen: React.FC = () => {
 
   // Global search input for current active tab
   const [searchTerm, setSearchTerm] = useState('');
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [isLoadingApi, setIsLoadingApi] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
-
-  // Exact FILTER_FIELDS per entity specification:
-  // broker: name, city
-  const [brokerFilters, setBrokerFilters] = useState({ name: '', city: '' });
-
-  // businessclient: name, address, city, pincode, type, flag
-  const [clientFilters, setClientFilters] = useState({
-    name: '',
-    address: '',
-    city: '',
-    pincode: '',
-    type: 'ALL',
-    flag: 'ALL'
-  });
-
-  // commodity: name, type
-  const [commodityFilters, setCommodityFilters] = useState({ name: '', type: '' });
-
-  // transporter: name, agency, city
-  const [transporterFilters, setTransporterFilters] = useState({ name: '', agency: '', city: '' });
+  const [currentPageNum, setCurrentPageNum] = useState(1);
+  const pageSize = 100;
+  const [serverPage, setServerPage] = useState({ total: 0, totalPages: 1 });
 
   // Server-fetched datasets for live search/list query
   const [serverData, setServerData] = useState<{
@@ -179,265 +157,154 @@ export const MasterDataScreen: React.FC = () => {
     name: string;
   } | null>(null);
 
-  // Fetch from server using /master/search/ or /master/lst/ with debounce
+  // Fetch one page from /master/lst/. Search is performed only against this page.
   const fetchCurrentEntityData = useCallback(async () => {
     setIsLoadingApi(true);
     try {
+      const entityByTab: Record<typeof masterDataTab, MasterEntityType> = {
+        commodities: 'commodity',
+        clients: 'businessclient',
+        brokers: 'broker',
+        transporters: 'transporter'
+      };
+      const result = await masterApi.listPaginated<any>(
+        entityByTab[masterDataTab],
+        {},
+        currentPageNum,
+        pageSize
+      );
+      const results = result.results;
+      const totalPages = Math.max(1, result.totalPages);
+      setServerPage({ total: result.total, totalPages });
+      if (currentPageNum > totalPages) {
+        setCurrentPageNum(totalPages);
+        return;
+      }
+
       if (masterDataTab === 'commodities') {
-        const filters: Record<string, any> = {};
-        if (commodityFilters.name) filters.name = commodityFilters.name;
-        if (commodityFilters.type && commodityFilters.type !== 'ALL') filters.type = commodityFilters.type;
-
-        let results: Commodity[];
-        if (searchTerm.trim()) {
-          results = await masterSearch('commodity', searchTerm, filters);
-        } else {
-          results = await masterList('commodity', filters);
-        }
-        if (Array.isArray(results) && results.length > 0) {
-          setServerData(prev => ({
-            ...prev,
-            commodities: results.map(c => ({
-              ...c,
-              id: String(c.id || (c as any)._id),
-              name: c.name || '',
-              type: c.type || '',
-              notes: c.notes || ''
-            }))
-          }));
-        } else if (searchTerm.trim() || Object.keys(filters).length > 0) {
-          // If query returned empty from server, keep empty array
-          setServerData(prev => ({ ...prev, commodities: [] }));
-        } else {
-          // Initial or empty query: fallback to context cache
-          setServerData(prev => ({ ...prev, commodities: null }));
-        }
+        setServerData(prev => ({
+          ...prev,
+          commodities: results.map(c => ({
+            ...c,
+            id: String(c.id || c._id),
+            name: c.name || '',
+            type: c.type || '',
+            notes: c.notes || ''
+          }))
+        }));
       } else if (masterDataTab === 'clients') {
-        const filters: Record<string, any> = {};
-        if (clientFilters.name) filters.name = clientFilters.name;
-        if (clientFilters.address) filters.address = clientFilters.address;
-        if (clientFilters.city) filters.city = clientFilters.city;
-        if (clientFilters.pincode) filters.pincode = clientFilters.pincode;
-        if (clientFilters.type && clientFilters.type.toUpperCase() !== 'ALL') filters.type = clientFilters.type.toLowerCase();
-        if (clientFilters.flag && clientFilters.flag.toUpperCase() !== 'ALL') filters.flag = clientFilters.flag.toLowerCase();
-
-        let results: BusinessClient[];
-        if (searchTerm.trim()) {
-          results = await masterSearch('businessclient', searchTerm, filters);
-        } else {
-          results = await masterList('businessclient', filters);
-        }
-        if (Array.isArray(results) && results.length > 0) {
-          setServerData(prev => ({
-            ...prev,
-            clients: results.map(c => ({
-              ...c,
-              id: String(c.id || (c as any)._id),
-              name: c.name || '',
-              address: c.address || '',
-              city: c.city || '',
-              pincode: c.pincode || '',
-              maan_no: c.maan_no || '',
-              type: c.type || 'COMPANY',
-              flag: c.flag || 'GOOD',
-              location_url: c.location_url || '',
-              profile_picture: c.profile_picture || c.image || null,
-              notes: c.notes || ''
-            }))
-          }));
-        } else if (searchTerm.trim() || Object.keys(filters).length > 0) {
-          setServerData(prev => ({ ...prev, clients: [] }));
-        } else {
-          setServerData(prev => ({ ...prev, clients: null }));
-        }
+        setServerData(prev => ({
+          ...prev,
+          clients: results.map(c => ({
+            ...c,
+            id: String(c.id || c._id),
+            name: c.name || '',
+            address: c.address || '',
+            city: c.city || '',
+            pincode: c.pincode || '',
+            maan_no: c.maan_no || '',
+            contact_name: c.contact_name || '',
+            pri_contact: c.pri_contact || '',
+            sec_contact: c.sec_contact || '',
+            type: c.type || 'COMPANY',
+            flag: c.flag || 'GOOD',
+            location_url: c.location_url || '',
+            profile_picture: c.profile_picture || c.image || null,
+            notes: c.notes || ''
+          }))
+        }));
       } else if (masterDataTab === 'brokers') {
-        const filters: Record<string, any> = {};
-        if (brokerFilters.name) filters.name = brokerFilters.name;
-        if (brokerFilters.city) filters.city = brokerFilters.city;
-
-        let results: Broker[];
-        if (searchTerm.trim()) {
-          results = await masterSearch('broker', searchTerm, filters);
-        } else {
-          results = await masterList('broker', filters);
-        }
-        if (Array.isArray(results) && results.length > 0) {
-          setServerData(prev => ({
-            ...prev,
-            brokers: results.map(b => ({
-              ...b,
-              id: String(b.id || (b as any)._id),
-              name: b.name || '',
-              phone_number: b.phone_number || (b as any).phone || '',
-              phone: b.phone_number || (b as any).phone || '',
-              city: b.city || '',
-              notes: b.notes || ''
-            }))
-          }));
-        } else if (searchTerm.trim() || Object.keys(filters).length > 0) {
-          setServerData(prev => ({ ...prev, brokers: [] }));
-        } else {
-          setServerData(prev => ({ ...prev, brokers: null }));
-        }
-      } else if (masterDataTab === 'transporters') {
-        const filters: Record<string, any> = {};
-        if (transporterFilters.name) filters.name = transporterFilters.name;
-        if (transporterFilters.agency) filters.agency = transporterFilters.agency;
-        if (transporterFilters.city) filters.city = transporterFilters.city;
-
-        let results: Transporter[];
-        if (searchTerm.trim()) {
-          results = await masterSearch('transporter', searchTerm, filters);
-        } else {
-          results = await masterList('transporter', filters);
-        }
-        if (Array.isArray(results) && results.length > 0) {
-          setServerData(prev => ({
-            ...prev,
-            transporters: results.map(t => ({
-              ...t,
-              id: String(t.id || (t as any)._id),
-              name: t.name || '',
-              agency: t.agency || '',
-              phone_number: t.phone_number || (t as any).phone || '',
-              phone: t.phone_number || (t as any).phone || '',
-              city: t.city || '',
-              notes: t.notes || ''
-            }))
-          }));
-        } else if (searchTerm.trim() || Object.keys(filters).length > 0) {
-          setServerData(prev => ({ ...prev, transporters: [] }));
-        } else {
-          setServerData(prev => ({ ...prev, transporters: null }));
-        }
+        setServerData(prev => ({
+          ...prev,
+          brokers: results.map(b => ({
+            ...b,
+            id: String(b.id || b._id),
+            name: b.name || '',
+            phone_number: b.phone_number || b.phone || '',
+            phone: b.phone_number || b.phone || '',
+            city: b.city || '',
+            notes: b.notes || ''
+          }))
+        }));
+      } else {
+        setServerData(prev => ({
+          ...prev,
+          transporters: results.map(t => ({
+            ...t,
+            id: String(t.id || t._id),
+            name: t.name || '',
+            agency: t.agency || '',
+            phone_number: t.phone_number || t.phone || '',
+            phone: t.phone_number || t.phone || '',
+            city: t.city || '',
+            notes: t.notes || ''
+          }))
+        }));
       }
     } catch (err) {
       console.warn('Failed querying master API, falling back to local dataset:', err);
+      const localRows = masterDataTab === 'commodities'
+        ? commodities
+        : masterDataTab === 'clients'
+          ? clients
+          : masterDataTab === 'brokers'
+            ? brokers
+            : transporters;
+      const totalPages = Math.max(1, Math.ceil(localRows.length / pageSize));
+      if (currentPageNum > totalPages) setCurrentPageNum(totalPages);
+      setServerPage({ total: localRows.length, totalPages });
+      setServerData(prev => ({ ...prev, [masterDataTab]: null }));
     } finally {
       setIsLoadingApi(false);
     }
-  }, [
-    masterDataTab,
-    searchTerm,
-    brokerFilters,
-    clientFilters,
-    commodityFilters,
-    transporterFilters,
-    masterSearch,
-    masterList
-  ]);
+  }, [masterDataTab, currentPageNum, pageSize, commodities, clients, brokers, transporters]);
 
-  // Trigger search/filter with debounce
+  // Fetch a page when changing tabs or page; typing in search stays local.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchCurrentEntityData();
-    }, 300);
-    return () => clearTimeout(timer);
+    fetchCurrentEntityData();
   }, [fetchCurrentEntityData]);
 
-  // Count active filters
-  const activeFiltersCount = useMemo(() => {
-    let count = 0;
-    if (masterDataTab === 'commodities') {
-      if (commodityFilters.name) count++;
-      if (commodityFilters.type && commodityFilters.type !== 'ALL') count++;
-    } else if (masterDataTab === 'clients') {
-      if (clientFilters.name) count++;
-      if (clientFilters.address) count++;
-      if (clientFilters.city) count++;
-      if (clientFilters.pincode) count++;
-      if (clientFilters.type && clientFilters.type !== 'ALL') count++;
-      if (clientFilters.flag && clientFilters.flag !== 'ALL') count++;
-    } else if (masterDataTab === 'brokers') {
-      if (brokerFilters.name) count++;
-      if (brokerFilters.city) count++;
-    } else if (masterDataTab === 'transporters') {
-      if (transporterFilters.name) count++;
-      if (transporterFilters.agency) count++;
-      if (transporterFilters.city) count++;
-    }
-    return count;
-  }, [masterDataTab, commodityFilters, clientFilters, brokerFilters, transporterFilters]);
-
-  const handleResetFilters = () => {
-    setSearchTerm('');
-    setCommodityFilters({ name: '', type: '' });
-    setClientFilters({ name: '', address: '', city: '', pincode: '', type: 'ALL', flag: 'ALL' });
-    setBrokerFilters({ name: '', city: '' });
-    setTransporterFilters({ name: '', agency: '', city: '' });
-    setServerData({});
+  const matchesSearch = (item: object) => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return true;
+    return Object.entries(item).some(([key, value]) =>
+      !['image', 'imageurl', 'profile_picture'].includes(key.toLowerCase()) &&
+      (typeof value === 'string' || typeof value === 'number') &&
+      String(value).toLowerCase().includes(term)
+    );
   };
 
-  // --- Filtered Datasets with Fallback to local context store ---
+  // Search only the currently loaded API page (or the matching local page offline).
   const displayedCommodities = useMemo(() => {
-    if (serverData.commodities !== undefined && serverData.commodities !== null) {
-      return serverData.commodities;
-    }
-    return commodities.filter(c => {
-      const matchSearch = !searchTerm ||
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.type.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchName = !commodityFilters.name ||
-        c.name.toLowerCase().includes(commodityFilters.name.toLowerCase());
-      const matchType = !commodityFilters.type || commodityFilters.type === 'ALL' ||
-        c.type.toLowerCase() === commodityFilters.type.toLowerCase();
-      return matchSearch && matchName && matchType;
-    });
-  }, [commodities, serverData.commodities, searchTerm, commodityFilters]);
+    const start = (currentPageNum - 1) * pageSize;
+    const rows = serverData.commodities ?? commodities.slice(start, start + pageSize);
+    return rows.filter(matchesSearch);
+  }, [commodities, serverData.commodities, searchTerm, currentPageNum, pageSize]);
 
   const displayedClients = useMemo(() => {
-    if (serverData.clients !== undefined && serverData.clients !== null) {
-      return serverData.clients;
-    }
-    return clients.filter(c => {
-      const matchSearch = !searchTerm ||
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.address.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchName = !clientFilters.name || c.name.toLowerCase().includes(clientFilters.name.toLowerCase());
-      const matchAddress = !clientFilters.address || c.address.toLowerCase().includes(clientFilters.address.toLowerCase());
-      const matchCity = !clientFilters.city || c.city.toLowerCase().includes(clientFilters.city.toLowerCase());
-      const matchPincode = !clientFilters.pincode || c.pincode.includes(clientFilters.pincode);
-      const matchType = !clientFilters.type || clientFilters.type.toUpperCase() === 'ALL' || c.type?.toLowerCase() === clientFilters.type.toLowerCase();
-      const matchFlag = !clientFilters.flag || clientFilters.flag.toUpperCase() === 'ALL' || c.flag?.toLowerCase() === clientFilters.flag.toLowerCase();
-      return matchSearch && matchName && matchAddress && matchCity && matchPincode && matchType && matchFlag;
-    });
-  }, [clients, serverData.clients, searchTerm, clientFilters]);
+    const start = (currentPageNum - 1) * pageSize;
+    const rows = serverData.clients ?? clients.slice(start, start + pageSize);
+    return rows.filter(matchesSearch);
+  }, [clients, serverData.clients, searchTerm, currentPageNum, pageSize]);
 
   const displayedBrokers = useMemo(() => {
-    if (serverData.brokers !== undefined && serverData.brokers !== null) {
-      return serverData.brokers;
-    }
-    return brokers.filter(b => {
-      const phoneVal = b.phone_number || (b as any).phone || '';
-      const matchSearch = !searchTerm ||
-        b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (b.city && b.city.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        phoneVal.includes(searchTerm);
-      const matchName = !brokerFilters.name || b.name.toLowerCase().includes(brokerFilters.name.toLowerCase());
-      const matchCity = !brokerFilters.city || (b.city && b.city.toLowerCase().includes(brokerFilters.city.toLowerCase()));
-      return matchSearch && matchName && matchCity;
-    });
-  }, [brokers, serverData.brokers, searchTerm, brokerFilters]);
+    const start = (currentPageNum - 1) * pageSize;
+    const rows = serverData.brokers ?? brokers.slice(start, start + pageSize);
+    return rows.filter(matchesSearch);
+  }, [brokers, serverData.brokers, searchTerm, currentPageNum, pageSize]);
 
   const displayedTransporters = useMemo(() => {
-    if (serverData.transporters !== undefined && serverData.transporters !== null) {
-      return serverData.transporters;
-    }
-    return transporters.filter(t => {
-      const phoneVal = t.phone_number || (t as any).phone || '';
-      const agencyVal = t.agency || '';
-      const matchSearch = !searchTerm ||
-        t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        agencyVal.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (t.city && t.city.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        phoneVal.includes(searchTerm);
-      const matchName = !transporterFilters.name || t.name.toLowerCase().includes(transporterFilters.name.toLowerCase());
-      const matchAgency = !transporterFilters.agency || agencyVal.toLowerCase().includes(transporterFilters.agency.toLowerCase());
-      const matchCity = !transporterFilters.city || (t.city && t.city.toLowerCase().includes(transporterFilters.city.toLowerCase()));
-      return matchSearch && matchName && matchAgency && matchCity;
-    });
-  }, [transporters, serverData.transporters, searchTerm, transporterFilters]);
+    const start = (currentPageNum - 1) * pageSize;
+    const rows = serverData.transporters ?? transporters.slice(start, start + pageSize);
+    return rows.filter(matchesSearch);
+  }, [transporters, serverData.transporters, searchTerm, currentPageNum, pageSize]);
+
+  const searchPlaceholder = {
+    commodities: 'Search current page of commodities...',
+    clients: 'Search current page of clients & godowns...',
+    brokers: 'Search current page of brokers...',
+    transporters: 'Search current page of transporters...'
+  }[masterDataTab];
 
   // --- Handlers for Commodities ---
   const handleOpenCommodityModal = (item?: Commodity) => {
@@ -718,7 +585,7 @@ export const MasterDataScreen: React.FC = () => {
         <div className="inline-flex p-1 bg-slate-200/80 rounded-xl shadow-2xs self-start sm:self-auto overflow-x-auto max-w-full">
           <button
             type="button"
-            onClick={() => { setMasterDataTab('commodities'); handleResetFilters(); }}
+            onClick={() => { setMasterDataTab('commodities'); setSearchTerm(''); setCurrentPageNum(1); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
               masterDataTab === 'commodities'
                 ? 'bg-white text-slate-900 shadow-xs'
@@ -730,7 +597,7 @@ export const MasterDataScreen: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => { setMasterDataTab('clients'); handleResetFilters(); }}
+            onClick={() => { setMasterDataTab('clients'); setSearchTerm(''); setCurrentPageNum(1); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
               masterDataTab === 'clients'
                 ? 'bg-white text-slate-900 shadow-xs'
@@ -742,7 +609,7 @@ export const MasterDataScreen: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => { setMasterDataTab('brokers'); handleResetFilters(); }}
+            onClick={() => { setMasterDataTab('brokers'); setSearchTerm(''); setCurrentPageNum(1); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
               masterDataTab === 'brokers'
                 ? 'bg-white text-slate-900 shadow-xs'
@@ -754,7 +621,7 @@ export const MasterDataScreen: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => { setMasterDataTab('transporters'); handleResetFilters(); }}
+            onClick={() => { setMasterDataTab('transporters'); setSearchTerm(''); setCurrentPageNum(1); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
               masterDataTab === 'transporters'
                 ? 'bg-white text-slate-900 shadow-xs'
@@ -767,7 +634,7 @@ export const MasterDataScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Action Bar: Search, Advanced Filter Toggle, Refresh, Add Record */}
+      {/* Main Action Bar: Search, Refresh, Add Record */}
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           <div className="flex flex-1 flex-wrap items-center gap-2.5">
@@ -778,7 +645,7 @@ export const MasterDataScreen: React.FC = () => {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder={`Search ${masterDataTab} (queries /master/search/)...`}
+                placeholder={searchPlaceholder}
                 className="w-full pl-9 pr-8 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
               />
               {isLoadingApi && (
@@ -786,35 +653,15 @@ export const MasterDataScreen: React.FC = () => {
               )}
             </div>
 
-            {/* Filter Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
-                showAdvancedFilters || activeFiltersCount > 0
-                  ? 'bg-blue-50 text-blue-700 border-blue-200'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <Filter className="w-3.5 h-3.5" />
-              Filters
-              {activeFiltersCount > 0 && (
-                <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold">
-                  {activeFiltersCount}
-                </span>
-              )}
-            </button>
-
-            {/* Reset Filters */}
-            {(activeFiltersCount > 0 || searchTerm) && (
+            {searchTerm && (
               <button
                 type="button"
-                onClick={handleResetFilters}
+                onClick={() => setSearchTerm('')}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                title="Clear all filters"
+                title="Clear search"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset
+                <X className="w-3.5 h-3.5" />
+                Clear
               </button>
             )}
 
@@ -876,186 +723,6 @@ export const MasterDataScreen: React.FC = () => {
           )}
         </div>
 
-        {/* Dedicated Advanced Filter Form Bar (strictly matching FILTER_FIELDS) */}
-        {showAdvancedFilters && (
-          <div className="pt-3 border-t border-slate-100 bg-slate-50/70 p-3 rounded-lg">
-            <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-2 flex items-center justify-between">
-              <span>Filter {masterDataTab} ({activeFiltersCount} active)</span>
-              <button
-                type="button"
-                onClick={() => setShowAdvancedFilters(false)}
-                className="text-slate-400 hover:text-slate-600 text-xs"
-              >
-                Close
-              </button>
-            </div>
-
-            {/* FILTER FIELDS FOR COMMODITY: name, type */}
-            {masterDataTab === 'commodities' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Name</label>
-                  <input
-                    type="text"
-                    value={commodityFilters.name}
-                    onChange={(e) => setCommodityFilters({ ...commodityFilters, name: e.target.value })}
-                    placeholder="Filter by name..."
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Type / Category</label>
-                  <input
-                    type="text"
-                    value={commodityFilters.type}
-                    onChange={(e) => setCommodityFilters({ ...commodityFilters, type: e.target.value })}
-                    placeholder="e.g. Grain, Pulse, Oilseed..."
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* FILTER FIELDS FOR BUSINESS CLIENT: name, address, city, pincode, type, flag */}
-            {masterDataTab === 'clients' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Name</label>
-                  <input
-                    type="text"
-                    value={clientFilters.name}
-                    onChange={(e) => setClientFilters({ ...clientFilters, name: e.target.value })}
-                    placeholder="Firm / Client..."
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Address</label>
-                  <input
-                    type="text"
-                    value={clientFilters.address}
-                    onChange={(e) => setClientFilters({ ...clientFilters, address: e.target.value })}
-                    placeholder="Address street/area..."
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">City</label>
-                  <input
-                    type="text"
-                    value={clientFilters.city}
-                    onChange={(e) => setClientFilters({ ...clientFilters, city: e.target.value })}
-                    placeholder="City name..."
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Pincode</label>
-                  <input
-                    type="text"
-                    value={clientFilters.pincode}
-                    onChange={(e) => setClientFilters({ ...clientFilters, pincode: e.target.value })}
-                    placeholder="Pincode..."
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Type</label>
-                  <select
-                    value={clientFilters.type.toLowerCase()}
-                    onChange={(e) => setClientFilters({ ...clientFilters, type: e.target.value.toLowerCase() })}
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  >
-                    <option value="all">All Types</option>
-                    <option value="my_firm">My Firm</option>
-                    <option value="my_godown">My Godown</option>
-                    <option value="other_godown">Other Godown</option>
-                    <option value="company">Company</option>
-                    <option value="location">Mandi / Yard</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Standing Flag</label>
-                  <select
-                    value={clientFilters.flag.toLowerCase()}
-                    onChange={(e) => setClientFilters({ ...clientFilters, flag: e.target.value.toLowerCase() })}
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  >
-                    <option value="all">All Flags</option>
-                    <option value="good">Good Standing</option>
-                    <option value="neutral">Neutral</option>
-                    <option value="bad">Caution</option>
-                    <option value="unreasonable_claims">Excess Claims</option>
-                    <option value="fraud">Fraud</option>
-                    <option value="blacklisted">Blacklisted</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {/* FILTER FIELDS FOR BROKER: name, city */}
-            {masterDataTab === 'brokers' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Name</label>
-                  <input
-                    type="text"
-                    value={brokerFilters.name}
-                    onChange={(e) => setBrokerFilters({ ...brokerFilters, name: e.target.value })}
-                    placeholder="Broker name..."
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">City</label>
-                  <input
-                    type="text"
-                    value={brokerFilters.city}
-                    onChange={(e) => setBrokerFilters({ ...brokerFilters, city: e.target.value })}
-                    placeholder="City / Mandi..."
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* FILTER FIELDS FOR TRANSPORTER: name, agency, city */}
-            {masterDataTab === 'transporters' && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Name (Transporter/Contact)</label>
-                  <input
-                    type="text"
-                    value={transporterFilters.name}
-                    onChange={(e) => setTransporterFilters({ ...transporterFilters, name: e.target.value })}
-                    placeholder="Transporter name..."
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Agency Name</label>
-                  <input
-                    type="text"
-                    value={transporterFilters.agency}
-                    onChange={(e) => setTransporterFilters({ ...transporterFilters, agency: e.target.value })}
-                    placeholder="Agency / Logistics firm..."
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">City</label>
-                  <input
-                    type="text"
-                    value={transporterFilters.city}
-                    onChange={(e) => setTransporterFilters({ ...transporterFilters, city: e.target.value })}
-                    placeholder="Headquarters city..."
-                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* TAB 1: COMMODITIES TABLE */}
@@ -1068,14 +735,13 @@ export const MasterDataScreen: React.FC = () => {
                   <th className="px-4 py-3">Commodity Name</th>
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Notes</th>
-                  <th className="px-4 py-3">Active Orders</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {displayedCommodities.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-slate-500">
+                    <td colSpan={4} className="py-8 text-center text-slate-500">
                       {isLoadingApi ? (
                         <div className="flex items-center justify-center gap-2 text-slate-400">
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -1087,9 +753,8 @@ export const MasterDataScreen: React.FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  displayedCommodities.map((item) => {
-                    const activeOrdersCount = orders.filter(o => o.commodityId === item.id).length;
-                    return (
+                displayedCommodities.map((item) => {
+                  return (
                       <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="px-4 py-3 font-semibold text-slate-900">
                           {item.name}
@@ -1101,9 +766,6 @@ export const MasterDataScreen: React.FC = () => {
                         </td>
                         <td className="px-4 py-3 text-slate-500 max-w-xs truncate">
                           {item.notes || '-'}
-                        </td>
-                        <td className="px-4 py-3 tabular-nums text-slate-600">
-                          {activeOrdersCount} {activeOrdersCount === 1 ? 'order' : 'orders'}
                         </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           <div className="relative inline-block text-left">
@@ -1351,14 +1013,13 @@ export const MasterDataScreen: React.FC = () => {
                   <th className="px-4 py-3">Phone Number</th>
                   <th className="px-4 py-3">City / Market</th>
                   <th className="px-4 py-3">Notes</th>
-                  <th className="px-4 py-3">Associated Orders</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {displayedBrokers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-500">
+                    <td colSpan={5} className="py-8 text-center text-slate-500">
                       {isLoadingApi ? (
                         <div className="flex items-center justify-center gap-2 text-slate-400">
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -1371,7 +1032,6 @@ export const MasterDataScreen: React.FC = () => {
                   </tr>
                 ) : (
                   displayedBrokers.map((broker) => {
-                    const brokerOrdersCount = orders.filter(o => o.brokerId === broker.id).length;
                     const phone = broker.phone_number || (broker as any).phone || '-';
                     return (
                       <tr key={broker.id} className="hover:bg-slate-50/70 transition-colors">
@@ -1380,9 +1040,6 @@ export const MasterDataScreen: React.FC = () => {
                         <td className="px-4 py-3 text-slate-600">{broker.city || '-'}</td>
                         <td className="px-4 py-3 text-slate-500 max-w-xs truncate">
                           {broker.notes || '-'}
-                        </td>
-                        <td className="px-4 py-3 tabular-nums text-slate-600">
-                          {brokerOrdersCount} {brokerOrdersCount === 1 ? 'order' : 'orders'}
                         </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           <div className="relative inline-block text-left">
@@ -1462,14 +1119,13 @@ export const MasterDataScreen: React.FC = () => {
                   <th className="px-4 py-3">Phone Number</th>
                   <th className="px-4 py-3">City</th>
                   <th className="px-4 py-3">Notes</th>
-                  <th className="px-4 py-3">Dispatched Transports</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {displayedTransporters.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-500">
+                    <td colSpan={6} className="py-8 text-center text-slate-500">
                       {isLoadingApi ? (
                         <div className="flex items-center justify-center gap-2 text-slate-400">
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -1482,7 +1138,6 @@ export const MasterDataScreen: React.FC = () => {
                   </tr>
                 ) : (
                   displayedTransporters.map((trp) => {
-                    const transportCount = transports.filter(t => t.transporterId === trp.id).length;
                     const phone = trp.phone_number || (trp as any).phone || '-';
                     return (
                       <tr key={trp.id} className="hover:bg-slate-50/70 transition-colors">
@@ -1491,9 +1146,6 @@ export const MasterDataScreen: React.FC = () => {
                         <td className="px-4 py-3 text-slate-600 font-mono">{phone}</td>
                         <td className="px-4 py-3 text-slate-600">{trp.city || '-'}</td>
                         <td className="px-4 py-3 text-slate-500 max-w-xs truncate">{trp.notes || '-'}</td>
-                        <td className="px-4 py-3 tabular-nums text-slate-600">
-                          {transportCount} {transportCount === 1 ? 'consignment' : 'consignments'}
-                        </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           <div className="relative inline-block text-left">
                             <button
@@ -1556,6 +1208,40 @@ export const MasterDataScreen: React.FC = () => {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {(serverPage.total > 0 || serverPage.totalPages > 1) && (
+        <div className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-600">
+          <span>
+            Showing {serverPage.total === 0 ? 0 : (currentPageNum - 1) * pageSize + 1} to {Math.min(currentPageNum * pageSize, serverPage.total)} of {serverPage.total} records
+            {searchTerm.trim() && ` · ${masterDataTab === 'commodities'
+              ? displayedCommodities.length
+              : masterDataTab === 'clients'
+                ? displayedClients.length
+                : masterDataTab === 'brokers'
+                  ? displayedBrokers.length
+                  : displayedTransporters.length} matches on this page`}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={currentPageNum === 1 || isLoadingApi}
+              onClick={() => setCurrentPageNum(page => page - 1)}
+              className="px-2.5 py-1 border border-slate-200 rounded bg-white disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="px-2 font-medium">{currentPageNum} / {serverPage.totalPages}</span>
+            <button
+              type="button"
+              disabled={currentPageNum === serverPage.totalPages || isLoadingApi}
+              onClick={() => setCurrentPageNum(page => page + 1)}
+              className="px-2.5 py-1 border border-slate-200 rounded bg-white disabled:opacity-40"
+            >
+              Next
+            </button>
           </div>
         </div>
       )}
