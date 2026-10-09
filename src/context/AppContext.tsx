@@ -253,21 +253,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setTransporters(refreshedTransporters);
     }
 
-    if (currentPage === 'transport-payments') {
-      try {
-        const apiTransports = await transportsApi.list({}, {
-          clients: refreshedClients,
-          commodities: refreshedCommodities,
-          orders: storage.getOrders(),
-          transporters: refreshedTransporters
-        });
-        setTransports(apiTransports);
-      } catch (err) {
-        console.warn('Transport API list failed, using local storage:', err);
-        setTransports(localTransports);
-      }
-    }
-
     // Fetch users from backend API
     try {
       const apiUsers = await usersApi.getUsers();
@@ -316,25 +301,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     initSession();
   }, []);
-
-  useEffect(() => {
-    if (currentPage !== 'transport-payments') return;
-
-    let cancelled = false;
-    const localTransports = storage.getTransports();
-    transportsApi.list({}, { clients, commodities, orders, transporters })
-      .then(apiTransports => {
-        if (!cancelled) setTransports(apiTransports);
-      })
-      .catch(err => {
-        console.warn('Transport API list failed, using local storage:', err);
-        if (!cancelled) setTransports(localTransports);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentPage]);
 
   const navigate = (page: NavigationPage, params: Record<string, any> = {}) => {
     // Role-based route guard

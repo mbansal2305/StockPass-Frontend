@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Transport, TransportStatus, Transporter } from '../../types';
 import { PaginatedTransportsResult, transportsApi } from '../../api';
+import { masterApi } from '../../api/master';
 import {
   Search,
   Plus,
@@ -78,6 +79,23 @@ export const TransportListScreen: React.FC = () => {
   const [loadingDateFrom, setLoadingDateFrom] = useState('');
   const [loadingDateTo, setLoadingDateTo] = useState('');
   const [transporterOptions, setTransporterOptions] = useState<Transporter[]>([]);
+  const [partyOptions, setPartyOptions] = useState(() => clients.map(client => ({
+    id: client.id,
+    label: client.city ? `${client.name} (${client.city})` : client.name,
+    searchText: `${client.type} ${client.city || ''}`
+  })));
+  const [commodityOptions, setCommodityOptions] = useState(() => commodities.map(commodity => ({
+    id: commodity.id,
+    label: commodity.type ? `${commodity.name} (${commodity.type})` : commodity.name,
+    searchText: commodity.type
+  })));
+  const [billingFirmOptions, setBillingFirmOptions] = useState(() => clients
+    .filter(client => String(client.type).toUpperCase() === 'MY_FIRM')
+    .map(client => ({
+      id: client.id,
+      label: client.city ? `${client.name} (${client.city})` : client.name,
+      searchText: client.city || ''
+    })));
 
   // Pagination
   const [currentPageNum, setCurrentPageNum] = useState(1);
@@ -109,12 +127,39 @@ export const TransportListScreen: React.FC = () => {
 
   useEffect(() => {
     let isCurrent = true;
-    transportsApi.selectAgencyOptions()
-      .then(options => {
-        if (isCurrent) setTransporterOptions(options);
-      })
-      .catch(() => {
-        if (isCurrent) setTransporterOptions(transporters);
+    Promise.allSettled([
+      masterApi.selectAllClients(),
+      masterApi.selectFirms(),
+      masterApi.selectCommodities(),
+      transportsApi.selectAgencyOptions()
+    ]).then(([clientsResult, firmsResult, commoditiesResult, transportersResult]) => {
+      if (!isCurrent) return;
+      if (clientsResult.status === 'fulfilled') {
+        setPartyOptions(clientsResult.value.map(client => ({
+          id: client.id,
+          label: client.city ? `${client.name} (${client.city})` : client.name,
+          searchText: `${client.type} ${client.city}`
+        })));
+      }
+      if (firmsResult.status === 'fulfilled') {
+        setBillingFirmOptions(firmsResult.value.map(firm => ({
+          id: firm.id,
+          label: firm.city ? `${firm.name} (${firm.city})` : firm.name,
+          searchText: `${firm.city} ${firm.address}`
+        })));
+      }
+      if (commoditiesResult.status === 'fulfilled') {
+        setCommodityOptions(commoditiesResult.value.map(commodity => ({
+          id: commodity.id,
+          label: commodity.type ? `${commodity.name} (${commodity.type})` : commodity.name,
+          searchText: commodity.type
+        })));
+      }
+      if (transportersResult.status === 'fulfilled') {
+        setTransporterOptions(transportersResult.value);
+      } else {
+        setTransporterOptions(transporters);
+      }
       });
 
     return () => {
@@ -285,30 +330,30 @@ export const TransportListScreen: React.FC = () => {
 
       {/* Filter and Search Bar */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
-        <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,4fr)]">
-          <div className="relative lg:col-start-1 lg:row-start-1">
+        <div className="grid grid-cols-1 gap-2.5">
+          <div className="relative col-span-full row-start-1 min-w-0">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPageNum(1); }}
-              placeholder="Search vehicle #, bill/bilty #, mandi anugya, transporter..."
+              placeholder="Search transports by vehicle #, bill # or order #"
               className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
             />
           </div>
 
-          <div className="flex min-w-0 flex-wrap items-center gap-2 lg:col-start-2 lg:row-start-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 col-span-full row-start-2">
             <MultiSearchableSelect
               id="transport-party-filter"
               selectedIds={partyFilter}
-              options={clients.map(client => ({ id: client.id, label: client.city ? `${client.name} (${client.city})` : client.name, searchText: `${client.type} ${client.city || ''}` }))}
+              options={partyOptions}
               placeholder="All Parties"
               onChange={values => { setPartyFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
               id="transport-commodity-filter"
               selectedIds={commodityFilter}
-              options={commodities.map(commodity => ({ id: commodity.id, label: commodity.type ? `${commodity.name} (${commodity.type})` : commodity.name, searchText: commodity.type }))}
+              options={commodityOptions}
               placeholder="All Commodities"
               onChange={values => { setCommodityFilter(values); setCurrentPageNum(1); }}
             />
@@ -322,9 +367,7 @@ export const TransportListScreen: React.FC = () => {
             <MultiSearchableSelect
               id="transport-billing-firm-filter"
               selectedIds={billingFirmFilter}
-              options={clients
-                .filter(client => String(client.type).toUpperCase() === 'MY_FIRM')
-                .map(client => ({ id: client.id, label: client.city ? `${client.name} (${client.city})` : client.name, searchText: client.city || '' }))}
+              options={billingFirmOptions}
               placeholder="All Billing Firms"
               onChange={values => { setBillingFirmFilter(values); setCurrentPageNum(1); }}
             />
@@ -340,7 +383,7 @@ export const TransportListScreen: React.FC = () => {
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 border-y border-slate-100 py-2 lg:col-span-2 lg:row-start-2" aria-label="Loading date filter">
+          <div className="flex flex-wrap items-center gap-2 border-y border-slate-100 py-2 col-span-full row-start-3" aria-label="Loading date filter">
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600">
               <Calendar className="h-3.5 w-3.5" />
               Loading date

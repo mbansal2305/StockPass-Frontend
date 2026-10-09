@@ -342,19 +342,19 @@ export const OrderListScreen: React.FC = () => {
 
       {/* Filter Bar */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
-        <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,4fr)]">
-          <div className="relative lg:col-start-1 lg:row-start-1">
+        <div className="grid grid-cols-1 gap-2.5">
+          <div className="relative col-span-full row-start-1 min-w-0">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPageNum(1); }}
-              placeholder="Search orders by order #, client, or commodity..."
+              placeholder="Search orders by order #"
               className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 border-y border-slate-100 py-2 lg:col-span-2 lg:row-start-2" aria-label="Contract date filter">
+          <div className="flex flex-wrap items-center gap-2 border-y border-slate-100 py-2 col-span-full row-start-3" aria-label="Contract date filter">
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600">
               <Calendar className="h-3.5 w-3.5" />
               Contract date
@@ -404,7 +404,7 @@ export const OrderListScreen: React.FC = () => {
             )}
           </div>
 
-          <div className="flex min-w-0 flex-wrap items-center gap-2 pb-1 sm:pb-0 lg:col-start-2 lg:row-start-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 pb-1 sm:pb-0 col-span-full row-start-2">
             <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-lg shrink-0" role="tablist" aria-label="Order type">
               {(['PURCHASE ORDER', 'SALES ORDER'] as OrderType[]).map(type => (
                 <button

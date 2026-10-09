@@ -1,13 +1,38 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { zipSync } from 'fflate';
 import { useApp } from '../../context/AppContext';
-import { Transport, TransportRentType, QuantityUnit, TransportStatus } from '../../types';
+import { Transport, TransportRentType, QuantityUnit, TransportStatus, Transporter } from '../../types';
 import { PaginatedTransportsResult, TransportClientOption, transportsApi } from '../../api';
+import { masterApi } from '../../api/master';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
-import { Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, Wallet, X } from 'lucide-react';
+import { Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, Wallet, X, Calendar } from 'lucide-react';
 import { TransportPaymentBill } from './TransportPaymentBill';
+import { MultiSearchableSelect, SearchableOption } from '../common/SearchableSelect';
+
+const toNumericIds = (ids: string[]): number[] | undefined => {
+  const numericIds = ids
+    .map(id => Number(id))
+    .filter(id => Number.isSafeInteger(id) && id > 0);
+  return numericIds.length ? numericIds : undefined;
+};
+
+type DatePreset = 'all' | 'month' | 'three-months' | 'six-months' | 'range';
+
+const toDateInputValue = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const shiftDateByMonths = (date: Date, months: number): Date => {
+  const shifted = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDay = new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0).getDate();
+  shifted.setDate(Math.min(date.getDate(), lastDay));
+  return shifted;
+};
 
 interface PaymentDraft {
   status: TransportStatus;
@@ -185,11 +210,16 @@ export const TransportPaymentsScreen: React.FC = () => {
     navigate
   } = useApp();
 
-  const [activeStatus, setActiveStatus] = useState<TransportStatus>('PENDING');
+  const [activeStatus, setActiveStatus] = useState<TransportStatus | 'ALL'>('PENDING');
   const [searchTerm, setSearchTerm] = useState('');
-  const [commodityFilter, setCommodityFilter] = useState('ALL');
-  const [transporterFilter, setTransporterFilter] = useState('ALL');
-  const [billingFirmFilter, setBillingFirmFilter] = useState('ALL');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [commodityFilter, setCommodityFilter] = useState<string[]>([]);
+  const [transporterFilter, setTransporterFilter] = useState<string[]>([]);
+  const [billingFirmFilter, setBillingFirmFilter] = useState<string[]>([]);
+  const [partyFilter, setPartyFilter] = useState<string[]>([]);
+  const [datePreset, setDatePreset] = useState<DatePreset>('all');
+  const [loadingDateFrom, setLoadingDateFrom] = useState('');
+  const [loadingDateTo, setLoadingDateTo] = useState('');
   const [currentPageNum, setCurrentPageNum] = useState(1);
   const pageSize = 100;
   const [refreshSequence, setRefreshSequence] = useState(0);
@@ -209,20 +239,82 @@ export const TransportPaymentsScreen: React.FC = () => {
   const [printTransport, setPrintTransport] = useState<Transport | null>(null);
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
-  const [billingFirmOptions, setBillingFirmOptions] = useState<TransportClientOption[]>([]);
+  const [partyOptions, setPartyOptions] = useState<SearchableOption[]>(() => clients.map(client => ({
+    id: client.id,
+    label: client.city ? `${client.name} (${client.city})` : client.name,
+    searchText: `${client.type} ${client.city || ''}`
+  })));
+  const [commodityOptions, setCommodityOptions] = useState<SearchableOption[]>(() => commodities.map(commodity => ({
+    id: commodity.id,
+    label: commodity.type ? `${commodity.name} (${commodity.type})` : commodity.name,
+    searchText: commodity.type
+  })));
+  const [transporterOptions, setTransporterOptions] = useState<Transporter[]>(transporters);
+  const [billingFirmOptions, setBillingFirmOptions] = useState<TransportClientOption[]>(() => clients
+    .filter(client => String(client.type).toUpperCase() === 'MY_FIRM')
+    .map(client => ({ id: client.id, name: client.name, city: client.city })));
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
+    return () => window.clearTimeout(timeout);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    let isCurrent = true;
+    Promise.allSettled([
+      masterApi.selectAllClients(),
+      masterApi.selectFirms(),
+      masterApi.selectCommodities(),
+      transportsApi.selectAgencyOptions()
+    ]).then(([clientsResult, firmsResult, commoditiesResult, transportersResult]) => {
+      if (!isCurrent) return;
+      if (clientsResult.status === 'fulfilled') {
+        setPartyOptions(clientsResult.value.map(client => ({
+          id: client.id,
+          label: client.city ? `${client.name} (${client.city})` : client.name,
+          searchText: `${client.type} ${client.city}`
+        })));
+      }
+      if (firmsResult.status === 'fulfilled') {
+        setBillingFirmOptions(firmsResult.value.map(firm => ({
+          id: firm.id,
+          name: firm.name,
+          city: firm.city,
+          image: firm.profilePicture,
+          imageUrl: firm.profilePicture
+        })));
+      }
+      if (commoditiesResult.status === 'fulfilled') {
+        setCommodityOptions(commoditiesResult.value.map(commodity => ({
+          id: commodity.id,
+          label: commodity.type ? `${commodity.name} (${commodity.type})` : commodity.name,
+          searchText: commodity.type
+        })));
+      }
+      if (transportersResult.status === 'fulfilled') setTransporterOptions(transportersResult.value);
+    });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isCurrent = true;
     setIsLoading(true);
     setLoadError('');
     transportsApi.listPaymentsPaginated({
-      status: activeStatus,
-      commodity: commodityFilter === 'ALL' ? undefined : commodityFilter,
-      transporter: transporterFilter === 'ALL' ? undefined : transporterFilter,
-      billingFirm: billingFirmFilter === 'ALL' ? undefined : billingFirmFilter,
+      status: activeStatus === 'ALL' ? undefined : activeStatus.toLowerCase() as Lowercase<TransportStatus>,
+      commodity: toNumericIds(commodityFilter),
+      transporter: toNumericIds(transporterFilter),
+      billing_firm: toNumericIds(billingFirmFilter),
+      party: toNumericIds(partyFilter),
+      loading_start_date: loadingDateFrom || undefined,
+      loading_end_date: loadingDateTo || undefined,
+      search: debouncedSearchTerm || undefined,
       page: currentPageNum,
-      pageSize
+      page_size: pageSize
     }, { clients, commodities, orders, transporters })
       .then(result => {
         if (isCurrent) setServerPage(result);
@@ -242,6 +334,10 @@ export const TransportPaymentsScreen: React.FC = () => {
     commodityFilter,
     transporterFilter,
     billingFirmFilter,
+    partyFilter,
+    loadingDateFrom,
+    loadingDateTo,
+    debouncedSearchTerm,
     currentPageNum,
     pageSize,
     refreshSequence,
@@ -250,14 +346,6 @@ export const TransportPaymentsScreen: React.FC = () => {
     orders,
     transporters
   ]);
-
-  useEffect(() => {
-    let cancelled = false;
-    transportsApi.selectBillingFirms().then(firms => {
-      if (!cancelled) setBillingFirmOptions(firms);
-    }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, []);
 
   const isPendingTab = activeStatus === 'PENDING';
   const isPaidTab = activeStatus === 'PAID';
@@ -333,32 +421,37 @@ export const TransportPaymentsScreen: React.FC = () => {
     });
   };
 
-  const filteredTransports = useMemo(() => serverPage.results.filter(transport => {
-    const commodityName = commodityMap.get(transport.commodityId)?.name || '';
-    const transporterName = transporterMap.get(transport.transporterId) || '';
-    const billingFirmName = clientMap.get(transport.billingFirmId) || '';
-    const fromName = clientMap.get(transport.fromClientId) || '';
-    const toName = clientMap.get(transport.toClientId) || '';
-    const lowerSearch = searchTerm.toLowerCase();
-    const matchesSearch = [
-      transport.billNumber,
-      transport.vehicleNumber,
-      commodityName,
-      transporterName,
-      billingFirmName,
-      fromName,
-      toName
-    ].some(value => value.toLowerCase().includes(lowerSearch));
-    return matchesSearch;
-  }), [serverPage.results, commodityMap, transporterMap, clientMap, searchTerm]);
+  const filteredTransports = serverPage.results;
 
   const resetFilters = () => {
     setActiveStatus('PENDING');
     setSearchTerm('');
-    setCommodityFilter('ALL');
-    setTransporterFilter('ALL');
-    setBillingFirmFilter('ALL');
+    setCommodityFilter([]);
+    setTransporterFilter([]);
+    setBillingFirmFilter([]);
+    setPartyFilter([]);
+    setDatePreset('all');
+    setLoadingDateFrom('');
+    setLoadingDateTo('');
     setCurrentPageNum(1);
+  };
+
+  const handleDatePresetChange = (preset: DatePreset) => {
+    setDatePreset(preset);
+    setCurrentPageNum(1);
+
+    if (preset === 'all' || preset === 'range') {
+      setLoadingDateFrom('');
+      setLoadingDateTo('');
+      return;
+    }
+
+    const today = new Date();
+    const fromDate = preset === 'month'
+      ? new Date(today.getFullYear(), today.getMonth(), 1)
+      : shiftDateByMonths(today, preset === 'three-months' ? -3 : -6);
+    setLoadingDateFrom(toDateInputValue(fromDate));
+    setLoadingDateTo(toDateInputValue(today));
   };
 
   const totalPages = serverPage.totalPages || 1;
@@ -435,55 +528,138 @@ export const TransportPaymentsScreen: React.FC = () => {
         <p className="mt-0.5 text-xs text-slate-500">Review receipts, settle freight, and close consignments.</p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            value={searchTerm}
-            onChange={event => {
-              setSearchTerm(event.target.value);
-              setCurrentPageNum(1);
-            }}
-            placeholder="Search bill, vehicle, firm, route, transporter..."
-            className="w-full rounded-md border border-slate-200 py-1.5 pl-9 pr-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-          />
+      <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
+        <div className="grid grid-cols-1 gap-2.5">
+          <div className="relative col-span-full row-start-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={searchTerm}
+              onChange={event => {
+                setSearchTerm(event.target.value);
+                setCurrentPageNum(1);
+              }}
+              placeholder="Search vehicle #, bill/bilty #, mandi anugya, transporter..."
+              className="w-full rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            />
+          </div>
+
+          <div className="flex min-w-0 flex-wrap items-center gap-2 col-span-full row-start-2">
+            <MultiSearchableSelect
+              id="transport-payments-party-filter"
+              selectedIds={partyFilter}
+              options={partyOptions}
+              placeholder="All Parties"
+              onChange={values => { setPartyFilter(values); setCurrentPageNum(1); }}
+            />
+            <MultiSearchableSelect
+              id="transport-payments-commodity-filter"
+              selectedIds={commodityFilter}
+              options={commodityOptions}
+              placeholder="All Commodities"
+              onChange={values => { setCommodityFilter(values); setCurrentPageNum(1); }}
+            />
+            <MultiSearchableSelect
+              id="transport-payments-transporter-filter"
+              selectedIds={transporterFilter}
+              options={transporterOptions.map(transporter => ({
+                id: transporter.id,
+                label: transporter.city ? `${transporter.name} (${transporter.city})` : transporter.name,
+                searchText: transporter.city
+              }))}
+              placeholder="All Transporters"
+              onChange={values => { setTransporterFilter(values); setCurrentPageNum(1); }}
+            />
+            <MultiSearchableSelect
+              id="transport-payments-billing-firm-filter"
+              selectedIds={billingFirmFilter}
+              options={billingFirmOptions.map(firm => ({
+                id: firm.id,
+                label: firm.city ? `${firm.name} (${firm.city})` : firm.name,
+                searchText: firm.city || ''
+              }))}
+              placeholder="All Billing Firms"
+              onChange={values => { setBillingFirmFilter(values); setCurrentPageNum(1); }}
+            />
+            {(searchTerm || commodityFilter.length > 0 || transporterFilter.length > 0 || billingFirmFilter.length > 0 || partyFilter.length > 0 || loadingDateFrom || loadingDateTo || activeStatus !== 'PENDING') && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+              >
+                <FilterX className="h-3.5 w-3.5" /> Reset
+              </button>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                disabled={exportableTransports.length === 0}
+                onClick={exportPaymentsToExcel}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+                Export to Excel
+              </button>
+              <button
+                type="button"
+                aria-label={`Refresh ${activeStatus.toLowerCase()} transport payments`}
+                title={`Refresh ${activeStatus.toLowerCase()} transport payments`}
+                disabled={isLoading}
+                onClick={() => setRefreshSequence(sequence => sequence + 1)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 border-y border-slate-100 py-2 col-span-full row-start-3" aria-label="Loading date filter">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+              <Calendar className="h-3.5 w-3.5" />
+              Loading date
+            </span>
+            <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1" role="tablist" aria-label="Loading date range">
+              {([
+                ['all', 'All time'],
+                ['month', 'This month'],
+                ['three-months', '3 months'],
+                ['six-months', '6 months'],
+                ['range', 'Date range']
+              ] as [DatePreset, string][]).map(([preset, label]) => (
+                <button
+                  key={preset}
+                  type="button"
+                  role="tab"
+                  aria-selected={datePreset === preset}
+                  onClick={() => handleDatePresetChange(preset)}
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                    datePreset === preset ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {datePreset === 'range' && (
+              <>
+                <input
+                  type="date"
+                  aria-label="Loading date from"
+                  value={loadingDateFrom}
+                  onChange={event => { setLoadingDateFrom(event.target.value); setCurrentPageNum(1); }}
+                  className="w-36 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+                <span className="text-xs text-slate-400">to</span>
+                <input
+                  type="date"
+                  aria-label="Loading date to"
+                  value={loadingDateTo}
+                  onChange={event => { setLoadingDateTo(event.target.value); setCurrentPageNum(1); }}
+                  className="w-36 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </>
+            )}
+          </div>
         </div>
-        <select value={commodityFilter} onChange={event => { setCommodityFilter(event.target.value); setCurrentPageNum(1); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
-          <option value="ALL">All Commodities</option>
-          {commodities.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
-        <select value={transporterFilter} onChange={event => { setTransporterFilter(event.target.value); setCurrentPageNum(1); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
-          <option value="ALL">All Transporters</option>
-          {transporters.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
-        <select value={billingFirmFilter} onChange={event => { setBillingFirmFilter(event.target.value); setCurrentPageNum(1); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
-          <option value="ALL">All Billing Firms</option>
-          {clients.filter(client => String(client.type).toUpperCase() === 'MY_FIRM').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
-        {(searchTerm || commodityFilter !== 'ALL' || transporterFilter !== 'ALL' || billingFirmFilter !== 'ALL') && (
-          <button type="button" onClick={resetFilters} className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800">
-            <FilterX className="h-3.5 w-3.5" /> Reset
-          </button>
-        )}
-        <button
-          type="button"
-          disabled={exportableTransports.length === 0}
-          onClick={exportPaymentsToExcel}
-          className="inline-flex items-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          <FileSpreadsheet className="h-3.5 w-3.5" />
-          Export to Excel
-        </button>
-        <button
-          type="button"
-          aria-label={`Refresh ${activeStatus.toLowerCase()} transport payments`}
-          title={`Refresh ${activeStatus.toLowerCase()} transport payments`}
-          disabled={isLoading}
-          onClick={() => setRefreshSequence(sequence => sequence + 1)}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-        </button>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs">
@@ -492,6 +668,21 @@ export const TransportPaymentsScreen: React.FC = () => {
           <span className="text-[11px] text-slate-400">Rows are color-coded by shipment lifecycle</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveStatus('ALL');
+              setCurrentPageNum(1);
+            }}
+            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all ${
+              activeStatus === 'ALL'
+                ? 'bg-white text-slate-900 border-slate-400 ring-2 ring-slate-400/30'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200/60'
+            }`}
+            aria-pressed={activeStatus === 'ALL'}
+          >
+            All
+          </button>
           {statusFilterItems.map(item => (
             <button
               key={item.value}

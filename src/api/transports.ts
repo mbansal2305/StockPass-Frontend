@@ -749,8 +749,25 @@ export const transportsApi = {
     };
   },
 
-  async listPaymentsPaginated(filters: TransportListFilters = {}, lookups: TransportLookups = {}): Promise<PaginatedTransportsResult> {
-    return listPaginatedFromEndpoint('/transports/payments/lst', filters, lookups);
+  async listPaymentsPaginated(filters: TransportListPayload = {}, lookups: TransportLookups = {}): Promise<PaginatedTransportsResult> {
+    const payload: TransportListPayload = {
+      page: filters.page || 1,
+      page_size: filters.page_size || 100,
+      ...(filters.transporter?.length ? { transporter: filters.transporter } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.commodity?.length ? { commodity: filters.commodity } : {}),
+      ...(filters.billing_firm?.length ? { billing_firm: filters.billing_firm } : {}),
+      ...(filters.party?.length ? { party: filters.party } : {}),
+      ...(filters.loading_start_date ? { loading_start_date: filters.loading_start_date } : {}),
+      ...(filters.loading_end_date ? { loading_end_date: filters.loading_end_date } : {}),
+      ...(filters.search?.trim() ? { search: filters.search.trim() } : {})
+    };
+    const response = await apiClient.post<any>('/transports/payments/lst', payload);
+    const parsed = unwrapPage(response);
+    return {
+      ...parsed,
+      results: parsed.results.map(transport => transformBackendTransport(transport, lookups))
+    };
   },
 
   async search(keyword: string, lookups: TransportLookups = {}): Promise<Transport[]> {
