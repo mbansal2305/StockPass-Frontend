@@ -490,16 +490,18 @@ export const ordersApi = {
   async listPaginated(filter: OrderListSchema = {}): Promise<PaginatedOrdersResult> {
     const cleanFilter: Record<string, any> = {
       page: filter.page || 1,
-      page_size: filter.page_size || 10
+      page_size: filter.page_size || 100
     };
 
     if (filter.status) cleanFilter.status = filter.status;
     if (filter.contract_date_from) cleanFilter.contract_date_from = filter.contract_date_from;
     if (filter.contract_date_to) cleanFilter.contract_date_to = filter.contract_date_to;
-    if (filter.from_client) cleanFilter.from_client = filter.from_client;
-    if (filter.to_client) cleanFilter.to_client = filter.to_client;
+    if (filter.from_client?.length) cleanFilter.from_client = filter.from_client;
+    if (filter.to_client?.length) cleanFilter.to_client = filter.to_client;
     if (filter.type) cleanFilter.type = filter.type;
-    if (filter.broker) cleanFilter.broker = filter.broker;
+    if (filter.broker?.length) cleanFilter.broker = filter.broker;
+    if (filter.commodity?.length) cleanFilter.commodity = filter.commodity;
+    if (filter.search?.trim()) cleanFilter.search = filter.search.trim();
 
     try {
       const res = await apiClient.post<any>('/orders/lst/', cleanFilter);
@@ -508,8 +510,12 @@ export const ordersApi = {
       if (err.status === 405) {
         // Fallback to GET /orders/lst/ with query params
         const q = new URLSearchParams();
-        Object.entries(cleanFilter).forEach(([k, v]) => {
-          if (v !== undefined && v !== null) q.append(k, String(v));
+        Object.entries(cleanFilter).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            value.forEach(item => q.append(key, String(item)));
+          } else if (value !== undefined && value !== null) {
+            q.append(key, String(value));
+          }
         });
         const res = await apiClient.get<any>(`/orders/lst/?${q.toString()}`);
         return parsePaginatedOrderResponse(res);

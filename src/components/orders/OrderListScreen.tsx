@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Order, OrderType, OrderStatus, OrderListSchema } from '../../types';
+import { Broker, Commodity, Order, OrderType, OrderStatus, OrderListSchema } from '../../types';
 import {
   Search,
   Plus,
@@ -23,14 +23,33 @@ import {
   Clock
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
+import { MultiSearchableSelect } from '../common/SearchableSelect';
 import { formatCurrency, formatWeight, formatQuantityWithUnit, getUnitLabel, formatDate, getDaysRemaining } from '../../utils/formatters';
 import { PaginatedOrdersResult } from '../../api/orders';
+import { masterApi, SelectionClient, SelectionFirm } from '../../api/master';
 
-const toNumericClientId = (id: string): number | undefined => {
-  const digits = id.replace(/\D/g, '');
-  const numericId = Number.parseInt(digits, 10);
-  return Number.isNaN(numericId) ? undefined : numericId;
+const toNumericIds = (ids: string[]): number[] | undefined => {
+  const numericIds = ids
+    .map(id => Number(id))
+    .filter(id => Number.isSafeInteger(id) && id > 0);
+  return numericIds.length ? numericIds : undefined;
 };
+
+const toDateInputValue = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const shiftDateByMonths = (date: Date, months: number): Date => {
+  const shifted = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDay = new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0).getDate();
+  shifted.setDate(Math.min(date.getDate(), lastDay));
+  return shifted;
+};
+
+type DatePreset = 'all' | 'month' | 'three-months' | 'six-months' | 'range';
 
 export const OrderListScreen: React.FC = () => {
   const {
@@ -53,18 +72,31 @@ export const OrderListScreen: React.FC = () => {
 
   // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<OrderType>('SALES ORDER');
   const [statusFilter, setStatusFilter] = useState<string>(pageParams.statusFilter || 'PENDING');
-  const [commodityFilter, setCommodityFilter] = useState<string>('ALL');
-  const [fromClientFilter, setFromClientFilter] = useState<string>(pageParams.fromClientFilter || pageParams.clientFilter || 'ALL');
-  const [toClientFilter, setToClientFilter] = useState<string>(pageParams.toClientFilter || 'ALL');
-  const [brokerFilter, setBrokerFilter] = useState<string>('ALL');
+  const [contractDateFrom, setContractDateFrom] = useState('');
+  const [contractDateTo, setContractDateTo] = useState('');
+  const [datePreset, setDatePreset] = useState<DatePreset>('all');
+  const [commodityFilter, setCommodityFilter] = useState<string[]>([]);
+  const [firmFilter, setFirmFilter] = useState<string[]>([]);
+  const [partyFilter, setPartyFilter] = useState<string[]>(() => {
+    const partyId = pageParams.partyFilter || pageParams.clientFilter;
+    return partyId ? [String(partyId)] : [];
+  });
+  const [brokerFilter, setBrokerFilter] = useState<string[]>([]);
+  const [filterOptions, setFilterOptions] = useState<{
+    firms: SelectionFirm[];
+    clients: SelectionClient[];
+    commodities: Commodity[];
+    brokers: Broker[];
+  }>({ firms: [], clients: [], commodities: [], brokers: [] });
   const [sortField, setSortField] = useState<'orderNumber' | 'startDate' | 'expiryDate' | 'quantity' | 'remaining'>('startDate');
   const [sortAsc, setSortAsc] = useState<boolean>(false);
 
   // Pagination
   const [currentPageNum, setCurrentPageNum] = useState(1);
-  const pageSize = 10;
+  const pageSize = 100;
   const [reloadSequence, setReloadSequence] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -92,14 +124,48 @@ export const OrderListScreen: React.FC = () => {
 
   useEffect(() => {
     let isCurrent = true;
+    Promise.allSettled([
+      masterApi.selectFirms(),
+      masterApi.selectAllClients(),
+      masterApi.selectCommodities(),
+      masterApi.selectBrokers()
+    ]).then(([firmsResult, clientsResult, commoditiesResult, brokersResult]) => {
+      if (!isCurrent) return;
+      setFilterOptions({
+        firms: firmsResult.status === 'fulfilled' ? firmsResult.value : [],
+        clients: clientsResult.status === 'fulfilled' ? clientsResult.value : [],
+        commodities: commoditiesResult.status === 'fulfilled' ? commoditiesResult.value : commodities,
+        brokers: brokersResult.status === 'fulfilled' ? brokersResult.value : brokers
+      });
+    });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
+    return () => window.clearTimeout(timeout);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    let isCurrent = true;
+    const firmIds = toNumericIds(firmFilter);
+    const partyIds = toNumericIds(partyFilter);
+    const isSalesOrder = typeFilter === 'SALES ORDER';
     const filters: OrderListSchema = {
       page: currentPageNum,
       page_size: pageSize,
       status: statusFilter === 'ALL' ? undefined : statusFilter.toLowerCase() as OrderListSchema['status'],
       type: typeFilter === 'PURCHASE ORDER' ? 'purchase_order' : 'sales_order',
-      from_client: fromClientFilter === 'ALL' ? undefined : toNumericClientId(fromClientFilter),
-      to_client: toClientFilter === 'ALL' ? undefined : toNumericClientId(toClientFilter),
-      broker: brokerFilter === 'ALL' ? undefined : toNumericClientId(brokerFilter)
+      contract_date_from: contractDateFrom || undefined,
+      contract_date_to: contractDateTo || undefined,
+      from_client: isSalesOrder ? firmIds : partyIds,
+      to_client: isSalesOrder ? partyIds : firmIds,
+      broker: toNumericIds(brokerFilter),
+      commodity: toNumericIds(commodityFilter),
+      search: debouncedSearchTerm || undefined
     };
 
     setIsLoading(true);
@@ -123,30 +189,20 @@ export const OrderListScreen: React.FC = () => {
     pageSize,
     statusFilter,
     typeFilter,
-    fromClientFilter,
-    toClientFilter,
+    contractDateFrom,
+    contractDateTo,
+    firmFilter,
+    partyFilter,
     brokerFilter,
+    commodityFilter,
+    debouncedSearchTerm,
     reloadSequence,
     orderListPaginated
   ]);
 
-  // Filtered & Sorted orders
+  // Sort the server-filtered page locally.
   const filteredOrders = useMemo(() => {
-    return serverPage.results.filter(order => {
-      const commName = commodityMap.get(order.commodityId)?.name || '';
-      const fromName = clientMap.get(order.fromClientId) || '';
-      const toName = clientMap.get(order.toClientId) || '';
-
-      const matchesSearch =
-        order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        commName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        fromName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        toName.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchesCommodity = commodityFilter === 'ALL' || order.commodityId === commodityFilter;
-
-      return matchesSearch && matchesCommodity;
-    }).sort((a, b) => {
+    return serverPage.results.slice().sort((a, b) => {
       let valA: any = a[sortField as keyof Order];
       let valB: any = b[sortField as keyof Order];
 
@@ -159,7 +215,7 @@ export const OrderListScreen: React.FC = () => {
       if (valA > valB) return sortAsc ? 1 : -1;
       return 0;
     });
-  }, [serverPage.results, searchTerm, commodityFilter, sortField, sortAsc, clientMap, commodityMap]);
+  }, [serverPage.results, sortField, sortAsc]);
 
   const totalPages = serverPage.totalPages || 1;
   const paginatedOrders = filteredOrders;
@@ -191,11 +247,32 @@ export const OrderListScreen: React.FC = () => {
     setSearchTerm('');
     setTypeFilter('SALES ORDER');
     setStatusFilter('ALL');
-    setCommodityFilter('ALL');
-    setFromClientFilter('ALL');
-    setToClientFilter('ALL');
-    setBrokerFilter('ALL');
+    setContractDateFrom('');
+    setContractDateTo('');
+    setDatePreset('all');
+    setCommodityFilter([]);
+    setFirmFilter([]);
+    setPartyFilter([]);
+    setBrokerFilter([]);
     setCurrentPageNum(1);
+  };
+
+  const handleDatePresetChange = (preset: DatePreset) => {
+    setDatePreset(preset);
+    setCurrentPageNum(1);
+
+    if (preset === 'all' || preset === 'range') {
+      setContractDateFrom('');
+      setContractDateTo('');
+      return;
+    }
+
+    const today = new Date();
+    const fromDate = preset === 'month'
+      ? new Date(today.getFullYear(), today.getMonth(), 1)
+      : shiftDateByMonths(today, preset === 'three-months' ? -3 : -6);
+    setContractDateFrom(toDateInputValue(fromDate));
+    setContractDateTo(toDateInputValue(today));
   };
 
   const handleDeleteConfirm = async () => {
@@ -265,19 +342,69 @@ export const OrderListScreen: React.FC = () => {
 
       {/* Filter Bar */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <div className="relative flex-1">
+        <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,4fr)]">
+          <div className="relative lg:col-start-1 lg:row-start-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPageNum(1); }}
-              placeholder="Search this page by order #, client, or commodity..."
+              placeholder="Search orders by order #, client, or commodity..."
               className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
             />
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+          <div className="flex flex-wrap items-center gap-2 border-y border-slate-100 py-2 lg:col-span-2 lg:row-start-2" aria-label="Contract date filter">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+              <Calendar className="h-3.5 w-3.5" />
+              Contract date
+            </span>
+            <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1" role="tablist" aria-label="Contract date range">
+              {([
+                ['all', 'All time'],
+                ['month', 'This month'],
+                ['three-months', '3 months'],
+                ['six-months', '6 months'],
+                ['range', 'Date range']
+              ] as [DatePreset, string][]).map(([preset, label]) => (
+                <button
+                  key={preset}
+                  type="button"
+                  role="tab"
+                  aria-selected={datePreset === preset}
+                  onClick={() => handleDatePresetChange(preset)}
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                    datePreset === preset
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {datePreset === 'range' && (
+              <>
+                <input
+                  type="date"
+                  aria-label="Contract date from"
+                  value={contractDateFrom}
+                  onChange={event => { setContractDateFrom(event.target.value); setCurrentPageNum(1); }}
+                  className="w-36 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+                <span className="text-xs text-slate-400">to</span>
+                <input
+                  type="date"
+                  aria-label="Contract date to"
+                  value={contractDateTo}
+                  onChange={event => { setContractDateTo(event.target.value); setCurrentPageNum(1); }}
+                  className="w-36 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </>
+            )}
+          </div>
+
+          <div className="flex min-w-0 flex-wrap items-center gap-2 pb-1 sm:pb-0 lg:col-start-2 lg:row-start-1">
             <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-lg shrink-0" role="tablist" aria-label="Order type">
               {(['PURCHASE ORDER', 'SALES ORDER'] as OrderType[]).map(type => (
                 <button
@@ -299,27 +426,36 @@ export const OrderListScreen: React.FC = () => {
               ))}
             </div>
 
-            <select
-              value={commodityFilter}
-              onChange={(e) => { setCommodityFilter(e.target.value); setCurrentPageNum(1); }}
-              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 shrink-0"
-            >
-              <option value="ALL">All Commodities</option>
-              {commodities.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            <MultiSearchableSelect
+              id="orders-firm-filter"
+              selectedIds={firmFilter}
+              options={filterOptions.firms.map(firm => ({ id: firm.id, label: firm.name, searchText: `${firm.city} ${firm.address}` }))}
+              placeholder="All Firms"
+              onChange={(values: string[]) => { setFirmFilter(values); setCurrentPageNum(1); }}
+            />
+            <MultiSearchableSelect
+              id="orders-party-filter"
+              selectedIds={partyFilter}
+              options={filterOptions.clients.map(client => ({ id: client.id, label: client.city ? `${client.name} (${client.city})` : client.name, searchText: `${client.city} ${client.type} ${client.maanNo}` }))}
+              placeholder="All Parties"
+              onChange={(values: string[]) => { setPartyFilter(values); setCurrentPageNum(1); }}
+            />
+            <MultiSearchableSelect
+              id="orders-commodity-filter"
+              selectedIds={commodityFilter}
+              options={filterOptions.commodities.map(commodity => ({ id: commodity.id, label: commodity.type ? `${commodity.name} (${commodity.type})` : commodity.name, searchText: commodity.type }))}
+              placeholder="All Commodities"
+              onChange={(values: string[]) => { setCommodityFilter(values); setCurrentPageNum(1); }}
+            />
+            <MultiSearchableSelect
+              id="orders-broker-filter"
+              selectedIds={brokerFilter}
+              options={filterOptions.brokers.map(broker => ({ id: broker.id, label: broker.city ? `${broker.name} (${broker.city})` : broker.name, searchText: broker.city }))}
+              placeholder="All Brokers"
+              onChange={(values: string[]) => { setBrokerFilter(values); setCurrentPageNum(1); }}
+            />
 
-            <select
-              value={brokerFilter}
-              onChange={(e) => { setBrokerFilter(e.target.value); setCurrentPageNum(1); }}
-              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 shrink-0"
-            >
-              <option value="ALL">All Brokers</option>
-              {brokers.map(broker => <option key={broker.id} value={broker.id}>{broker.name}</option>)}
-            </select>
-
-            {(searchTerm || statusFilter !== 'ALL' || commodityFilter !== 'ALL' || fromClientFilter !== 'ALL' || toClientFilter !== 'ALL' || brokerFilter !== 'ALL') && (
+            {(searchTerm || statusFilter !== 'ALL' || contractDateFrom || contractDateTo || commodityFilter.length > 0 || firmFilter.length > 0 || partyFilter.length > 0 || brokerFilter.length > 0) && (
               <button
                 type="button"
                 onClick={handleResetFilters}
@@ -341,6 +477,18 @@ export const OrderListScreen: React.FC = () => {
           <span className="text-[11px] text-slate-400">Rows are color-coded by contract status</span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setStatusFilter('ALL'); setCurrentPageNum(1); }}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+              statusFilter === 'ALL'
+                ? 'bg-white text-slate-900 border-slate-400 ring-2 ring-slate-400/30'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200/60'
+            }`}
+            aria-pressed={statusFilter === 'ALL'}
+          >
+            All
+          </button>
           <button
             type="button"
             onClick={() => { setStatusFilter(statusFilter === 'DRAFT' ? 'ALL' : 'DRAFT'); setCurrentPageNum(1); }}

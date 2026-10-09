@@ -33,6 +33,19 @@ export interface TransportListFilters {
   pageSize?: number;
 }
 
+export interface TransportListPayload {
+  transporter?: number[];
+  status?: Lowercase<TransportStatus>;
+  commodity?: number[];
+  billing_firm?: number[];
+  party?: number[];
+  loading_start_date?: string;
+  loading_end_date?: string;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
 export interface PaginatedTransportsResult {
   results: Transport[];
   total: number;
@@ -707,7 +720,7 @@ export const transportsApi = {
     let totalPages = firstPage;
 
     for (let page = firstPage; page <= totalPages; page += 1) {
-      const parsed = await this.listPaginated({ ...filters, page, pageSize }, lookups);
+      const parsed = await listPaginatedFromEndpoint('/transports/lst', { ...filters, page, pageSize }, lookups);
       results.push(...parsed.results);
       totalPages = parsed.totalPages;
     }
@@ -715,8 +728,25 @@ export const transportsApi = {
     return results;
   },
 
-  async listPaginated(filters: TransportListFilters = {}, lookups: TransportLookups = {}): Promise<PaginatedTransportsResult> {
-    return listPaginatedFromEndpoint('/transports/lst', filters, lookups);
+  async listPaginated(filters: TransportListPayload = {}, lookups: TransportLookups = {}): Promise<PaginatedTransportsResult> {
+    const payload: TransportListPayload = {
+      page: filters.page || 1,
+      page_size: filters.page_size || 100,
+      ...(filters.transporter?.length ? { transporter: filters.transporter } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.commodity?.length ? { commodity: filters.commodity } : {}),
+      ...(filters.billing_firm?.length ? { billing_firm: filters.billing_firm } : {}),
+      ...(filters.party?.length ? { party: filters.party } : {}),
+      ...(filters.loading_start_date ? { loading_start_date: filters.loading_start_date } : {}),
+      ...(filters.loading_end_date ? { loading_end_date: filters.loading_end_date } : {}),
+      ...(filters.search?.trim() ? { search: filters.search.trim() } : {})
+    };
+    const response = await apiClient.post<any>('/transports/lst', payload);
+    const parsed = unwrapPage(response);
+    return {
+      ...parsed,
+      results: parsed.results.map(transport => transformBackendTransport(transport, lookups))
+    };
   },
 
   async listPaymentsPaginated(filters: TransportListFilters = {}, lookups: TransportLookups = {}): Promise<PaginatedTransportsResult> {

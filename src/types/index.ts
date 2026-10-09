@@ -189,10 +189,12 @@ export interface OrderListSchema {
   status?: BackendOrderStatus | null;
   contract_date_from?: string | null;
   contract_date_to?: string | null;
-  from_client?: number | null;
-  to_client?: number | null;
+  from_client?: number[] | null;
+  to_client?: number[] | null;
   type?: BackendOrderType | null;
-  broker?: number | null;
+  broker?: number[] | null;
+  commodity?: number[] | null;
+  search?: string | null;
   page?: number;
   page_size?: number;
 }
