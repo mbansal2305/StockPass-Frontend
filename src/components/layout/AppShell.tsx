@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp, NavigationPage } from '../../context/AppContext';
-import stockpassLogo from '../../stockpasslogo.png';
+import stockpassLogo from '../../StockPassLogo.png';
 import {
   LayoutDashboard,
   ShoppingCart,
