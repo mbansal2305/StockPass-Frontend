@@ -26,7 +26,7 @@ import {
   Database
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
-import { getClientFlagBadge, getClientTypeLabel } from '../../utils/formatters';
+import { getClientFlagBadge, getClientTypeBadge, getClientTypeLabel } from '../../utils/formatters';
 import { getImageSource } from '../../utils/images';
 
 export const MasterDataScreen: React.FC = () => {
@@ -105,6 +105,9 @@ export const MasterDataScreen: React.FC = () => {
     address: string;
     city: string;
     pincode: string;
+    contact_name: string;
+    pri_contact: string;
+    sec_contact: string;
     maan_no: string;
     type: ClientType;
     flag: ClientFlag;
@@ -116,6 +119,9 @@ export const MasterDataScreen: React.FC = () => {
     address: '',
     city: '',
     pincode: '',
+    contact_name: '',
+    pri_contact: '',
+    sec_contact: '',
     maan_no: '',
     type: 'company' as ClientType,
     flag: 'good' as ClientFlag,
@@ -485,6 +491,9 @@ export const MasterDataScreen: React.FC = () => {
         address: item.address,
         city: item.city,
         pincode: item.pincode,
+        contact_name: item.contact_name || '',
+        pri_contact: item.pri_contact || '',
+        sec_contact: item.sec_contact || '',
         maan_no: item.maan_no || '',
         type: (item.type || 'company').toLowerCase() as ClientType,
         flag: (item.flag || 'good').toLowerCase() as ClientFlag,
@@ -499,6 +508,9 @@ export const MasterDataScreen: React.FC = () => {
         address: '',
         city: '',
         pincode: '',
+        contact_name: '',
+        pri_contact: '',
+        sec_contact: '',
         maan_no: '',
         type: 'company' as ClientType,
         flag: 'good' as ClientFlag,
@@ -512,23 +524,29 @@ export const MasterDataScreen: React.FC = () => {
 
   const handleSaveClient = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientForm.name.trim() || !clientForm.city.trim() || !clientForm.address.trim()) {
-      showToast('Client name, address, and city are required', 'error');
+    if (!clientForm.name.trim()) {
+      showToast('Client name is required', 'error');
       return;
     }
     setIsSubmitting(true);
     try {
+      const isMyFirm = String(clientForm.type).toLowerCase() === 'my_firm';
+      const originalProfilePicture = editingClient?.profile_picture || editingClient?.image || '';
+      const profilePictureChanged = clientForm.profile_picture !== originalProfilePicture;
       const content = {
         name: clientForm.name.trim(),
         address: clientForm.address.trim(),
         city: clientForm.city.trim(),
         pincode: clientForm.pincode.trim(),
+        contact_name: clientForm.contact_name.trim(),
+        pri_contact: clientForm.pri_contact.trim(),
+        sec_contact: clientForm.sec_contact.trim(),
         maan_no: clientForm.maan_no.trim(),
         type: String(clientForm.type || 'company').toLowerCase() as ClientType,
         flag: String(clientForm.flag || 'good').toLowerCase() as ClientFlag,
         location_url: clientForm.location_url.trim(),
         notes: clientForm.notes.trim(),
-        ...(String(clientForm.type).toLowerCase() === 'my_firm'
+        ...(isMyFirm && (!editingClient || profilePictureChanged)
           ? { profile_picture: clientForm.profile_picture || null }
           : {})
       };
@@ -1161,11 +1179,11 @@ export const MasterDataScreen: React.FC = () => {
                 <tr>
                   <th className="px-4 py-3">Client / Godown</th>
                   <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Standing Flag</th>
+                  <th className="px-4 py-3">Flag</th>
                   <th className="px-4 py-3">Address</th>
                   <th className="px-4 py-3">City & Pincode</th>
+                  <th className="px-4 py-3">Contact</th>
                   <th className="px-4 py-3">Maan No.</th>
-                  <th className="px-4 py-3">Location</th>
                   <th className="px-4 py-3">Notes</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
@@ -1187,6 +1205,7 @@ export const MasterDataScreen: React.FC = () => {
                 ) : (
                   displayedClients.map((client) => {
                     const badge = getClientFlagBadge(client.flag);
+                    const typeBadge = getClientTypeBadge(client.type);
                     return (
                       <tr key={client.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="px-4 py-3">
@@ -1199,7 +1218,7 @@ export const MasterDataScreen: React.FC = () => {
                           </button>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${typeBadge.bg} ${typeBadge.text} ${typeBadge.border}`}>
                             {getClientTypeLabel(client.type)}
                           </span>
                         </td>
@@ -1208,29 +1227,38 @@ export const MasterDataScreen: React.FC = () => {
                             {badge.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-600 max-w-xs truncate">
-                          {client.address}
+                        <td className="px-4 py-3 text-slate-600 max-w-xs">
+                          <div className="flex items-center gap-2">
+                            {client.location_url && (
+                              <a
+                                href={client.location_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label={`Open location for ${client.name}`}
+                                title="Open location"
+                                className="inline-flex shrink-0 items-center text-blue-600 hover:text-blue-800"
+                              >
+                                <MapPin className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                            <span className="truncate">{client.address || '-'}</span>
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-slate-600">
                           {client.city} {client.pincode && `· ${client.pincode}`}
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{client.maan_no || '-'}</td>
-                        <td className="px-4 py-3">
-                          {client.location_url ? (
-                            <a
-                              href={client.location_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              aria-label={`Open location for ${client.name}`}
-                              title="Open location"
-                              className="inline-flex items-center text-blue-600 hover:text-blue-800"
-                            >
-                              <MapPin className="w-3.5 h-3.5" />
-                            </a>
-                          ) : (
-                            <span className="text-slate-400">-</span>
-                          )}
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                          <div title={client.contact_name || undefined}>
+                            {client.contact_name
+                              ? client.contact_name.length > 13
+                                ? `${client.contact_name.slice(0, 13)}...`
+                                : client.contact_name
+                              : '-'}
+                          </div>
+                          <div>{client.pri_contact || '-'}</div>
+                          <div>{client.sec_contact || '-'}</div>
                         </td>
+                        <td className="px-4 py-3 text-slate-600">{client.maan_no || '-'}</td>
                         <td className="px-4 py-3 text-slate-500 max-w-[160px] truncate">
                           {client.notes || '-'}
                         </td>
@@ -1833,10 +1861,9 @@ export const MasterDataScreen: React.FC = () => {
               )}
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Address *</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Address</label>
                 <input
                   type="text"
-                  required
                   value={clientForm.address}
                   onChange={(e) => setClientForm({ ...clientForm, address: e.target.value })}
                   placeholder="Street / Industrial Area / Mandi Gate"
@@ -1846,10 +1873,9 @@ export const MasterDataScreen: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">City *</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">City</label>
                   <input
                     type="text"
-                    required
                     value={clientForm.city}
                     onChange={(e) => setClientForm({ ...clientForm, city: e.target.value })}
                     placeholder="e.g. Indore, Bhopal, Dewas"
@@ -1863,6 +1889,36 @@ export const MasterDataScreen: React.FC = () => {
                     value={clientForm.pincode}
                     onChange={(e) => setClientForm({ ...clientForm, pincode: e.target.value })}
                     placeholder="e.g. 452001"
+                    className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Contact Name</label>
+                  <input
+                    type="text"
+                    value={clientForm.contact_name}
+                    onChange={(e) => setClientForm({ ...clientForm, contact_name: e.target.value })}
+                    className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Primary Contact No.</label>
+                  <input
+                    type="tel"
+                    value={clientForm.pri_contact}
+                    onChange={(e) => setClientForm({ ...clientForm, pri_contact: e.target.value })}
+                    className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Secondary Contact No.</label>
+                  <input
+                    type="tel"
+                    value={clientForm.sec_contact}
+                    onChange={(e) => setClientForm({ ...clientForm, sec_contact: e.target.value })}
                     className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   />
                 </div>

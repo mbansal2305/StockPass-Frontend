@@ -687,7 +687,7 @@ export const transportsApi = {
     const form = new FormData();
     appendValue(form, 'id', numericId(payment.id));
     appendValue(form, 'rcvd_wt', roundToTwoDecimals(payment.receivedWeight));
-    form.append('unload_date', payment.unloadDate);
+    appendValue(form, 'unload_date', payment.unloadDate);
     appendValue(form, 'rent', roundToTwoDecimals(payment.rent));
     appendValue(form, 'rent_type', payment.rentType);
     appendValue(form, 'adv_by_client', roundToTwoDecimals(payment.advanceByClient));

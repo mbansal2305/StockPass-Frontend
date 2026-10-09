@@ -86,6 +86,9 @@ export interface BusinessClient {
   address: string;
   city: string;
   pincode: string;
+  contact_name?: string;
+  pri_contact?: string;
+  sec_contact?: string;
   maan_no?: string;
   type: ClientType;
   flag: ClientFlag;

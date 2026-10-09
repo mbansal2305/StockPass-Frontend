@@ -61,9 +61,26 @@ export function getClientTypeLabel(type: string): string {
     case 'MY_FIRM': return 'My Firm';
     case 'MY_GODOWN': return 'My Godown';
     case 'OTHER_GODOWN': return 'Other Godown';
-    case 'COMPANY': return 'Company / Processor';
+    case 'COMPANY': return 'Company';
     case 'LOCATION': return 'Mandi / Yard';
     default: return type || '-';
+  }
+}
+
+export function getClientTypeBadge(type: string): { bg: string; text: string; border: string } {
+  switch (type?.toUpperCase()) {
+    case 'MY_FIRM':
+      return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
+    case 'MY_GODOWN':
+      return { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' };
+    case 'OTHER_GODOWN':
+      return { bg: 'bg-cyan-50', text: 'text-cyan-800', border: 'border-cyan-200' };
+    case 'COMPANY':
+      return { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' };
+    case 'LOCATION':
+      return { bg: 'bg-fuchsia-50', text: 'text-fuchsia-700', border: 'border-fuchsia-200' };
+    default:
+      return { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200' };
   }
 }
 
