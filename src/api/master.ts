@@ -7,6 +7,8 @@
  * - DELETE /master/del/
  * - POST /master/lst/
  * - POST /master/search/
+ * - GET /master/sel/commodity/
+ * - GET /master/sel/broker/
  *
  * Backend response structure:
  * {
@@ -23,7 +25,32 @@
  */
 
 import { apiClient } from './client';
-import { MasterEntityType } from '../types';
+import { Broker, Commodity, MasterEntityType } from '../types';
+
+export interface SelectionFirm {
+  id: string;
+  name: string;
+  profilePicture: string | null;
+  address: string;
+  city: string;
+  pincode: string;
+}
+
+export interface SelectionClient {
+  id: string;
+  name: string;
+  type: string;
+  maanNo: string;
+  city: string;
+}
+
+function getSelectionRows(response: any): any[] {
+  const data = response?.data ?? response;
+  const candidates = [data, data?.results, data?.items, data?.data];
+  const rows = candidates.find(Array.isArray);
+  if (!rows) throw new Error('Invalid selection response');
+  return rows;
+}
 
 export interface PaginatedResult<T = any> {
   results: T[];
@@ -95,6 +122,78 @@ function parsePaginatedResponse<T>(res: any): PaginatedResult<T> {
 }
 
 export const masterApi = {
+  async selectFirms(): Promise<SelectionFirm[]> {
+    const response = await apiClient.get<any>('/master/sel/firms/');
+    return getSelectionRows(response).flatMap((item: any) => {
+      if (!item || item.id === undefined || item.id === null || !item.name) return [];
+      return [{
+        id: String(item.id),
+        name: String(item.name),
+        profilePicture: item.profile_picture ? String(item.profile_picture) : null,
+        address: String(item.address ?? ''),
+        city: String(item.city ?? ''),
+        pincode: String(item.pincode ?? '')
+      }];
+    });
+  },
+
+  async selectAllClients(): Promise<SelectionClient[]> {
+    const response = await apiClient.get<any>('/master/sel/allclients/');
+    return getSelectionRows(response).flatMap((item: any) => {
+      if (!item || item.id === undefined || item.id === null || !item.name) return [];
+      return [{
+        id: String(item.id),
+        name: String(item.name),
+        type: String(item.type ?? ''),
+        maanNo: String(item.maan_no ?? ''),
+        city: String(item.city ?? '')
+      }];
+    });
+  },
+
+  /**
+   * GET /master/sel/commodity/
+   * Returns commodity options for selection controls.
+   */
+  async selectCommodities(): Promise<Commodity[]> {
+    const response = await apiClient.get<any>('/master/sel/commodity/');
+    const data = response?.data ?? response;
+    if (!Array.isArray(data)) {
+      throw new Error('Invalid commodity selection response');
+    }
+    return data.flatMap((item: any) => {
+      if (!item || item.id === undefined || item.id === null || !item.name) return [];
+      return [{
+        id: String(item.id),
+        name: String(item.name),
+        type: String(item.type ?? '')
+      }];
+    });
+  },
+
+  /**
+   * GET /master/sel/broker/
+   * Returns broker options for selection controls.
+   */
+  async selectBrokers(): Promise<Broker[]> {
+    const response = await apiClient.get<any>('/master/sel/broker/');
+    const data = response?.data ?? response;
+    if (!Array.isArray(data)) {
+      throw new Error('Invalid broker selection response');
+    }
+    return data.flatMap((item: any) => {
+      if (!item || item.id === undefined || item.id === null || !item.name) return [];
+      return [{
+        id: String(item.id),
+        name: String(item.name),
+        phone_number: String(item.phone_number ?? item.phone ?? ''),
+        phone: String(item.phone_number ?? item.phone ?? ''),
+        city: item.city === undefined || item.city === null ? undefined : String(item.city),
+        notes: item.notes === undefined || item.notes === null ? undefined : String(item.notes)
+      }];
+    });
+  },
+
   /**
    * POST /master/lst/
    * Returns paginated metadata along with results

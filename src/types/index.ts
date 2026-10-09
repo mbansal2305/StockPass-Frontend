@@ -86,6 +86,7 @@ export interface BusinessClient {
   address: string;
   city: string;
   pincode: string;
+  maan_no?: string;
   type: ClientType;
   flag: ClientFlag;
   location_url?: string;
@@ -116,6 +117,13 @@ export interface Transporter {
   phone?: string;
   city?: string;
   contactPerson?: string;
+  transaction_type?: string;
+  account_number?: string;
+  account_name?: string;
+  bank?: string;
+  branch?: string;
+  ifsc_code?: string;
+  email?: string;
   notes?: string;
   createdAt?: string;
 }
@@ -201,10 +209,14 @@ export interface Order {
   type: OrderType;
   orderNumber: string;
   fromClientId: string;
+  fromClientName?: string;
   toClientId: string;
+  toClientName?: string;
   commodityId: string;
   commodityName?: string;
   commodityType?: string;
+  brokerName?: string;
+  orderTransports?: OrderTransport[];
   rate: number; // in ₹ per selected unit
   quantity: number; // in selected unit
   unit?: QuantityUnit; // 'mt' | 'quintal' | 'kg'
@@ -222,25 +234,63 @@ export interface Order {
   updatedAt?: string;
 }
 
+export interface OrderTransport {
+  id: string;
+  billNumber: string;
+  billingFirmName?: string;
+  loadingDate?: string | null;
+  unloadDate?: string | null;
+  vehicleNumber: string;
+  transporterName: string;
+  grossWeightUnit: QuantityUnit;
+  grossWeight: number;
+  orderEntryQuantity: number;
+  status: string;
+}
+
 export interface TransportItem {
   id?: number;
   orderId: string;
   allocatedQuantity: number; // In the transport gross-weight unit
   orderEntryQuantity?: number; // In the transport gross-weight unit
+  orderNumber?: string;
+  orderType?: string;
+  orderSize?: number;
+  orderSizeUnit?: QuantityUnit;
+  orderSizeRemaining?: number;
+  orderCommodity?: string;
+  orderCommodityType?: string;
 }
 
-export type TransportStatus = 'PENDING' | 'DELIVERY' | 'FINANCE' | 'PAID';
+export type TransportStatus = 'DRAFT' | 'PENDING' | 'DELIVERY' | 'FINANCE' | 'PAID';
 export type TransportRentType = 'fix' | 'per_unit';
+
+export interface TransportBankDetails {
+  transactionType?: string;
+  accountNumber?: string;
+  accountName?: string;
+  ifscCode?: string;
+  bank?: string;
+  branch?: string;
+  email?: string;
+}
 
 export interface Transport {
   id: string;
   billNumber: string;
   billingFirmId: string;
+  billingFirmName?: string;
   commodityId: string;
+  commodityName?: string;
+  commodityType?: string;
   fromClientId: string;
+  fromClientName?: string;
   toClientId: string;
+  toClientName?: string;
   vehicleNumber: string;
   transporterId: string;
+  transporterName?: string;
+  transporterBank?: TransportBankDetails | null;
   grossWeight: number; // Value in grossWeightUnit
   grossWeightUnit?: QuantityUnit;
   bagNumbers?: number;

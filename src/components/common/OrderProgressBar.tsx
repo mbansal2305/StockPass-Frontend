@@ -1,9 +1,10 @@
 import React from 'react';
-import { formatWeight } from '../../utils/formatters';
+import { formatQuantityWithUnit } from '../../utils/formatters';
 
 interface OrderProgressBarProps {
   fulfilled: number;
   total: number;
+  unit?: string;
   showLabels?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -11,6 +12,7 @@ interface OrderProgressBarProps {
 export const OrderProgressBar: React.FC<OrderProgressBarProps> = ({
   fulfilled,
   total,
+  unit,
   showLabels = true,
   size = 'md'
 }) => {
@@ -24,7 +26,7 @@ export const OrderProgressBar: React.FC<OrderProgressBarProps> = ({
       {showLabels && (
         <div className="flex items-center justify-between text-xs mb-1 tabular-nums">
           <span className="text-slate-600 font-medium">
-            {formatWeight(fulfilled)} / {formatWeight(total)}
+            {formatQuantityWithUnit(fulfilled, unit)} / {formatQuantityWithUnit(total, unit)}
           </span>
           <span className={`font-semibold ${isComplete ? 'text-emerald-700' : 'text-slate-700'}`}>
             {percentage}%

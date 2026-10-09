@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, Edit2, Layers, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Edit2, Layers, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { transportsApi, BulkTransportListItem, BulkTransportListPage } from '../../api';
 import { useApp } from '../../context/AppContext';
 import { formatDate, getTransportStatusBadge } from '../../utils/formatters';
@@ -56,14 +56,9 @@ export const BulkTransportListScreen: React.FC = () => {
   return (
     <div className="space-y-4">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <button type="button" onClick={() => navigate('transport')} aria-label="Back to transports" className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900">
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div>
-            <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900"><Layers className="h-5 w-5 text-blue-600" />Bulk Transports</h1>
-            <p className="mt-0.5 text-xs text-slate-500">Review bulk dispatch batches and vehicle counts.</p>
-          </div>
+        <div>
+          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900"><Layers className="h-5 w-5 text-blue-600" />Bulk Transports</h1>
+          <p className="mt-0.5 text-xs text-slate-500">Review bulk dispatch batches and vehicle counts.</p>
         </div>
         <button type="button" onClick={() => navigate('bulk-transport', { returnTo: 'bulk-transport-list' })} className="inline-flex items-center justify-center gap-1.5 self-start rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800 sm:self-auto">
           <Plus className="h-3.5 w-3.5" />Add bulk transport

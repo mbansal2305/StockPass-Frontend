@@ -220,7 +220,8 @@ export const EmployeeScreen: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+            <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight">
+              <Users className="h-5 w-5 text-blue-600" />
               Employee Administration
             </h1>
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${

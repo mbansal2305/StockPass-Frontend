@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { useApp, NavigationPage } from '../../context/AppContext';
+import stockpassLogo from '../../StockPassLogo.png';
 import {
   LayoutDashboard,
-  ClipboardList,
+  ShoppingCart,
   Truck,
-  WalletCards,
+  Wallet,
+  ReceiptText,
+  Calculator,
   Layers,
   Database,
   Users,
@@ -55,6 +58,8 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
       case 'bulk-transport-list': return 'Bulk Transport List';
       case 'bulk-transport': return 'Bulk Transport Dispatch';
       case 'master-data': return 'Master Data Repository';
+      case 'expenses': return 'Expense Bills';
+      case 'bill-hisaab': return 'Bill Hisaab';
       case 'employees': return 'Employee Management & Access Control';
       default: return 'Dashboard';
     }
@@ -70,10 +75,12 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
     {
       group: 'OPERATIONS',
       items: [
-        { id: 'orders' as NavigationPage, label: 'Orders', icon: ClipboardList },
+        { id: 'orders' as NavigationPage, label: 'Orders', icon: ShoppingCart },
         { id: 'transport' as NavigationPage, label: 'Transport', icon: Truck },
-        { id: 'transport-payments' as NavigationPage, label: 'Transport Payments', icon: WalletCards },
-        { id: 'bulk-transport-list' as NavigationPage, label: 'Bulk Transports', icon: Layers }
+        { id: 'transport-payments' as NavigationPage, label: 'Transport Payments', icon: Wallet },
+        { id: 'bulk-transport-list' as NavigationPage, label: 'Bulk Transports', icon: Layers },
+        { id: 'expenses' as NavigationPage, label: 'Expenses', icon: ReceiptText },
+        { id: 'bill-hisaab' as NavigationPage, label: 'Bill Hisaab', icon: Calculator }
       ]
     },
     {
@@ -107,13 +114,11 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
           </button>
 
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-sm tracking-tight shadow-xs">
-              V
-            </div>
+            <img src={stockpassLogo} alt="StockPass logo" className="w-8 h-8 object-contain" />
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-sm text-slate-900 tracking-tight leading-none">
-                  Vistar Mandi & Logistics
+                  StockPass
                 </span>
                 <span className={`w-2 h-2 rounded-full ${isBackendConnected ? 'bg-emerald-500' : 'bg-amber-400'}`} title={isBackendConnected ? 'Connected to ngrok API' : 'Using Local/Offline store'} />
               </div>

@@ -5,3 +5,4 @@ export * from './master';
 export * from './orders';
 export * from './transports';
 export * from './dashboard';
+export * from './bills';

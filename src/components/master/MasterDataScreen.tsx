@@ -22,7 +22,8 @@ import {
   Info,
   Globe,
   RefreshCw,
-  MoreVertical
+  MoreVertical,
+  Database
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { getClientFlagBadge, getClientTypeLabel } from '../../utils/formatters';
@@ -104,6 +105,7 @@ export const MasterDataScreen: React.FC = () => {
     address: string;
     city: string;
     pincode: string;
+    maan_no: string;
     type: ClientType;
     flag: ClientFlag;
     location_url: string;
@@ -114,6 +116,7 @@ export const MasterDataScreen: React.FC = () => {
     address: '',
     city: '',
     pincode: '',
+    maan_no: '',
     type: 'company' as ClientType,
     flag: 'good' as ClientFlag,
     location_url: '',
@@ -137,8 +140,28 @@ export const MasterDataScreen: React.FC = () => {
     agency: string;
     phone_number: string;
     city: string;
+    transaction_type: string;
+    account_number: string;
+    account_name: string;
+    bank: string;
+    branch: string;
+    ifsc_code: string;
+    email: string;
     notes: string;
-  }>({ name: '', agency: '', phone_number: '', city: '', notes: '' });
+  }>({
+    name: '',
+    agency: '',
+    phone_number: '',
+    city: '',
+    transaction_type: 'N',
+    account_number: '',
+    account_name: '',
+    bank: '',
+    branch: '',
+    ifsc_code: '',
+    email: '',
+    notes: ''
+  });
 
   // View Client Details Drawer
   const [selectedClientForDetails, setSelectedClientForDetails] = useState<BusinessClient | null>(null);
@@ -208,6 +231,7 @@ export const MasterDataScreen: React.FC = () => {
               address: c.address || '',
               city: c.city || '',
               pincode: c.pincode || '',
+              maan_no: c.maan_no || '',
               type: c.type || 'COMPANY',
               flag: c.flag || 'GOOD',
               location_url: c.location_url || '',
@@ -461,6 +485,7 @@ export const MasterDataScreen: React.FC = () => {
         address: item.address,
         city: item.city,
         pincode: item.pincode,
+        maan_no: item.maan_no || '',
         type: (item.type || 'company').toLowerCase() as ClientType,
         flag: (item.flag || 'good').toLowerCase() as ClientFlag,
         location_url: item.location_url || '',
@@ -474,6 +499,7 @@ export const MasterDataScreen: React.FC = () => {
         address: '',
         city: '',
         pincode: '',
+        maan_no: '',
         type: 'company' as ClientType,
         flag: 'good' as ClientFlag,
         location_url: '',
@@ -497,6 +523,7 @@ export const MasterDataScreen: React.FC = () => {
         address: clientForm.address.trim(),
         city: clientForm.city.trim(),
         pincode: clientForm.pincode.trim(),
+        maan_no: clientForm.maan_no.trim(),
         type: String(clientForm.type || 'company').toLowerCase() as ClientType,
         flag: String(clientForm.flag || 'good').toLowerCase() as ClientFlag,
         location_url: clientForm.location_url.trim(),
@@ -574,11 +601,31 @@ export const MasterDataScreen: React.FC = () => {
         agency: item.agency || '',
         phone_number: item.phone_number || (item as any).phone || '',
         city: item.city || '',
+        transaction_type: item.transaction_type || 'N',
+        account_number: item.account_number || '',
+        account_name: item.account_name || '',
+        bank: item.bank || '',
+        branch: item.branch || '',
+        ifsc_code: item.ifsc_code || '',
+        email: item.email || '',
         notes: item.notes || ''
       });
     } else {
       setEditingTransporter(null);
-      setTransporterForm({ name: '', agency: '', phone_number: '', city: '', notes: '' });
+      setTransporterForm({
+        name: '',
+        agency: '',
+        phone_number: '',
+        city: '',
+        transaction_type: 'N',
+        account_number: '',
+        account_name: '',
+        bank: '',
+        branch: '',
+        ifsc_code: '',
+        email: '',
+        notes: ''
+      });
     }
     setTransporterModalOpen(true);
   };
@@ -591,12 +638,18 @@ export const MasterDataScreen: React.FC = () => {
     }
     setIsSubmitting(true);
     try {
-      // Exactly matching ENTITY_FIELDS: name, agency, phone_number, city, notes
       const content = {
         name: transporterForm.name.trim(),
         agency: transporterForm.agency.trim(),
         phone_number: transporterForm.phone_number.trim(),
         city: transporterForm.city.trim(),
+        transaction_type: transporterForm.transaction_type.trim() || 'N',
+        account_number: transporterForm.account_number.trim(),
+        account_name: transporterForm.account_name.trim(),
+        bank: transporterForm.bank.trim(),
+        branch: transporterForm.branch.trim(),
+        ifsc_code: transporterForm.ifsc_code.trim(),
+        email: transporterForm.email.trim(),
         notes: transporterForm.notes.trim()
       };
       if (editingTransporter) {
@@ -632,11 +685,11 @@ export const MasterDataScreen: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Master Data</h1>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight"><Database className="h-5 w-5 text-blue-600" />Master Data</h1>
+            {/* <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               API Synced
-            </span>
+            </span> */}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Maintain commodities, commercial clients, godowns, brokers, and logistics partners.
@@ -1099,7 +1152,7 @@ export const MasterDataScreen: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: CLIENTS TABLE (Strictly: name, address, city, pincode, type, flag, location_url, notes) */}
+      {/* TAB 2: CLIENTS TABLE */}
       {masterDataTab === 'clients' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">
@@ -1109,9 +1162,10 @@ export const MasterDataScreen: React.FC = () => {
                   <th className="px-4 py-3">Client / Godown</th>
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Standing Flag</th>
-                  <th className="px-4 py-3">City & Pincode</th>
                   <th className="px-4 py-3">Address</th>
-                  <th className="px-4 py-3">Location URL</th>
+                  <th className="px-4 py-3">City & Pincode</th>
+                  <th className="px-4 py-3">Maan No.</th>
+                  <th className="px-4 py-3">Location</th>
                   <th className="px-4 py-3">Notes</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
@@ -1119,7 +1173,7 @@ export const MasterDataScreen: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {displayedClients.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-500">
+                    <td colSpan={9} className="py-8 text-center text-slate-500">
                       {isLoadingApi ? (
                         <div className="flex items-center justify-center gap-2 text-slate-400">
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -1154,22 +1208,24 @@ export const MasterDataScreen: React.FC = () => {
                             {badge.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {client.city} {client.pincode && `· ${client.pincode}`}
-                        </td>
                         <td className="px-4 py-3 text-slate-600 max-w-xs truncate">
                           {client.address}
                         </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {client.city} {client.pincode && `· ${client.pincode}`}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{client.maan_no || '-'}</td>
                         <td className="px-4 py-3">
                           {client.location_url ? (
                             <a
                               href={client.location_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-medium"
+                              aria-label={`Open location for ${client.name}`}
+                              title="Open location"
+                              className="inline-flex items-center text-blue-600 hover:text-blue-800"
                             >
                               <MapPin className="w-3.5 h-3.5" />
-                              Map Link <ExternalLink className="w-3 h-3" />
                             </a>
                           ) : (
                             <span className="text-slate-400">-</span>
@@ -1813,6 +1869,16 @@ export const MasterDataScreen: React.FC = () => {
               </div>
 
               <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">MAAN No.</label>
+                <input
+                  type="text"
+                  value={clientForm.maan_no}
+                  onChange={(e) => setClientForm({ ...clientForm, maan_no: e.target.value })}
+                  className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                />
+              </div>
+
+              <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Location URL</label>
                 <input
                   type="url"
@@ -1928,10 +1994,10 @@ export const MasterDataScreen: React.FC = () => {
         </div>
       )}
 
-      {/* TRANSPORTER FORM MODAL (Strictly: name, agency, phone_number, city, notes) */}
+      {/* TRANSPORTER FORM MODAL */}
       {transporterModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-5 border border-slate-200">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[calc(100vh-2rem)] overflow-y-auto p-5 border border-slate-200">
             <h3 className="text-sm font-bold text-slate-900 mb-3">
               {editingTransporter ? 'Edit Transporter' : 'Add New Transporter'}
             </h3>
@@ -1978,6 +2044,75 @@ export const MasterDataScreen: React.FC = () => {
                   className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
                 />
               </div>
+              <fieldset className="space-y-3 rounded-lg border border-slate-200 p-3">
+                <legend className="px-1 text-xs font-semibold text-slate-700">Bank Details (Optional)</legend>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Transaction Type</label>
+                    <input
+                      type="text"
+                      value={transporterForm.transaction_type}
+                      onChange={(e) => setTransporterForm({ ...transporterForm, transaction_type: e.target.value })}
+                      placeholder="N"
+                      className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Account Number</label>
+                    <input
+                      type="text"
+                      value={transporterForm.account_number}
+                      onChange={(e) => setTransporterForm({ ...transporterForm, account_number: e.target.value })}
+                      className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Account Name</label>
+                    <input
+                      type="text"
+                      value={transporterForm.account_name}
+                      onChange={(e) => setTransporterForm({ ...transporterForm, account_name: e.target.value })}
+                      className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Bank</label>
+                    <input
+                      type="text"
+                      value={transporterForm.bank}
+                      onChange={(e) => setTransporterForm({ ...transporterForm, bank: e.target.value })}
+                      className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Branch</label>
+                    <input
+                      type="text"
+                      value={transporterForm.branch}
+                      onChange={(e) => setTransporterForm({ ...transporterForm, branch: e.target.value })}
+                      className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">IFSC Code</label>
+                    <input
+                      type="text"
+                      value={transporterForm.ifsc_code}
+                      onChange={(e) => setTransporterForm({ ...transporterForm, ifsc_code: e.target.value })}
+                      className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={transporterForm.email}
+                      onChange={(e) => setTransporterForm({ ...transporterForm, email: e.target.value })}
+                      className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </fieldset>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Notes</label>
                 <textarea

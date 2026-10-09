@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { zipSync } from 'fflate';
 import { useApp } from '../../context/AppContext';
 import { Transport, TransportRentType, QuantityUnit, TransportStatus } from '../../types';
-import { apiClient, TransportClientOption, transportsApi } from '../../api';
+import { PaginatedTransportsResult, TransportClientOption, transportsApi } from '../../api';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
-import { Edit2, FilterX, Printer, Search, X } from 'lucide-react';
-import { getImageSource } from '../../utils/images';
+import { Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, Wallet, X } from 'lucide-react';
+import { TransportPaymentBill } from './TransportPaymentBill';
 
 interface PaymentDraft {
   status: TransportStatus;
@@ -21,6 +22,40 @@ interface PaymentDraft {
   finalPaid: number;
   notes: string;
 }
+
+type ExportPaymentMode = 'advance' | 'paid';
+
+interface ExportPaymentDraft {
+  amount: number;
+  mode: ExportPaymentMode;
+}
+
+interface SubmittedPaymentRow {
+  draft: PaymentDraft;
+  exportPaymentDraft: ExportPaymentDraft;
+  exportLocked: boolean;
+}
+
+const effectivePaymentAmounts = (draft: PaymentDraft, exportPaymentDraft: ExportPaymentDraft) => ({
+  advanceByFirm: draft.advanceByFirm + (exportPaymentDraft.mode === 'advance' ? exportPaymentDraft.amount : 0),
+  finalPaid: exportPaymentDraft.mode === 'paid' ? exportPaymentDraft.amount : draft.finalPaid
+});
+
+const paymentDraftsEqual = (left: PaymentDraft, right: PaymentDraft): boolean =>
+  left.status === right.status
+  && left.receivedWeight === right.receivedWeight
+  && left.unloadDate === right.unloadDate
+  && left.rent === right.rent
+  && left.rentType === right.rentType
+  && left.advanceByClient === right.advanceByClient
+  && left.advanceByFirm === right.advanceByFirm
+  && left.shortageAmount === right.shortageAmount
+  && left.extraAmount === right.extraAmount
+  && left.finalPaid === right.finalPaid
+  && left.notes === right.notes;
+
+const exportPaymentDraftsEqual = (left: ExportPaymentDraft, right: ExportPaymentDraft): boolean =>
+  left.amount === right.amount && left.mode === right.mode;
 
 const draftFromTransport = (transport: Transport): PaymentDraft => ({
   status: transport.status,
@@ -48,31 +83,173 @@ const unitName = (unit: QuantityUnit | undefined): string => {
   return 'Qtl';
 };
 
+const formatExportDate = (date: Date): string =>
+  `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+
+const createSheetName = (name: string, existingNames: Set<string>): string => {
+  const baseName = name.replace(/[\\/?*:[\]\x00-\x1f]/g, ' ').trim().replace(/^'+|'+$/g, '').slice(0, 31) || 'Billing Firm';
+  let sheetName = baseName;
+  let suffix = 2;
+  while (existingNames.has(sheetName.toLowerCase())) {
+    const suffixText = ` (${suffix})`;
+    sheetName = `${baseName.slice(0, 31 - suffixText.length)}${suffixText}`;
+    suffix += 1;
+  }
+  existingNames.add(sheetName.toLowerCase());
+  return sheetName;
+};
+
+const xmlEscape = (value: string): string => value
+  .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&apos;');
+
+const excelColumnName = (columnIndex: number): string => {
+  let index = columnIndex + 1;
+  let name = '';
+  while (index > 0) {
+    const remainder = (index - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    index = Math.floor((index - 1) / 26);
+  }
+  return name;
+};
+
+const worksheetXml = (rows: (string | number)[][]): string => {
+  const xmlRows = rows.map((row, rowIndex) => {
+    const cells = row.map((value, columnIndex) => {
+      if (value === '') return '';
+      const cellReference = `${excelColumnName(columnIndex)}${rowIndex + 1}`;
+      if (typeof value === 'number') return `<c r="${cellReference}"><v>${value}</v></c>`;
+      return `<c r="${cellReference}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
+    }).join('');
+    return `<row r="${rowIndex + 1}">${cells}</row>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${xmlRows}</sheetData></worksheet>`;
+};
+
+const downloadXlsx = (sheets: { name: string; rows: (string | number)[][] }[], fileName: string): void => {
+  const sheetOverrides = sheets.map((_, index) =>
+    `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+  ).join('');
+  const sheetReferences = sheets.map((sheet, index) =>
+    `<sheet name="${xmlEscape(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`
+  ).join('');
+  const sheetRelationships = sheets.map((_, index) =>
+    `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+  ).join('');
+  const files: Record<string, Uint8Array> = {
+    '[Content_Types].xml': new TextEncoder().encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheetOverrides}</Types>`
+    ),
+    '_rels/.rels': new TextEncoder().encode(
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'
+    ),
+    'xl/workbook.xml': new TextEncoder().encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheetReferences}</sheets></workbook>`
+    ),
+    'xl/_rels/workbook.xml.rels': new TextEncoder().encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheetRelationships}</Relationships>`
+    )
+  };
+  sheets.forEach((sheet, index) => {
+    files[`xl/worksheets/sheet${index + 1}.xml`] = new TextEncoder().encode(worksheetXml(sheet.rows));
+  });
+
+  const archive = zipSync(files);
+  const buffer = archive.buffer.slice(archive.byteOffset, archive.byteOffset + archive.byteLength) as ArrayBuffer;
+  const objectUrl = URL.createObjectURL(new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  }));
+  const downloadLink = document.createElement('a');
+  downloadLink.href = objectUrl;
+  downloadLink.download = fileName;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+};
+
 export const TransportPaymentsScreen: React.FC = () => {
   const {
-    transports,
     commodities,
     clients,
     transporters,
-    refreshData,
+    orders,
+    currentUser,
     showToast,
     transportGet,
     navigate
   } = useApp();
 
-  const [activeStatus, setActiveStatus] = useState('PENDING');
+  const [activeStatus, setActiveStatus] = useState<TransportStatus>('PENDING');
   const [searchTerm, setSearchTerm] = useState('');
   const [commodityFilter, setCommodityFilter] = useState('ALL');
   const [transporterFilter, setTransporterFilter] = useState('ALL');
   const [billingFirmFilter, setBillingFirmFilter] = useState('ALL');
+  const [currentPageNum, setCurrentPageNum] = useState(1);
+  const pageSize = 100;
+  const [refreshSequence, setRefreshSequence] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [serverPage, setServerPage] = useState<PaginatedTransportsResult>({
+    results: [],
+    total: 0,
+    page: 1,
+    pageSize,
+    totalPages: 1
+  });
   const [drafts, setDrafts] = useState<Record<string, PaymentDraft>>({});
-  const [pendingSubmit, setPendingSubmit] = useState<Transport | null>(null);
+  const [exportPaymentDrafts, setExportPaymentDrafts] = useState<Record<string, ExportPaymentDraft>>({});
+  const [submittedRows, setSubmittedRows] = useState<Record<string, SubmittedPaymentRow>>({});
   const [pendingEdit, setPendingEdit] = useState<Transport | null>(null);
   const [printTransport, setPrintTransport] = useState<Transport | null>(null);
+  const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [billingFirmOptions, setBillingFirmOptions] = useState<TransportClientOption[]>([]);
-  const [logoSourceIndex, setLogoSourceIndex] = useState(0);
-  const [resolvedLogoSource, setResolvedLogoSource] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isCurrent = true;
+    setIsLoading(true);
+    setLoadError('');
+    transportsApi.listPaymentsPaginated({
+      status: activeStatus,
+      commodity: commodityFilter === 'ALL' ? undefined : commodityFilter,
+      transporter: transporterFilter === 'ALL' ? undefined : transporterFilter,
+      billingFirm: billingFirmFilter === 'ALL' ? undefined : billingFirmFilter,
+      page: currentPageNum,
+      pageSize
+    }, { clients, commodities, orders, transporters })
+      .then(result => {
+        if (isCurrent) setServerPage(result);
+      })
+      .catch((error: unknown) => {
+        if (isCurrent) setLoadError(error instanceof Error ? error.message : 'Failed to load transports');
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [
+    activeStatus,
+    commodityFilter,
+    transporterFilter,
+    billingFirmFilter,
+    currentPageNum,
+    pageSize,
+    refreshSequence,
+    clients,
+    commodities,
+    orders,
+    transporters
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,65 +259,81 @@ export const TransportPaymentsScreen: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
+  const isPendingTab = activeStatus === 'PENDING';
+  const isPaidTab = activeStatus === 'PAID';
+  const canManagePaidTransports = currentUser?.role === 'OWNER';
   const commodityMap = useMemo(() => new Map(commodities.map(item => [item.id, item])), [commodities]);
   const clientMap = useMemo(() => new Map(clients.map(item => [item.id, item.name])), [clients]);
   const transporterMap = useMemo(() => new Map(transporters.map(item => [item.id, item.name])), [transporters]);
-  const logoClient = printTransport ? clients.find(client => client.id === printTransport.billingFirmId) : undefined;
-  const logoFirmOption = printTransport ? billingFirmOptions.find(client => client.id === printTransport.billingFirmId) : undefined;
-  const logoSources = [logoClient?.imageUrl, logoFirmOption?.imageUrl, logoClient?.image, logoClient?.profile_picture, logoFirmOption?.image]
-    .map(getImageSource)
-    .filter((source, index, sources) => source && sources.indexOf(source) === index);
-  const activeLogoSource = logoSources[logoSourceIndex] || '';
+  const exportableTransports = useMemo(() => isPendingTab
+    ? serverPage.results.filter(transport => {
+      const submittedRow = submittedRows[transport.id];
+      return submittedRow?.exportLocked && submittedRow.exportPaymentDraft.amount > 0;
+    })
+    : [], [isPendingTab, serverPage.results, submittedRows]);
+  const exportPaymentsToExcel = () => {
+    if (exportableTransports.length === 0) return;
 
-  useEffect(() => {
-    if (!activeLogoSource) {
-      setResolvedLogoSource('');
-      return;
-    }
-    if (!/^https?:\/\//i.test(activeLogoSource)) {
-      setResolvedLogoSource(activeLogoSource);
-      return;
-    }
-
-    let cancelled = false;
-    let objectUrl = '';
-    setResolvedLogoSource('');
-    const headers = new Headers({ 'ngrok-skip-browser-warning': 'true' });
-    const accessToken = apiClient.getAccessToken();
-    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
-
-    fetch(activeLogoSource, { headers })
-      .then(async response => {
-        if (!response.ok) throw new Error(`Logo request failed (${response.status})`);
-        const imageBlob = await response.blob();
-        if (imageBlob.type.includes('text/html')) throw new Error('Logo request returned an HTML page');
-        const contentType = imageBlob.type.startsWith('image/') ? imageBlob.type : 'image/jpeg';
-        return new Blob([imageBlob], { type: contentType });
-      })
-      .then(imageBlob => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(imageBlob);
-        setResolvedLogoSource(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setLogoSourceIndex(index => index + 1);
+    try {
+      const rowsByBillingFirm = new Map<string, Transport[]>();
+      exportableTransports.forEach(transport => {
+        const billingFirmName = transport.billingFirmName || clientMap.get(transport.billingFirmId) || 'Billing Firm';
+        const transports = rowsByBillingFirm.get(billingFirmName) || [];
+        transports.push(transport);
+        rowsByBillingFirm.set(billingFirmName, transports);
       });
 
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [activeLogoSource]);
+      const existingSheetNames = new Set<string>();
+      const sheets = Array.from(rowsByBillingFirm, ([billingFirmName, transports]) => {
+        const rows = transports.map(transport => {
+          const bank = transport.transporterBank;
+          const submittedExportAmount = submittedRows[transport.id].exportPaymentDraft.amount;
+          const referenceNumber = `B${transport.billNumber}${transport.vehicleNumber}`.toUpperCase();
+          const row: (string | number)[] = Array(28).fill('');
+          row[0] = String(bank?.transactionType || '').toUpperCase();
+          row[2] = String(bank?.accountNumber || '').toUpperCase();
+          row[3] = submittedExportAmount;
+          row[4] = String(bank?.accountName || '').toUpperCase();
+          row[12] = referenceNumber;
+          row[13] = referenceNumber;
+          row[22] = formatExportDate(new Date());
+          row[24] = String(bank?.ifscCode || '').toUpperCase();
+          row[25] = String(bank?.bank || '').toUpperCase();
+          row[26] = String(bank?.branch || '').toUpperCase();
+          row[27] = String(bank?.email || '').toLowerCase();
+          return row;
+        });
+        return { name: createSheetName(billingFirmName, existingSheetNames), rows };
+      });
+
+      const today = new Date();
+      const dateStamp = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+      downloadXlsx(sheets, `Transport_Payments_${dateStamp}.xlsx`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to export transport payments', 'error');
+    }
+  };
 
   const getDraft = (transport: Transport): PaymentDraft => drafts[transport.id] || draftFromTransport(transport);
+  const getExportPaymentDraft = (transport: Transport): ExportPaymentDraft =>
+    exportPaymentDrafts[transport.id] || { amount: 0, mode: 'advance' };
   const updateDraft = (transport: Transport, patch: Partial<PaymentDraft>) => {
     setDrafts(previous => ({
       ...previous,
       [transport.id]: { ...draftFromTransport(transport), ...previous[transport.id], ...patch }
     }));
   };
+  const updateExportPaymentDraft = (transport: Transport, patch: Partial<ExportPaymentDraft>) => {
+    setExportPaymentDrafts(previous => {
+      const current = previous[transport.id] || { amount: 0, mode: 'advance' };
+      return {
+        ...previous,
+        [transport.id]: { ...current, ...patch }
+      };
+    });
+  };
 
-  const filteredTransports = useMemo(() => transports.filter(transport => {
+  const filteredTransports = useMemo(() => serverPage.results.filter(transport => {
     const commodityName = commodityMap.get(transport.commodityId)?.name || '';
     const transporterName = transporterMap.get(transport.transporterId) || '';
     const billingFirmName = clientMap.get(transport.billingFirmId) || '';
@@ -156,12 +349,8 @@ export const TransportPaymentsScreen: React.FC = () => {
       fromName,
       toName
     ].some(value => value.toLowerCase().includes(lowerSearch));
-    return matchesSearch &&
-      (activeStatus === 'ALL' || transport.status === activeStatus) &&
-      (commodityFilter === 'ALL' || transport.commodityId === commodityFilter) &&
-      (transporterFilter === 'ALL' || transport.transporterId === transporterFilter) &&
-      (billingFirmFilter === 'ALL' || transport.billingFirmId === billingFirmFilter);
-  }), [transports, commodityMap, transporterMap, clientMap, searchTerm, activeStatus, commodityFilter, transporterFilter, billingFirmFilter]);
+    return matchesSearch;
+  }), [serverPage.results, commodityMap, transporterMap, clientMap, searchTerm]);
 
   const resetFilters = () => {
     setActiveStatus('PENDING');
@@ -169,20 +358,32 @@ export const TransportPaymentsScreen: React.FC = () => {
     setCommodityFilter('ALL');
     setTransporterFilter('ALL');
     setBillingFirmFilter('ALL');
+    setCurrentPageNum(1);
   };
 
+  const totalPages = serverPage.totalPages || 1;
   const statusFilterItems = [
-    { value: 'ALL', label: `All (${transports.length})`, active: 'bg-white text-slate-900 shadow-sm', idle: 'text-slate-600 hover:bg-white/60' },
-    { value: 'PENDING', label: `Pending (${transports.filter(t => t.status === 'PENDING').length})`, active: 'bg-amber-100 text-amber-900 ring-1 ring-amber-300', idle: 'text-amber-800 hover:bg-amber-50' },
-    { value: 'DELIVERY', label: `In Delivery (${transports.filter(t => t.status === 'DELIVERY').length})`, active: 'bg-sky-100 text-sky-900 ring-1 ring-sky-300', idle: 'text-sky-800 hover:bg-sky-50' },
-    { value: 'FINANCE', label: `Finance (${transports.filter(t => t.status === 'FINANCE').length})`, active: 'bg-purple-100 text-purple-900 ring-1 ring-purple-300', idle: 'text-purple-800 hover:bg-purple-50' },
-    { value: 'PAID', label: `Paid (${transports.filter(t => t.status === 'PAID').length})`, active: 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-300', idle: 'text-emerald-800 hover:bg-emerald-50' }
+    { value: 'DRAFT' as const, label: 'Draft', active: 'bg-slate-200 text-slate-900 border-slate-400 ring-2 ring-slate-400/30', idle: 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200/60', dot: 'bg-slate-400 border-slate-500' },
+    { value: 'PENDING' as const, label: 'Pending', active: 'bg-amber-100 text-amber-900 border-amber-300 ring-2 ring-amber-400/30', idle: 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/60', dot: 'bg-amber-500 border-amber-600' },
+    { value: 'DELIVERY' as const, label: 'Delivery', active: 'bg-blue-100 text-blue-900 border-blue-300 ring-2 ring-blue-400/30', idle: 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100/60', dot: 'bg-blue-500 border-blue-600' },
+    { value: 'FINANCE' as const, label: 'Finance', active: 'bg-purple-100 text-purple-900 border-purple-300 ring-2 ring-purple-400/30', idle: 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100/60', dot: 'bg-purple-500 border-purple-600' },
+    { value: 'PAID' as const, label: 'Paid', active: 'bg-emerald-100 text-emerald-900 border-emerald-300 ring-2 ring-emerald-400/30', idle: 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/60', dot: 'bg-emerald-500 border-emerald-600' }
   ];
 
-  const savePayment = async () => {
-    if (!pendingSubmit) return;
-    const transport = pendingSubmit;
-    const draft = getDraft(transport);
+  const savePayment = async (transport: Transport) => {
+    if (isPaidTab && !canManagePaidTransports) {
+      showToast('Only owners and admins can update paid transports.', 'error');
+      return;
+    }
+
+    const currentDraft = getDraft(transport);
+    const draft = isPendingTab
+      ? currentDraft
+      : { ...draftFromTransport(transport), status: currentDraft.status };
+    const exportPaymentDraft = isPendingTab
+      ? getExportPaymentDraft(transport)
+      : { amount: 0, mode: 'advance' as const };
+    const paymentAmounts = effectivePaymentAmounts(draft, exportPaymentDraft);
     setSavingId(transport.id);
     try {
       await transportsApi.updatePayments({
@@ -193,14 +394,20 @@ export const TransportPaymentsScreen: React.FC = () => {
         rent: draft.rent,
         rentType: draft.rentType,
         advanceByClient: draft.advanceByClient,
-        advanceByFirm: draft.advanceByFirm,
+        advanceByFirm: paymentAmounts.advanceByFirm,
         shortageAmount: draft.shortageAmount,
         extraAmount: draft.extraAmount,
-        finalPaid: draft.finalPaid,
+        finalPaid: paymentAmounts.finalPaid,
         notes: draft.notes
       });
-      await refreshData();
-      setPendingSubmit(null);
+      setSubmittedRows(previous => ({
+        ...previous,
+        [transport.id]: {
+          draft,
+          exportPaymentDraft,
+          exportLocked: isPendingTab
+        }
+      }));
       showToast(`Payment saved for ${transport.billNumber}`, 'success');
     } catch (error: any) {
       showToast(error.message || 'Failed to save transport payment', 'error');
@@ -224,21 +431,8 @@ export const TransportPaymentsScreen: React.FC = () => {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Transport Payments</h1>
+        <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight"><Wallet className="h-5 w-5 text-blue-600" />Transport Payments</h1>
         <p className="mt-0.5 text-xs text-slate-500">Review receipts, settle freight, and close consignments.</p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-200/70 p-1">
-        {statusFilterItems.map(item => (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => setActiveStatus(item.value)}
-            className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold ${activeStatus === item.value ? item.active : item.idle}`}
-          >
-            {item.label}
-          </button>
-        ))}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
@@ -246,20 +440,23 @@ export const TransportPaymentsScreen: React.FC = () => {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             value={searchTerm}
-            onChange={event => setSearchTerm(event.target.value)}
+            onChange={event => {
+              setSearchTerm(event.target.value);
+              setCurrentPageNum(1);
+            }}
             placeholder="Search bill, vehicle, firm, route, transporter..."
             className="w-full rounded-md border border-slate-200 py-1.5 pl-9 pr-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
           />
         </div>
-        <select value={commodityFilter} onChange={event => setCommodityFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
+        <select value={commodityFilter} onChange={event => { setCommodityFilter(event.target.value); setCurrentPageNum(1); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
           <option value="ALL">All Commodities</option>
           {commodities.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
-        <select value={transporterFilter} onChange={event => setTransporterFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
+        <select value={transporterFilter} onChange={event => { setTransporterFilter(event.target.value); setCurrentPageNum(1); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
           <option value="ALL">All Transporters</option>
           {transporters.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
-        <select value={billingFirmFilter} onChange={event => setBillingFirmFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
+        <select value={billingFirmFilter} onChange={event => { setBillingFirmFilter(event.target.value); setCurrentPageNum(1); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700">
           <option value="ALL">All Billing Firms</option>
           {clients.filter(client => String(client.type).toUpperCase() === 'MY_FIRM').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
@@ -268,88 +465,242 @@ export const TransportPaymentsScreen: React.FC = () => {
             <FilterX className="h-3.5 w-3.5" /> Reset
           </button>
         )}
+        <button
+          type="button"
+          disabled={exportableTransports.length === 0}
+          onClick={exportPaymentsToExcel}
+          className="inline-flex items-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          <FileSpreadsheet className="h-3.5 w-3.5" />
+          Export to Excel
+        </button>
+        <button
+          type="button"
+          aria-label={`Refresh ${activeStatus.toLowerCase()} transport payments`}
+          title={`Refresh ${activeStatus.toLowerCase()} transport payments`}
+          disabled={isLoading}
+          onClick={() => setRefreshSequence(sequence => sequence + 1)}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-slate-700">Status Color Legend:</span>
+          <span className="text-[11px] text-slate-400">Rows are color-coded by shipment lifecycle</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {statusFilterItems.map(item => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => {
+                setActiveStatus(item.value);
+                setCurrentPageNum(1);
+              }}
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all ${
+                activeStatus === item.value ? item.active : item.idle
+              }`}
+              title={`Filter by ${item.label}`}
+            >
+              <span className={`h-2.5 w-2.5 rounded-full border ${item.dot}`} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-t-lg border-x border-t border-slate-200 bg-white">
         <table className="w-full min-w-[2160px] table-fixed text-left text-[11px]">
           <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-semibold uppercase text-slate-500">
             <tr>
-              <th className="w-[62px] px-1 py-2"></th>
-              <th className="w-[88px] px-2 py-2">Loading</th>
-              <th className="w-[125px] px-2 py-2">Bill</th>
-              <th className="w-[130px] px-2 py-2">Vehicle</th>
-              <th className="w-[132px] px-2 py-2">Route</th>
-              <th className="w-[82px] px-2 py-2 text-right">Gross Wt</th>
-              <th className="w-[125px] px-2 py-2 text-right">Rcvd Wt</th>
-              <th className="w-[112px] px-2 py-2">Unload Date</th>
-              <th className="w-[190px] px-2 py-2">Agreed Rent</th>
-              <th className="w-[105px] px-2 py-2 text-right">Total Rent</th>
-              <th className="w-[105px] px-2 py-2 text-right">Adv. by Party</th>
-              <th className="w-[95px] px-2 py-2 text-right">Adv. Paid</th>
-              <th className="w-[88px] px-2 py-2 text-right">Shortage</th>
-              <th className="w-[78px] px-2 py-2 text-right">Extra</th>
-              <th className="w-[78px] px-2 py-2 text-right">Paid</th>
-              <th className="w-[95px] px-2 py-2 text-right">Left</th>
+              <th className="sticky left-0 z-20 w-[62px] bg-slate-50 px-1 py-2"></th>
+              <th className="sticky left-[62px] z-20 w-[45px] bg-slate-50 px-2 py-2">Date</th>
+              <th className="sticky left-[107px] z-20 w-[95px] bg-slate-50 px-1 py-2">Bill</th>
+              <th className="sticky left-[202px] z-20 w-[80px] bg-slate-50 px-1 py-2">Vehicle</th>
+              <th className="sticky left-[282px] z-20 w-[90px] bg-slate-50 px-1 py-2">Route</th>
+              <th className="sticky left-[372px] z-20 w-[50px] bg-slate-50 px-1 py-2 text-right">Gross Wt</th>
+              <th className="w-[90px] px-2 py-2 text-right">Rcvd Wt</th>
+              <th className="w-[100px] px-2 py-2">Unload Date</th>
+              <th className="w-[120px] px-2 py-2">Agreed Rent</th>
+              <th className="w-[80px] px-2 py-2 text-right">Total Rent</th>
+              <th className="w-[80px] px-2 py-2 text-right">Adv. by Party</th>
+              <th className="w-[80px] px-2 py-2 text-right">Adv. Paid</th>
+              <th className="w-[80px] px-2 py-2 text-right">Shortage</th>
+              <th className="w-[80px] px-2 py-2 text-right">Extra</th>
+              <th className="w-[80px] px-2 py-2 text-right">Paid</th>
+              <th className="w-[75px] px-2 py-2 text-right">Left</th>
+              {isPendingTab && <th className="w-[120px] px-1 py-2">Export Amtount</th>}
               <th className="w-[145px] px-2 py-2">Notes</th>
-              <th className="w-[100px] px-2 py-2">Status</th>
-              <th className="w-[85px] px-2 py-2 text-center">Submit</th>
+              <th className="w-[82px] px-1 py-2">Status</th>
+              <th className="w-[68px] px-1 py-2 text-center">Submit</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredTransports.length === 0 ? (
-              <tr><td colSpan={19} className="py-10 text-center text-xs text-slate-500">No transport payments match these filters.</td></tr>
+            {isLoading ? (
+              <tr><td colSpan={isPendingTab ? 20 : 19} className="py-10 text-center text-xs text-slate-500">Loading transports...</td></tr>
+            ) : loadError ? (
+              <tr><td colSpan={isPendingTab ? 20 : 19} className="py-10 text-center text-xs text-red-600">{loadError}</td></tr>
+            ) : filteredTransports.length === 0 ? (
+              <tr><td colSpan={isPendingTab ? 20 : 19} className="py-10 text-center text-xs text-slate-500">No transport payments match these filters.</td></tr>
             ) : filteredTransports.map(transport => {
               const draft = getDraft(transport);
+              const submittedRow = submittedRows[transport.id];
+              const exportPaymentDraft = getExportPaymentDraft(transport);
+              const baselineDraft = submittedRow?.draft || draftFromTransport(transport);
+              const baselineExportPaymentDraft = submittedRow?.exportPaymentDraft || { amount: 0, mode: 'advance' as const };
+              const hasChanges = isPendingTab
+                ? !paymentDraftsEqual(draft, baselineDraft)
+                  || !exportPaymentDraftsEqual(exportPaymentDraft, baselineExportPaymentDraft)
+                : draft.status !== baselineDraft.status;
+              const exportLocked = submittedRow?.exportLocked === true;
               const gross = Number(transport.grossWeight) || 0;
               const received = Number(draft.receivedWeight) || 0;
               const differenceQtl = quantityToQuintals(received - gross, transport.grossWeightUnit);
               const billableQuantity = received > 0 ? Math.min(gross, received) : gross;
               const totalRent = Math.trunc(draft.rentType === 'per_unit' ? billableQuantity * draft.rent : draft.rent);
-              const left = totalRent - draft.advanceByClient - draft.advanceByFirm - draft.shortageAmount - draft.finalPaid + draft.extraAmount;
+              const paymentAmounts = effectivePaymentAmounts(draft, exportPaymentDraft);
+              const left = totalRent - draft.advanceByClient - paymentAmounts.advanceByFirm - draft.shortageAmount - paymentAmounts.finalPaid + draft.extraAmount;
               const party = clientMap.get(transport.billingFirmId) || '-';
               const carrier = transporterMap.get(transport.transporterId) || '-';
+              const displayedParty = party.length > 15 ? `${party.slice(0, 15)}...` : party;
+              const displayedCarrier = carrier.length > 12 ? `${carrier.slice(0, 12)}...` : carrier;
+              const formattedLoadingDate = formatDate(transport.loadingDate);
+              const loadingYear = formattedLoadingDate.match(/\b\d{4}\b$/)?.[0];
+              const loadingDateLabel = loadingYear
+                ? formattedLoadingDate.slice(0, -loadingYear.length).trim()
+                : formattedLoadingDate;
               const from = clientMap.get(transport.fromClientId) || '-';
               const to = clientMap.get(transport.toClientId) || '-';
-              const rowColor = draft.status === 'PENDING'
+              const isFocusedRow = focusedRowId === transport.id;
+              const isHoveredRow = hoveredRowId === transport.id;
+              const rowColor = isFocusedRow
+                ? 'bg-sky-100 hover:bg-sky-100'
+                : isHoveredRow && draft.status === 'PENDING'
+                ? 'bg-amber-100/60 hover:bg-amber-100/60'
+                : isHoveredRow && draft.status === 'DRAFT'
+                ? 'bg-slate-100 hover:bg-slate-100'
+                : isHoveredRow && draft.status === 'DELIVERY'
+                ? 'bg-blue-100 hover:bg-blue-100'
+                : isHoveredRow && draft.status === 'FINANCE'
+                ? 'bg-purple-100/60 hover:bg-purple-100/60'
+                : isHoveredRow
+                ? 'bg-emerald-100/60 hover:bg-emerald-100/60'
+                : draft.status === 'PENDING'
                 ? 'bg-amber-50/50 hover:bg-amber-100/60'
+                : draft.status === 'DRAFT'
+                ? 'bg-slate-50 hover:bg-slate-100'
                 : draft.status === 'DELIVERY'
-                ? 'bg-sky-50/50 hover:bg-sky-100/60'
+                ? 'bg-blue-50/50 hover:bg-blue-100/60'
                 : draft.status === 'FINANCE'
                 ? 'bg-purple-50/50 hover:bg-purple-100/60'
                 : 'bg-emerald-50/50 hover:bg-emerald-100/60';
+              const stickyRowColor = isFocusedRow
+                ? 'bg-sky-100'
+                : isHoveredRow && draft.status === 'PENDING'
+                ? 'bg-amber-100/60'
+                : isHoveredRow && draft.status === 'DRAFT'
+                ? 'bg-slate-100'
+                : isHoveredRow && draft.status === 'DELIVERY'
+                ? 'bg-blue-100'
+                : isHoveredRow && draft.status === 'FINANCE'
+                ? 'bg-purple-100/60'
+                : isHoveredRow
+                ? 'bg-emerald-100/60'
+                : draft.status === 'PENDING'
+                ? 'bg-amber-50'
+                : draft.status === 'DRAFT'
+                ? 'bg-slate-50'
+                : draft.status === 'DELIVERY'
+                ? 'bg-blue-50'
+                : draft.status === 'FINANCE'
+                ? 'bg-purple-50'
+                : 'bg-emerald-50';
+              const stickyRowHoverColor = isFocusedRow
+                ? 'group-hover:bg-sky-100'
+                : draft.status === 'PENDING'
+                ? 'group-hover:bg-amber-100/60'
+                : draft.status === 'DRAFT'
+                ? 'group-hover:bg-slate-100'
+                : draft.status === 'DELIVERY'
+                ? 'group-hover:bg-blue-100'
+                : draft.status === 'FINANCE'
+                ? 'group-hover:bg-purple-100/60'
+                : 'group-hover:bg-emerald-100/60';
+              const stickyBackgroundColor = isFocusedRow
+                ? '#e0f2fe'
+                : isHoveredRow && draft.status === 'PENDING'
+                ? '#fef3c7'
+                : isHoveredRow && draft.status === 'DRAFT'
+                ? '#f1f5f9'
+                : isHoveredRow && draft.status === 'DELIVERY'
+                ? '#dbeafe'
+                : isHoveredRow && draft.status === 'FINANCE'
+                ? '#f3e8ff'
+                : isHoveredRow
+                ? '#d1fae5'
+                : draft.status === 'PENDING'
+                ? '#fffbeb'
+                : draft.status === 'DRAFT'
+                ? '#f8fafc'
+                : draft.status === 'DELIVERY'
+                ? '#eff6ff'
+                : draft.status === 'FINANCE'
+                ? '#faf5ff'
+                : '#ecfdf5';
               const statusSelectColor = draft.status === 'PENDING'
                 ? 'border-amber-300 bg-amber-50 text-amber-900'
+                : draft.status === 'DRAFT'
+                ? 'border-slate-300 bg-slate-50 text-slate-900'
                 : draft.status === 'DELIVERY'
-                ? 'border-sky-300 bg-sky-50 text-sky-900'
+                ? 'border-blue-300 bg-blue-50 text-blue-900'
                 : draft.status === 'FINANCE'
                 ? 'border-purple-300 bg-purple-50 text-purple-900'
                 : 'border-emerald-300 bg-emerald-50 text-emerald-900';
               return (
-                <tr key={transport.id} className={`align-top ${rowColor}`}>
-                  <td className="px-1 py-2 text-center">
+                <tr
+                  key={transport.id}
+                  className={`group align-top ${rowColor} ${isFocusedRow ? '[&>td]:bg-sky-100 [&>td]:border-y [&>td]:border-sky-200' : ''}`}
+                  onMouseEnter={() => setHoveredRowId(transport.id)}
+                  onMouseLeave={() => setHoveredRowId(null)}
+                  onFocusCapture={() => setFocusedRowId(transport.id)}
+                  onBlurCapture={event => {
+                    if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) {
+                      setFocusedRowId(null);
+                    }
+                  }}
+                >
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-0 z-20 px-1 py-2 text-center ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="flex items-center justify-center gap-0.5">
-                    <button type="button" title="Edit transport" aria-label={`Edit transport ${transport.billNumber}`} onClick={() => setPendingEdit(transport)} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" title="Print payment bill" aria-label={`Print payment bill ${transport.billNumber}`} onClick={() => { setLogoSourceIndex(0); setPrintTransport(transport); }} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
+                    {(!isPaidTab || canManagePaidTransports) && (
+                      <button type="button" title="Edit transport" aria-label={`Edit transport ${transport.billNumber}`} onClick={() => setPendingEdit(transport)} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button type="button" title="Print payment bill" aria-label={`Print payment bill ${transport.billNumber}`} onClick={() => setPrintTransport(transport)} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
                       <Printer className="h-3.5 w-3.5" />
                     </button>
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-2 py-2 text-slate-600">{formatDate(transport.loadingDate)}</td>
-                  <td className="px-2 py-2">
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[62px] z-20 whitespace-nowrap px-2 py-2 text-slate-600 ${stickyRowColor} ${stickyRowHoverColor}`} title={formattedLoadingDate}>
+                    <div className="w-full">{loadingDateLabel}</div>
+                    {loadingYear && <div className="w-full">{loadingYear}</div>}
+                  </td>
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[107px] z-20 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="font-mono font-semibold text-slate-900">{transport.billNumber}</div>
-                    <div className="truncate text-[10px] text-slate-500" title={party}>{party}</div>
+                    <div className="truncate text-[10px] text-slate-500" title={party}>{displayedParty}</div>
                   </td>
-                  <td className="px-2 py-2">
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[202px] z-20 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="truncate font-mono text-slate-800" title={transport.vehicleNumber}>{transport.vehicleNumber}</div>
-                    <div className="truncate text-[10px] text-slate-500" title={carrier}>{carrier}</div>
+                    <div className="truncate text-[10px] text-slate-500" title={carrier}>{displayedCarrier}</div>
                   </td>
-                  <td className="px-2 py-2">
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[282px] z-20 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="truncate text-slate-700" title={from}>{from}</div>
                     <div className="truncate text-[10px] text-slate-500" title={to}>→ {to}</div>
                   </td>
-                  <td className="whitespace-nowrap px-2 py-2 text-right font-semibold tabular-nums text-slate-800">
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[372px] z-20 whitespace-nowrap px-1 py-2 text-right font-semibold tabular-nums text-slate-800 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     {formatQuantityWithUnit(gross, transport.grossWeightUnit)}
                   </td>
                   <td className="px-2 py-2 text-right">
@@ -357,7 +708,8 @@ export const TransportPaymentsScreen: React.FC = () => {
                       <DecimalInput
                         value={draft.receivedWeight}
                         onChange={receivedWeight => updateDraft(transport, { receivedWeight })}
-                        className="w-[72px] rounded border border-slate-300 px-1 py-1 text-right text-[11px] tabular-nums text-slate-900"
+                        disabled={!isPendingTab}
+                        className="w-[72px] rounded border border-slate-300 px-1 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70"
                       />
                       <span className="text-[9px] text-slate-500">{unitName(transport.grossWeightUnit)}</span>
                     </div>
@@ -366,36 +718,46 @@ export const TransportPaymentsScreen: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-2 py-2">
-                    <input type="date" value={draft.unloadDate} onChange={event => updateDraft(transport, { unloadDate: event.target.value })} className="w-full min-w-[115px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900" />
+                    <input type="date" value={draft.unloadDate} onChange={event => updateDraft(transport, { unloadDate: event.target.value })} disabled={!isPendingTab} className="w-full min-w-[115px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" />
                   </td>
                   <td className="px-2 py-2">
                     <div className="flex items-center gap-1">
                       <div className="inline-flex shrink-0 rounded border border-slate-200 bg-slate-100 p-0.5">
-                        <button type="button" aria-pressed={draft.rentType === 'per_unit'} onClick={() => updateDraft(transport, { rentType: 'per_unit' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold ${draft.rentType === 'per_unit' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Per {unitName(transport.grossWeightUnit)}</button>
-                        <button type="button" aria-pressed={draft.rentType === 'fix'} onClick={() => updateDraft(transport, { rentType: 'fix' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold ${draft.rentType === 'fix' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Fix</button>
+                        <button type="button" disabled={!isPendingTab} aria-pressed={draft.rentType === 'per_unit'} onClick={() => updateDraft(transport, { rentType: 'per_unit' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold disabled:cursor-not-allowed disabled:opacity-70 ${draft.rentType === 'per_unit' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Per {unitName(transport.grossWeightUnit)}</button>
+                        <button type="button" disabled={!isPendingTab} aria-pressed={draft.rentType === 'fix'} onClick={() => updateDraft(transport, { rentType: 'fix' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold disabled:cursor-not-allowed disabled:opacity-70 ${draft.rentType === 'fix' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Fix</button>
                       </div>
-                      <DecimalInput value={draft.rent} onChange={rent => updateDraft(transport, { rent })} className="min-w-0 flex-1 rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" />
+                      <DecimalInput value={draft.rent} onChange={rent => updateDraft(transport, { rent })} disabled={!isPendingTab} className="w-[85px] shrink-0 rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" />
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-right font-semibold tabular-nums text-slate-800">{formatCurrency(totalRent)}</td>
-                  <td className="px-2 py-2"><DecimalInput aria-label="Advance by party" value={draft.advanceByClient} onChange={advanceByClient => updateDraft(transport, { advanceByClient })} className="w-full min-w-[82px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><DecimalInput aria-label="Advance paid" value={draft.advanceByFirm} onChange={advanceByFirm => updateDraft(transport, { advanceByFirm })} className="w-full min-w-[78px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><DecimalInput aria-label="Shortage" value={draft.shortageAmount} onChange={shortageAmount => updateDraft(transport, { shortageAmount })} className="w-full min-w-[74px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><DecimalInput aria-label="Extra" value={draft.extraAmount} onChange={extraAmount => updateDraft(transport, { extraAmount })} className="w-full min-w-[70px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
-                  <td className="px-2 py-2"><DecimalInput aria-label="Paid" value={draft.finalPaid} onChange={finalPaid => updateDraft(transport, { finalPaid })} className="w-full min-w-[70px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Advance by party" value={draft.advanceByClient} onChange={advanceByClient => updateDraft(transport, { advanceByClient })} disabled={!isPendingTab} className="ml-auto block w-[85px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Advance paid" value={paymentAmounts.advanceByFirm} onChange={advanceByFirm => updateDraft(transport, { advanceByFirm: Math.max(0, advanceByFirm - (exportPaymentDraft.mode === 'advance' ? exportPaymentDraft.amount : 0)) })} disabled={!isPendingTab} className="ml-auto block w-[85px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Shortage" value={draft.shortageAmount} onChange={shortageAmount => updateDraft(transport, { shortageAmount })} disabled={!isPendingTab} className="ml-auto block w-[85px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Extra" value={draft.extraAmount} onChange={extraAmount => updateDraft(transport, { extraAmount })} disabled={!isPendingTab} className="ml-auto block w-[85px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
+                  <td className="px-2 py-2"><DecimalInput aria-label="Paid" value={paymentAmounts.finalPaid} onChange={finalPaid => exportPaymentDraft.mode === 'paid' ? updateExportPaymentDraft(transport, { amount: finalPaid }) : updateDraft(transport, { finalPaid })} disabled={!isPendingTab} className="ml-auto block w-[85px] rounded border border-slate-300 px-1.5 py-1 text-right text-[11px] tabular-nums text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
                   <td className={`whitespace-nowrap px-2 py-2 text-right font-semibold tabular-nums ${left < 100 ? 'text-emerald-700' : 'text-red-700'}`}>{formatCurrency(left)}</td>
-                  <td className="px-2 py-2"><input aria-label="Payment notes" value={draft.notes} onChange={event => updateDraft(transport, { notes: event.target.value })} className="w-full min-w-[150px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900" /></td>
-                  <td className="px-2 py-2">
-                    <select value={draft.status} onChange={event => updateDraft(transport, { status: event.target.value as TransportStatus })} className={`w-full rounded border px-1.5 py-1 text-[10px] font-semibold ${statusSelectColor}`}>
+                  {isPendingTab && <td className="px-1 py-2">
+                    <div className="flex items-center gap-1">
+                      <div className="inline-flex shrink-0 rounded border border-slate-200 bg-slate-100 p-0.5">
+                        <button type="button" disabled={exportLocked || savingId === transport.id} aria-pressed={exportPaymentDraft.mode === 'advance'} onClick={() => updateExportPaymentDraft(transport, { mode: 'advance' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold disabled:cursor-not-allowed ${exportPaymentDraft.mode === 'advance' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Adv</button>
+                        <button type="button" disabled={exportLocked || savingId === transport.id} aria-pressed={exportPaymentDraft.mode === 'paid'} onClick={() => updateExportPaymentDraft(transport, { mode: 'paid' })} className={`rounded px-1.5 py-1 text-[9px] font-semibold disabled:cursor-not-allowed ${exportPaymentDraft.mode === 'paid' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Paid</button>
+                      </div>
+                      <DecimalInput aria-label="Export amount" value={exportPaymentDraft.amount} onChange={amount => updateExportPaymentDraft(transport, { amount })} disabled={exportLocked || savingId === transport.id} className={`w-[72px] shrink-0 rounded px-1 py-1 text-right text-[11px] tabular-nums disabled:cursor-not-allowed ${exportLocked ? 'border-2 border-green-600 bg-green-50 text-green-800' : exportPaymentDraft.amount > 0 ? 'border-2 border-green-600 text-slate-900' : 'border border-slate-300 text-slate-900'}`} />
+                    </div>
+                  </td>}
+                  <td className="px-2 py-2"><input aria-label="Payment notes" value={draft.notes} onChange={event => updateDraft(transport, { notes: event.target.value })} disabled={!isPendingTab} className="w-full min-w-[150px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
+                  <td className="px-1 py-2">
+                    <select value={isPaidTab && !canManagePaidTransports ? transport.status : draft.status} onChange={event => updateDraft(transport, { status: event.target.value as TransportStatus })} disabled={isPaidTab && !canManagePaidTransports} className={`w-full rounded border px-1 py-1 text-[10px] font-semibold disabled:cursor-not-allowed disabled:opacity-70 ${statusSelectColor}`}>
+                      <option value="DRAFT">Draft</option>
                       <option value="PENDING">Pending</option>
                       <option value="DELIVERY">Delivery</option>
                       <option value="FINANCE">Finance</option>
                       <option value="PAID">Paid</option>
                     </select>
                   </td>
-                  <td className="px-2 py-2">
-                    <button type="button" disabled={savingId === transport.id} onClick={() => setPendingSubmit(transport)} className="w-full rounded bg-slate-900 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
-                      {savingId === transport.id ? 'Saving...' : 'Submit'}
+                  <td className="px-1 py-2">
+                    <button type="button" disabled={savingId === transport.id || !hasChanges || (isPaidTab && !canManagePaidTransports)} onClick={() => void savePayment(transport)} className={`w-full rounded px-1 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${submittedRow && !hasChanges ? 'bg-emerald-700 hover:bg-emerald-700' : 'bg-slate-900 hover:bg-slate-700'}`}>
+                      {savingId === transport.id ? 'Saving...' : submittedRow && !hasChanges ? 'Submitted' : 'Submit'}
                     </button>
                   </td>
                 </tr>
@@ -405,118 +767,45 @@ export const TransportPaymentsScreen: React.FC = () => {
         </table>
       </div>
 
-      {printTransport && (() => {
-        const printDraft = getDraft(printTransport);
-        const gross = Number(printTransport.grossWeight) || 0;
-        const received = Number(printDraft.receivedWeight) || 0;
-        const difference = quantityToQuintals(received - gross, printTransport.grossWeightUnit);
-        const billableQuantity = received > 0 ? Math.min(gross, received) : gross;
-        const totalRent = Math.trunc(printDraft.rentType === 'per_unit' ? billableQuantity * printDraft.rent : printDraft.rent);
-        const balance = totalRent - printDraft.advanceByClient - printDraft.advanceByFirm - printDraft.shortageAmount - printDraft.finalPaid + printDraft.extraAmount;
-        const firm = clientMap.get(printTransport.billingFirmId) || 'Billing Firm';
-        const firmDetails = logoClient;
-        const firmLogo = resolvedLogoSource;
-        const commodity = commodityMap.get(printTransport.commodityId)?.name || '-';
-        const transporter = transporterMap.get(printTransport.transporterId) || '-';
-        const from = clientMap.get(printTransport.fromClientId) || '-';
-        const to = clientMap.get(printTransport.toClientId) || '-';
-        const initials = firm.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
-        const today = new Date();
-        const billDate = formatDate(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
-
-        return (
-          <div className="payment-bill-print-root fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4 sm:p-8">
-            <article className="payment-bill-paper mx-auto max-w-3xl border border-slate-200 bg-white p-6 shadow-2xl sm:p-10">
-              <div className="no-print mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
-                <h2 className="text-sm font-semibold text-slate-900">Payment bill preview</h2>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700">
-                    <Printer className="h-4 w-4" /> Print / Save PDF
-                  </button>
-                  <button type="button" title="Close preview" aria-label="Close bill preview" onClick={() => setPrintTransport(null)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              <header className="flex items-center gap-4 border-b-2 border-slate-900 pb-5">
-                <div aria-label="Firm logo" className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden border border-slate-300 bg-slate-50 text-lg font-bold text-slate-500 print:border-0 print:bg-white">
-                  {firmLogo ? <img key={firmLogo} src={firmLogo} alt={`${firm} logo`} onError={() => setLogoSourceIndex(index => Math.min(index + 1, logoSources.length))} className="h-full w-full object-contain" /> : initials || 'LOGO'}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Transport settlement</p>
-                  <h1 className="mt-1 break-words text-xl font-bold text-slate-950">{firm}</h1>
-                  {firmDetails && <p className="mt-1 text-xs text-slate-600">{[firmDetails.address, firmDetails.city, firmDetails.pincode].filter(Boolean).join(', ')}</p>}
-                  {firmDetails?.phone && <p className="mt-0.5 text-xs text-slate-600">Phone: {firmDetails.phone}</p>}
-                  {firmDetails?.gstin && <p className="mt-0.5 text-xs text-slate-600">GSTIN: {firmDetails.gstin}</p>}
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Bill no.</p>
-                  <p className="mt-1 font-mono text-sm font-bold text-slate-900">{printTransport.billNumber}</p>
-                  <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Bill Date</p>
-                  <p className="mt-1 text-xs font-medium text-slate-800">{billDate}</p>
-                  <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Unloading Date</p>
-                  <p className="mt-1 text-xs font-medium text-slate-800">{formatDate(printDraft.unloadDate)}</p>
-                </div>
-              </header>
-
-              <section className="grid grid-cols-2 gap-x-8 gap-y-4 border-b border-slate-200 py-5 sm:grid-cols-4">
-                <div><p className="text-[10px] font-semibold uppercase text-slate-500">Transporter</p><p className="mt-1 text-sm font-semibold text-slate-900">{transporter}</p></div>
-                <div><p className="text-[10px] font-semibold uppercase text-slate-500">Vehicle number</p><p className="mt-1 font-mono text-sm font-semibold text-slate-900">{printTransport.vehicleNumber}</p></div>
-                <div><p className="text-[10px] font-semibold uppercase text-slate-500">Commodity</p><p className="mt-1 text-sm font-semibold text-slate-900">{commodity}</p></div>
-                <div><p className="text-[10px] font-semibold uppercase text-slate-500">Route</p><p className="mt-1 text-sm font-semibold text-slate-900">{from} to {to}</p></div>
-              </section>
-
-              <section className="py-5">
-                <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">Weight and freight</h2>
-                <div className="overflow-hidden border border-slate-200">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-[10px] font-semibold uppercase text-slate-500">
-                      <tr><th className="px-3 py-2">Gross weight</th><th className="px-3 py-2">Received weight</th><th className="px-3 py-2 text-right">Difference</th><th className="px-3 py-2 text-right">Rate</th><th className="px-3 py-2 text-right">Freight amount</th></tr>
-                    </thead>
-                    <tbody><tr className="font-semibold text-slate-900">
-                      <td className="px-3 py-3">{formatQuantityWithUnit(gross, printTransport.grossWeightUnit)}</td>
-                      <td className="px-3 py-3">{formatQuantityWithUnit(received, printTransport.grossWeightUnit)}</td>
-                      <td className="px-3 py-3 text-right">{difference > 0 ? '+' : ''}{difference.toFixed(2)} Qtl</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(printDraft.rent)}{printDraft.rentType === 'per_unit' ? ` / ${unitName(printTransport.grossWeightUnit)}` : ' (fixed)'}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(totalRent)}</td>
-                    </tr></tbody>
-                  </table>
-                </div>
-              </section>
-
-              <section className="ml-auto max-w-sm border-t border-slate-200 pt-4">
-                <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-700">Settlement</h2>
-                <dl className="space-y-2 text-xs">
-                  <div className="flex justify-between gap-4"><dt className="text-slate-600">Freight amount</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(totalRent)}</dd></div>
-                  <div className="flex justify-between gap-4"><dt className="text-slate-600">Hamali (advance by party)</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.advanceByClient)}</dd></div>
-                  <div className="flex justify-between gap-4"><dt className="text-slate-600">Advance paid by firm</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.advanceByFirm)}</dd></div>
-                  <div className="flex justify-between gap-4"><dt className="text-slate-600">Shortage</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.shortageAmount)}</dd></div>
-                  <div className="flex justify-between gap-4"><dt className="text-slate-600">Extra charges</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.extraAmount)}</dd></div>
-                  <div className="flex justify-between gap-4 border-b border-slate-200 pb-2"><dt className="text-slate-600">Paid</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(printDraft.finalPaid)}</dd></div>
-                  <div className="flex justify-between gap-4 pt-1 text-sm font-bold"><dt className="text-slate-900">Balance due</dt><dd className="font-mono text-slate-900">{formatCurrency(balance)}</dd></div>
-                </dl>
-              </section>
-
-              {printDraft.notes && <p className="mt-6 border-t border-slate-200 pt-3 text-xs text-slate-600">Notes: {printDraft.notes}</p>}
-              <footer className="mt-14 grid grid-cols-2 gap-12 text-center text-[10px] text-slate-500">
-                <div className="border-t border-slate-300 pt-2">Transporter signature</div>
-                <div className="border-t border-slate-300 pt-2">Authorised signatory</div>
-              </footer>
-            </article>
+      {(serverPage.total > 0 || totalPages > 1) && (
+        <div className="flex items-center justify-between rounded-b-lg border-x border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+          <span>
+            Showing {serverPage.total === 0 ? 0 : (currentPageNum - 1) * pageSize + 1} to {Math.min(currentPageNum * pageSize, serverPage.total)} of {serverPage.total} transports
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={currentPageNum === 1}
+              onClick={() => setCurrentPageNum(page => page - 1)}
+              className="rounded border border-slate-200 bg-white px-2.5 py-1 disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="px-2 font-medium">{currentPageNum} / {totalPages}</span>
+            <button
+              type="button"
+              disabled={currentPageNum === totalPages}
+              onClick={() => setCurrentPageNum(page => page + 1)}
+              className="rounded border border-slate-200 bg-white px-2.5 py-1 disabled:opacity-40"
+            >
+              Next
+            </button>
           </div>
-        );
-      })()}
+        </div>
+      )}
 
-      <ConfirmationModal
-        isOpen={Boolean(pendingSubmit)}
-        title="Submit transport payment changes?"
-        message={`This saves payment details for ${pendingSubmit?.billNumber || 'this consignment'} with the selected status.`}
-        confirmLabel="Submit Changes"
-        variant="primary"
-        onConfirm={() => void savePayment()}
-        onCancel={() => setPendingSubmit(null)}
-      />
+      {printTransport && (
+        <TransportPaymentBill
+          transport={printTransport}
+          draft={getDraft(printTransport)}
+          clients={clients}
+          transporters={transporters}
+          billingFirmOptions={billingFirmOptions}
+          currentUser={currentUser}
+          onClose={() => setPrintTransport(null)}
+        />
+      )}
+
       <ConfirmationModal
         isOpen={Boolean(pendingEdit)}
         title="Leave payments and edit transport?"

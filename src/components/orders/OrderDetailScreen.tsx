@@ -1,25 +1,24 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { Order } from '../../types';
 import {
   ArrowLeft,
   Truck,
-  Plus,
   ArrowRight,
   Calendar,
-  Layers,
   Edit,
   Building,
   User,
   ExternalLink,
   Clock,
-  ShieldCheck
+  ShieldCheck,
+  Loader2
 } from 'lucide-react';
 import { OrderProgressBar } from '../common/OrderProgressBar';
-import { formatCurrency, formatWeight, formatQuantityWithUnit, getUnitLabel, formatDate, getDaysRemaining, getTransportStatusBadge } from '../../utils/formatters';
+import { formatCurrency, formatQuantityWithUnit, getUnitLabel, formatDate, getDaysRemaining, getTransportStatusBadge } from '../../utils/formatters';
 
 export const OrderDetailScreen: React.FC = () => {
   const {
-    orders,
     commodities,
     clients,
     brokers,
@@ -27,42 +26,153 @@ export const OrderDetailScreen: React.FC = () => {
     transports,
     pageParams,
     navigate,
-    currentUser
+    currentUser,
+    orderGet,
+    transportGet,
+    showToast
   } = useApp();
 
   const isLabour = currentUser?.role === 'LABOUR';
   const orderId = pageParams.orderId;
-  const order = orders.find(o => o.id === orderId);
+  const [order, setOrder] = useState<Order | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingEdit, setIsLoadingEdit] = useState(false);
+  const [loadingTransportId, setLoadingTransportId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [retrySequence, setRetrySequence] = useState(0);
+
+  useEffect(() => {
+    if (!orderId) {
+      setOrder(null);
+      setLoadError('Order ID is missing.');
+      setIsLoading(false);
+      return;
+    }
+
+    let isCurrent = true;
+    setOrder(null);
+    setIsLoading(true);
+    setLoadError('');
+
+    orderGet(orderId)
+      .then(fetchedOrder => {
+        if (isCurrent) setOrder(fetchedOrder);
+      })
+      .catch((error: unknown) => {
+        if (isCurrent) {
+          setLoadError(error instanceof Error ? error.message : 'Failed to load order');
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [orderGet, orderId, retrySequence]);
 
   const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c.name])), [clients]);
   const commodityMap = useMemo(() => new Map(commodities.map(c => [c.id, c])), [commodities]);
   const brokerMap = useMemo(() => new Map(brokers.map(b => [b.id, b.name])), [brokers]);
   const transporterMap = useMemo(() => new Map(transporters.map(t => [t.id, t.name])), [transporters]);
 
-  if (!order) {
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-xl p-8 text-center border border-slate-200 text-slate-500">
+        <span className="inline-flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Loading order details...
+        </span>
+      </div>
+    );
+  }
+
+  if (loadError || !order) {
     return (
       <div className="bg-white rounded-xl p-8 text-center border border-slate-200">
-        <p className="text-slate-600 font-medium">Order not found or has been removed.</p>
-        <button
-          onClick={() => navigate('orders')}
-          className="mt-3 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold cursor-pointer"
-        >
-          Return to Orders
-        </button>
+        <p className="text-slate-600 font-medium">{loadError || 'Order not found or has been removed.'}</p>
+        <div className="mt-3 flex justify-center gap-2">
+          {orderId && (
+            <button
+              type="button"
+              onClick={() => setRetrySequence(sequence => sequence + 1)}
+              className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold cursor-pointer"
+            >
+              Retry
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => navigate('orders')}
+            className="px-3 py-1.5 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+          >
+            Return to Orders
+          </button>
+        </div>
       </div>
     );
   }
 
   const comm = commodityMap.get(order.commodityId);
-  const fromClient = clientMap.get(order.fromClientId) || 'Unknown Source';
-  const toClient = clientMap.get(order.toClientId) || 'Unknown Destination';
-  const brokerName = brokerMap.get(order.brokerId) || 'Direct (No Broker)';
+  const fromClient = clientMap.get(order.fromClientId) || order.fromClientId || 'Unknown Source';
+  const toClient = clientMap.get(order.toClientId) || order.toClientId || 'Unknown Destination';
+  const brokerName = brokerMap.get(order.brokerId) || order.brokerId || 'Direct (No Broker)';
   const remaining = Math.max(0, order.quantity - order.quantityFulfilled);
   const totalValue = order.quantity * order.rate;
   const daysMeta = getDaysRemaining(order.expiryDate);
 
-  // Transports linked to this order
-  const relatedTransports = transports.filter(t => t.items.some(item => item.orderId === order.id));
+  const relatedTransports = order.orderTransports ?? transports
+    .filter(t => t.items.some(item => item.orderId === order.id))
+    .map(t => ({
+      id: t.id,
+      billNumber: t.billNumber,
+      loadingDate: t.loadingDate,
+      unloadDate: t.unloadDate,
+      vehicleNumber: t.vehicleNumber,
+      transporterName: transporterMap.get(t.transporterId) || '-',
+      grossWeightUnit: t.grossWeightUnit || 'mt',
+      grossWeight: t.grossWeight,
+      orderEntryQuantity: t.items.find(item => item.orderId === order.id)?.orderEntryQuantity
+        ?? t.items.find(item => item.orderId === order.id)?.allocatedQuantity
+        ?? 0,
+      status: t.status
+    }));
+
+  const convertTransportWeightToOrderUnit = (quantity: number, fromUnit: string): number => {
+    const metricTons = fromUnit === 'kg' ? quantity / 1000 : fromUnit === 'quintal' ? quantity / 10 : quantity;
+    if (order.unit === 'kg') return metricTons * 1000;
+    if (order.unit === 'quintal') return metricTons * 10;
+    return metricTons;
+  };
+  const totalDispatchedQuantity = relatedTransports.reduce(
+    (sum, transport) => sum + convertTransportWeightToOrderUnit(transport.grossWeight, transport.grossWeightUnit),
+    0
+  );
+
+  const handleEditOrder = async () => {
+    setIsLoadingEdit(true);
+    try {
+      await orderGet(order.id);
+      navigate('order-form', { orderId: order.id });
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : 'Failed to load order details', 'error');
+    } finally {
+      setIsLoadingEdit(false);
+    }
+  };
+
+  const handleViewTransport = async (transportId: string) => {
+    setLoadingTransportId(transportId);
+    try {
+      await transportGet(transportId);
+      navigate('transport-detail', { transportId });
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : 'Failed to load transport details', 'error');
+    } finally {
+      setLoadingTransportId(null);
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -110,35 +220,12 @@ export const OrderDetailScreen: React.FC = () => {
           <div className="flex items-center gap-2 self-start sm:self-auto">
             <button
               type="button"
-              onClick={() => navigate('order-form', { orderId: order.id })}
+              onClick={() => void handleEditOrder()}
+              disabled={isLoadingEdit}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
             >
-              <Edit className="w-3.5 h-3.5" />
-              Edit Order
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('bulk-transport', { preselectOrderId: order.id })}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
-            >
-              <Layers className="w-3.5 h-3.5 text-blue-600" />
-              Bulk Trucks
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                navigate('transport-form', {
-                  prefillOrderId: order.id,
-                  prefillCommodityId: order.commodityId,
-                  prefillFromClientId: order.fromClientId,
-                  prefillToClientId: order.toClientId,
-                  remainingCapacity: remaining
-                })
-              }
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Create Transport
+              {isLoadingEdit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Edit className="w-3.5 h-3.5" />}
+              {isLoadingEdit ? 'Loading...' : 'Edit Order'}
             </button>
           </div>
         )}
@@ -194,6 +281,7 @@ export const OrderDetailScreen: React.FC = () => {
             <OrderProgressBar
               fulfilled={order.quantityFulfilled}
               total={order.quantity}
+              unit={order.unit}
               size="lg"
             />
           </div>
@@ -223,8 +311,8 @@ export const OrderDetailScreen: React.FC = () => {
           <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             <div>
               <span className="text-slate-400 font-semibold text-[10px] uppercase block">Commodity Spec</span>
-              <div className="font-medium text-slate-900 mt-0.5">{comm?.name || 'Standard'}</div>
-              <div className="text-[11px] text-slate-500">Group: {comm?.type}</div>
+              <div className="font-medium text-slate-900 mt-0.5">{comm?.name || order.commodityName || 'Standard'}</div>
+              <div className="text-[11px] text-slate-500">{comm?.type || order.commodityType || '-'}</div>
             </div>
 
             <div>
@@ -278,39 +366,11 @@ export const OrderDetailScreen: React.FC = () => {
               <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
                 <span className="text-slate-500">Gross Weight Dispatched:</span>
                 <span className="font-bold text-slate-900 tabular-nums">
-                  {formatWeight(relatedTransports.reduce((sum, t) => sum + (t.grossWeight || 0), 0))}
+                  {formatQuantityWithUnit(totalDispatchedQuantity, order.unit)}
                 </span>
               </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Weight Received at Gate:</span>
-                <span className="font-bold text-slate-900 tabular-nums">
-                  {formatWeight(relatedTransports.reduce((sum, t) => sum + (t.receivedWeight || 0), 0))}
-                </span>
-              </div>
-             
             </div>
           </div>
-{/* 
-          {!isLabour && remaining > 0 && (
-            <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
-              <button
-                type="button"
-                onClick={() =>
-                  navigate('transport-form', {
-                    prefillOrderId: order.id,
-                    prefillCommodityId: order.commodityId,
-                    prefillFromClientId: order.fromClientId,
-                    prefillToClientId: order.toClientId,
-                    remainingCapacity: remaining
-                  })
-                }
-                className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Dispatch Next Truck
-              </button>
-            </div>
-          )} */}
         </div>
       </div>
 
@@ -326,39 +386,21 @@ export const OrderDetailScreen: React.FC = () => {
             </p>
           </div>
 
-          {!isLabour && (
-            <button
-              type="button"
-              onClick={() =>
-                navigate('transport-form', {
-                  prefillOrderId: order.id,
-                  prefillCommodityId: order.commodityId,
-                  prefillFromClientId: order.fromClientId,
-                  prefillToClientId: order.toClientId,
-                  remainingCapacity: remaining
-                })
-              }
-              className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer self-start sm:self-auto"
-            >
-              <Plus className="w-3 h-3" />
-              Add Transport Consignment
-            </button>
-          )}
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3">Bill / Bilty No</th>
-                <th className="px-4 py-3">Vehicle No</th>
-                <th className="px-4 py-3">Transporter</th>
-                <th className="px-4 py-3 text-right">Allocated MT</th>
-                <th className="px-4 py-3 text-right">Gross Weight</th>
-                <th className="px-4 py-3 text-right">Received Weight</th>
-                <th className="px-4 py-3">Unload Date</th>
-                <th className="px-4 py-3">Transport Status</th>
-                <th className="px-4 py-3 text-right">Action</th>
+                <th className="px-2 py-2">Loading Date</th>
+                <th className="px-2 py-2">Bill No</th>
+                <th className="px-2 py-2">Vehicle Number</th>
+                <th className="px-2 py-2 pr-0">Transporter</th>
+                <th className="px-2 py-2 pl-0 text-right">Gross Wt ({order.unit === 'quintal' ? 'QTL' : order.unit === 'kg' ? 'KG' : 'MT'})</th>
+                <th className="px-2 py-2 pr-4 text-right">Order Entry ({order.unit === 'quintal' ? 'QTL' : order.unit === 'kg' ? 'KG' : 'MT'})</th>
+                <th className="px-2 py-2 pl-4">Unload Date</th>
+                <th className="px-2 py-2">Status</th>
+                <th className="px-2 py-2 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -370,46 +412,48 @@ export const OrderDetailScreen: React.FC = () => {
                 </tr>
               ) : (
                 relatedTransports.map((t) => {
-                  const item = t.items.find(i => i.orderId === order.id);
-                  const transporterName = transporterMap.get(t.transporterId) || '-';
-                  const badge = getTransportStatusBadge(t.status);
+                  const badge = getTransportStatusBadge(t.status.toUpperCase());
+                  const transporterName = t.transporterName || '-';
 
                   return (
                     <tr key={t.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="px-4 py-3 font-mono font-medium text-slate-900">
+                      <td className="px-2 py-2 text-slate-600 tabular-nums">
+                        {formatDate(t.loadingDate)}
+                      </td>
+                      <td className="px-2 py-2 font-mono font-medium text-slate-900">
                         {t.billNumber}
                       </td>
-                      <td className="px-4 py-3 font-mono font-bold text-slate-900">
-                        {t.vehicleNumber}
+                      <td className="px-2 py-2">
+                        <div className="font-mono font-bold text-slate-900">{t.vehicleNumber}</div>
                       </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {transporterName}
+                      <td className="px-2 py-2 pr-0 text-slate-700" title={transporterName}>
+                        {transporterName.length > 16 ? `${transporterName.slice(0, 16)}...` : transporterName}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-blue-700 tabular-nums">
-                        {formatWeight(item?.allocatedQuantity)}
+                      <td className="px-2 py-2 pl-0 text-right font-semibold text-blue-700 tabular-nums">
+                        {formatQuantityWithUnit(convertTransportWeightToOrderUnit(t.grossWeight, t.grossWeightUnit), order.unit)}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                        {formatWeight(t.grossWeight)}
+                      <td className="px-2 py-2 pr-4 text-right tabular-nums text-slate-700">
+                        {formatQuantityWithUnit(convertTransportWeightToOrderUnit(t.orderEntryQuantity, t.grossWeightUnit), order.unit)}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                        {t.receivedWeight ? formatWeight(t.receivedWeight) : '-'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 tabular-nums">
+                      <td className="px-2 py-2 pl-4 text-slate-600 tabular-nums">
                         {formatDate(t.unloadDate)}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${badge.bg} ${badge.text} ${badge.border}`}>
                           {badge.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-2 py-2 text-right">
                         <button
                           type="button"
-                          onClick={() => navigate('transport-detail', { transportId: t.id })}
-                          className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded"
+                          onClick={() => void handleViewTransport(t.id)}
+                          disabled={loadingTransportId === t.id}
+                          className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-wait"
                           title="View Consignment"
                         >
-                          <ExternalLink className="w-3.5 h-3.5" />
+                          {loadingTransportId === t.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <ExternalLink className="w-3.5 h-3.5" />}
                         </button>
                       </td>
                     </tr>

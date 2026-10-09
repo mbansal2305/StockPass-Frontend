@@ -3,6 +3,7 @@
  * Handles integration with:
  * - POST /orders/add/   -> Add order (OrderCreateSchema)
  * - PATCH /orders/upd/  -> Update order (OrderUpdateSchema)
+ * - PATCH /orders/status/upd/ -> Update order status (OrderStatusUpdateSchema)
  * - GET /orders/get/    -> Get order (OrderGetDeleteSchema)
  * - DELETE /orders/del/ -> Delete order (OrderGetDeleteSchema)
  * - POST /orders/lst/   -> List orders (OrderListSchema)
@@ -13,6 +14,7 @@ import { apiClient } from './client';
 import { roundToTwoDecimals } from '../utils/numbers';
 import {
   Order,
+  OrderTransport,
   OrderType,
   OrderStatus,
   QuantityUnit,
@@ -33,10 +35,16 @@ export interface PaginatedOrdersResult {
   totalPages: number;
 }
 
+export interface OrderStatusUpdateSchema {
+  id: number;
+  status: 'completed' | 'pending';
+}
+
 export interface OrderClientOption {
   id: string;
   name: string;
   city?: string;
+  type?: string;
 }
 
 export interface OrderClientOptions {
@@ -56,7 +64,8 @@ function normalizeOrderClientOptions(value: any): OrderClientOption[] {
     return [{
       id: String(id),
       name: String(name),
-      city: client.city ? String(client.city) : undefined
+      city: client.city ? String(client.city) : undefined,
+      type: client.type || client.client_type ? String(client.type || client.client_type) : undefined
     }];
   });
 }
@@ -107,10 +116,33 @@ export function transformBackendOrderToFrontend(raw: any): Order {
     return String(val);
   };
 
-  const fromClientId = getRelationId(raw.from_client ?? raw.fromClientId);
-  const toClientId = getRelationId(raw.to_client ?? raw.toClientId);
-  const commodityId = getRelationId(raw.commodity ?? raw.commodityId);
-  const brokerId = getRelationId(raw.broker ?? raw.brokerId);
+  const fromClientId = getRelationId(raw.from_client_id ?? raw.fromClientId ?? raw.from_client);
+  const toClientId = getRelationId(raw.to_client_id ?? raw.toClientId ?? raw.to_client);
+  const commodityId = getRelationId(raw.commodity_id ?? raw.commodityId ?? raw.commodity);
+  const brokerId = getRelationId(raw.broker_id ?? raw.brokerId ?? raw.broker);
+  const orderTransports: OrderTransport[] | undefined = Array.isArray(raw.order_transports)
+    ? raw.order_transports.map((transport: any) => {
+      const rawGrossWeightUnit = String(transport.gross_wt_unit || 'mt').toLowerCase();
+      const grossWeightUnit: QuantityUnit = rawGrossWeightUnit === 'kg' || rawGrossWeightUnit === 'kilogram'
+        ? 'kg'
+        : rawGrossWeightUnit === 'quintal' || rawGrossWeightUnit === 'qtl'
+        ? 'quintal'
+        : 'mt';
+      return {
+        id: String(transport.id),
+        billNumber: String(transport.bill_no || ''),
+        billingFirmName: transport.billing_firm ? String(transport.billing_firm) : undefined,
+        loadingDate: transport.loading_date ?? null,
+        unloadDate: transport.unload_date ?? null,
+        vehicleNumber: String(transport.vehicle_no || ''),
+        transporterName: String(transport.transporter || ''),
+        grossWeightUnit,
+        grossWeight: Number(transport.quantity) || 0,
+        orderEntryQuantity: Number(transport.order_entry) || 0,
+        status: String(transport.status || '')
+      };
+    })
+    : undefined;
 
   // Quantities & Rates
   const rate = Number(raw.rate) || 0;
@@ -147,8 +179,14 @@ export function transformBackendOrderToFrontend(raw: any): Order {
     type,
     orderNumber,
     fromClientId,
+    fromClientName: typeof raw.from_client === 'string' ? raw.from_client : raw.from_client_name,
     toClientId,
+    toClientName: typeof raw.to_client === 'string' ? raw.to_client : raw.to_client_name,
     commodityId,
+    commodityName: typeof raw.commodity === 'string' ? raw.commodity : raw.commodityName,
+    commodityType: raw.commodity_type ? String(raw.commodity_type) : raw.commodityType,
+    brokerName: typeof raw.broker === 'string' ? raw.broker : raw.broker_name,
+    orderTransports,
     rate,
     quantity,
     unit,
@@ -379,6 +417,19 @@ export const ordersApi = {
         return transformBackendOrderToFrontend(item);
       }
       throw err;
+    }
+  },
+
+  /**
+   * PATCH /orders/status/upd/
+   * Updates an existing order's status.
+   */
+  async updateStatus(payload: OrderStatusUpdateSchema): Promise<void> {
+    try {
+      await apiClient.patch<any>('/orders/status/upd/', payload);
+    } catch (err: any) {
+      if (err.status !== 405) throw err;
+      await apiClient.post<any>('/orders/status/upd/', payload);
     }
   },
 

@@ -1,4 +1,4 @@
-import { BusinessClient, Commodity, Order, QuantityUnit, Transport, TransportItem, TransportRentType, TransportStatus, Transporter } from '../types';
+import { BusinessClient, Commodity, Order, QuantityUnit, Transport, TransportBankDetails, TransportItem, TransportRentType, TransportStatus, Transporter } from '../types';
 import { apiClient } from './client';
 import { transformBackendOrderToFrontend } from './orders';
 import { roundToTwoDecimals } from '../utils/numbers';
@@ -33,6 +33,14 @@ export interface TransportListFilters {
   pageSize?: number;
 }
 
+export interface PaginatedTransportsResult {
+  results: Transport[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export interface TransportPaymentUpdate {
   id: string;
   status: TransportStatus;
@@ -56,6 +64,7 @@ export interface BulkTransportCreatePayload {
   title: string;
   loadingDate?: string;
   billNumber?: string;
+  totalReceivedWeight?: number;
   orderId?: string;
   billingFirmId?: string;
   transporterId?: string;
@@ -70,6 +79,7 @@ export interface BulkTransportUpdatePayload {
   title?: string;
   loadingDate?: string;
   billNumber?: string;
+  totalReceivedWeight?: number;
   orderId?: string;
   billingFirmId?: string;
   transporterId?: string;
@@ -84,6 +94,7 @@ export interface BulkTransportDetail {
   title: string;
   loadingDate?: string;
   billNumber?: string;
+  totalReceivedWeight?: number;
   orderId?: string;
   billingFirmId?: string;
   transporterId?: string;
@@ -130,9 +141,18 @@ const relationId = (value: any, entities: Array<{ id: string; name: string }> = 
   return entities.find(entity => entity.id === raw || entity.name.trim().toLowerCase() === normalized)?.id || raw;
 };
 
+const relationName = (value: any): string | undefined => {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'object') {
+    const name = value.name ?? value.label;
+    return name === undefined || name === null ? undefined : String(name);
+  }
+  return typeof value === 'string' ? value : undefined;
+};
+
 const normalizeStatus = (value: unknown): TransportStatus => {
   const status = String(value || '').toUpperCase();
-  if (status === 'DELIVERY' || status === 'FINANCE' || status === 'PAID') return status;
+  if (status === 'DRAFT' || status === 'DELIVERY' || status === 'FINANCE' || status === 'PAID') return status;
   return 'PENDING';
 };
 
@@ -157,23 +177,51 @@ export function transformBackendTransport(raw: any, lookups: TransportLookups = 
   const items: TransportItem[] = rawItems.map((item: any) => {
     const orderValue = item.order_id ?? item.orderId ?? item.order ?? '';
     const orderId = relationId(orderValue, orders.map(order => ({ id: order.id, name: order.orderNumber })));
+    const orderSize = item.order_size ?? item.orderSize;
+    const orderSizeRemaining = item.order_size_rem ?? item.orderSizeRemaining;
     return {
       id: item.id === undefined || item.id === null ? undefined : Number(item.id),
       orderId,
       allocatedQuantity: Number(item.quantity ?? item.allocated_quantity ?? item.allocatedQuantity ?? 0),
-      orderEntryQuantity: Number(item.order_entry ?? item.orderEntryQuantity ?? 0)
+      orderEntryQuantity: Number(item.order_entry ?? item.orderEntryQuantity ?? 0),
+      orderNumber: item.order === undefined || item.order === null ? undefined : String(item.order),
+      orderType: item.order_type ?? item.orderType,
+      orderSize: orderSize === undefined ? undefined : Number(orderSize),
+      orderSizeUnit: item.order_size_unit ?? item.orderSizeUnit,
+      orderSizeRemaining: orderSizeRemaining === undefined ? undefined : Number(orderSizeRemaining),
+      orderCommodity: item.order_commodity ?? item.orderCommodity,
+      orderCommodityType: item.order_commodity_type ?? item.orderCommodityType
     };
   });
+  const rawTransporterBank = raw?.transporter_bank ?? raw?.transporterBank;
+  const transporterBank: TransportBankDetails | null = rawTransporterBank && typeof rawTransporterBank === 'object'
+    ? {
+      transactionType: rawTransporterBank.transaction_type ?? rawTransporterBank.transactionType,
+      accountNumber: rawTransporterBank.account_number ?? rawTransporterBank.accountNumber,
+      accountName: rawTransporterBank.account_name ?? rawTransporterBank.accountName,
+      ifscCode: rawTransporterBank.ifsc_code ?? rawTransporterBank.ifscCode,
+      bank: rawTransporterBank.bank,
+      branch: rawTransporterBank.branch,
+      email: rawTransporterBank.email
+    }
+    : null;
 
   return {
     id: String(raw?.id ?? raw?.pk ?? ''),
     billNumber: String(raw?.bill_no ?? raw?.bill_number ?? raw?.billNumber ?? ''),
-    billingFirmId: relationId(raw?.billing_firm ?? raw?.billingFirmId, lookups.clients),
-    commodityId: relationId(raw?.commodity ?? raw?.commodityId, lookups.commodities),
-    fromClientId: relationId(raw?.from_client ?? raw?.fromClientId, lookups.clients),
-    toClientId: relationId(raw?.to_client ?? raw?.toClientId, lookups.clients),
+    billingFirmId: relationId(raw?.billing_firm_id ?? raw?.billingFirmId ?? raw?.billing_firm, lookups.clients),
+    billingFirmName: relationName(raw?.billing_firm) ?? raw?.billing_firm_name ?? raw?.billingFirmName ?? undefined,
+    commodityId: relationId(raw?.commodity_id ?? raw?.commodityId ?? raw?.commodity, lookups.commodities),
+    commodityName: relationName(raw?.commodity) ?? raw?.commodity_name ?? raw?.commodityName ?? undefined,
+    commodityType: raw?.commodity_type ?? raw?.commodityType ?? undefined,
+    fromClientId: relationId(raw?.from_client_id ?? raw?.fromClientId ?? raw?.from_client, lookups.clients),
+    fromClientName: relationName(raw?.from_client) ?? raw?.from_client_name ?? raw?.fromClientName ?? undefined,
+    toClientId: relationId(raw?.to_client_id ?? raw?.toClientId ?? raw?.to_client, lookups.clients),
+    toClientName: relationName(raw?.to_client) ?? raw?.to_client_name ?? raw?.toClientName ?? undefined,
     vehicleNumber: String(raw?.vehicle_no ?? raw?.vehicle_number ?? raw?.vehicleNumber ?? ''),
-    transporterId: relationId(raw?.transporter ?? raw?.transporterId, lookups.transporters),
+    transporterId: relationId(raw?.transporter_id ?? raw?.transporterId ?? raw?.transporter, lookups.transporters),
+    transporterName: relationName(raw?.transporter) ?? raw?.transporter_name ?? raw?.transporterName ?? undefined,
+    transporterBank,
     grossWeight: Number(raw?.gross_wt ?? raw?.gross_weight ?? raw?.grossWeight ?? 0),
     grossWeightUnit: (raw?.gross_wt_unit ?? raw?.grossWeightUnit ?? 'mt') as QuantityUnit,
     bagNumbers: Number(raw?.bag_nos ?? raw?.bag_numbers ?? raw?.bagNumbers ?? 0),
@@ -333,6 +381,7 @@ function toBulkTransportFormData(
     title?: string;
     loadingDate?: string;
     billNumber?: string;
+    totalReceivedWeight?: number;
     orderId?: string;
     billingFirmId?: string;
     transporterId?: string;
@@ -349,6 +398,7 @@ function toBulkTransportFormData(
   if (payload.title !== undefined) form.append('title', payload.title);
   appendValue(form, 'loading_date', payload.loadingDate);
   appendValue(form, 'bill_no', payload.billNumber);
+  appendValue(form, 'total_rcvd_wt', payload.totalReceivedWeight === undefined ? undefined : roundToTwoDecimals(payload.totalReceivedWeight));
   appendValue(form, 'order', payload.orderId ? numericId(payload.orderId) : undefined);
   appendValue(form, 'billing_firm', payload.billingFirmId ? numericId(payload.billingFirmId) : undefined);
   appendValue(form, 'transporter', payload.transporterId ? numericId(payload.transporterId) : undefined);
@@ -370,6 +420,9 @@ function unwrapBulkTransport(value: any, lookups: TransportLookups): BulkTranspo
     title: String(bulkTransport?.title ?? ''),
     loadingDate: bulkTransport?.loading_date ?? bulkTransport?.loadingDate ?? undefined,
     billNumber: bulkTransport?.bill_no ?? bulkTransport?.billNumber ?? undefined,
+    totalReceivedWeight: bulkTransport?.total_rcvd_wt == null && bulkTransport?.totalReceivedWeight == null
+      ? undefined
+      : Number(bulkTransport.total_rcvd_wt ?? bulkTransport.totalReceivedWeight),
     orderId: relationId(bulkTransport?.order, (lookups.orders || []).map(order => ({ id: order.id, name: order.orderNumber })),),
     billingFirmId: relationId(bulkTransport?.billing_firm, lookups.clients),
     transporterId: relationId(bulkTransport?.transporter, lookups.transporters),
@@ -387,14 +440,44 @@ function unwrapTransport(value: any, lookups: TransportLookups): Transport {
   return transformBackendTransport(value?.data ?? value, lookups);
 }
 
-function unwrapPage(value: any): { results: any[]; totalPages: number } {
+function unwrapPage(value: any): { results: any[]; total: number; page: number; pageSize: number; totalPages: number } {
   const data = value?.data ?? value;
   const page = data?.data && !Array.isArray(data.data) ? data.data : data;
   const results = Array.isArray(page?.results) ? page.results
     : Array.isArray(page?.items) ? page.items
     : Array.isArray(data) ? data
     : [];
-  return { results, totalPages: Number(page?.total_pages ?? page?.totalPages ?? 1) || 1 };
+  const pageSize = Number(page?.page_size ?? page?.pageSize) || results.length || 100;
+  const total = Number(page?.total) || results.length;
+  return {
+    results,
+    total,
+    page: Number(page?.page) || 1,
+    pageSize,
+    totalPages: Number(page?.total_pages ?? page?.totalPages) || Math.ceil(total / pageSize) || 1
+  };
+}
+
+async function listPaginatedFromEndpoint(
+  endpoint: string,
+  filters: TransportListFilters,
+  lookups: TransportLookups
+): Promise<PaginatedTransportsResult> {
+  const page = filters.page || 1;
+  const pageSize = filters.pageSize || 100;
+  const form = new FormData();
+  appendValue(form, 'transporter', filters.transporter ? numericId(filters.transporter) : undefined);
+  appendValue(form, 'status', filters.status?.toLowerCase());
+  appendValue(form, 'commodity', filters.commodity ? numericId(filters.commodity) : undefined);
+  appendValue(form, 'billing_firm', filters.billingFirm ? numericId(filters.billingFirm) : undefined);
+  appendValue(form, 'page', page);
+  appendValue(form, 'page_size', pageSize);
+  const response = await apiClient.postForm<any>(endpoint, form);
+  const parsed = unwrapPage(response);
+  return {
+    ...parsed,
+    results: parsed.results.map(transport => transformBackendTransport(transport, lookups))
+  };
 }
 
 function normalizeClientOptions(response: any): TransportClientOption[] {
@@ -608,7 +691,7 @@ export const transportsApi = {
     const form = new FormData();
     appendValue(form, 'id', numericId(id));
     appendValue(form, 'status', status.toLowerCase());
-    const response = await apiClient.patchForm<any>('/transports/upd', form);
+    const response = await apiClient.patchForm<any>('/transports/status/upd', form);
     return unwrapTransport(response, {});
   },
 
@@ -620,24 +703,24 @@ export const transportsApi = {
   async list(filters: TransportListFilters = {}, lookups: TransportLookups = {}): Promise<Transport[]> {
     const firstPage = filters.page || 1;
     const pageSize = filters.pageSize || 100;
-    const results: any[] = [];
+    const results: Transport[] = [];
     let totalPages = firstPage;
 
     for (let page = firstPage; page <= totalPages; page += 1) {
-      const form = new FormData();
-      appendValue(form, 'transporter', filters.transporter ? numericId(filters.transporter) : undefined);
-      appendValue(form, 'status', filters.status?.toLowerCase());
-      appendValue(form, 'commodity', filters.commodity ? numericId(filters.commodity) : undefined);
-      appendValue(form, 'billing_firm', filters.billingFirm ? numericId(filters.billingFirm) : undefined);
-      appendValue(form, 'page', page);
-      appendValue(form, 'page_size', pageSize);
-      const response = await apiClient.postForm<any>('/transports/lst', form);
-      const parsed = unwrapPage(response);
+      const parsed = await this.listPaginated({ ...filters, page, pageSize }, lookups);
       results.push(...parsed.results);
       totalPages = parsed.totalPages;
     }
 
-    return results.map(transport => transformBackendTransport(transport, lookups));
+    return results;
+  },
+
+  async listPaginated(filters: TransportListFilters = {}, lookups: TransportLookups = {}): Promise<PaginatedTransportsResult> {
+    return listPaginatedFromEndpoint('/transports/lst', filters, lookups);
+  },
+
+  async listPaymentsPaginated(filters: TransportListFilters = {}, lookups: TransportLookups = {}): Promise<PaginatedTransportsResult> {
+    return listPaginatedFromEndpoint('/transports/payments/lst', filters, lookups);
   },
 
   async search(keyword: string, lookups: TransportLookups = {}): Promise<Transport[]> {

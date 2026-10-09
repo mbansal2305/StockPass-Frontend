@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Transport, TransportStatus } from '../../types';
-import { transportsApi } from '../../api';
+import { PaginatedTransportsResult, transportsApi } from '../../api';
 import {
   Search,
   Plus,
@@ -21,7 +21,6 @@ import { formatDate, formatQuantityWithUnit, getTransportStatusBadge } from '../
 
 export const TransportListScreen: React.FC = () => {
   const {
-    transports,
     commodities,
     clients,
     transporters,
@@ -39,7 +38,11 @@ export const TransportListScreen: React.FC = () => {
   const isAccountant = currentUser?.role === 'ACCOUNTANT';
 
   // Filters & Tabs
-  const [activeTab, setActiveTab] = useState<string>(pageParams.statusFilter || 'ALL');
+  const validStatuses: TransportStatus[] = ['DRAFT', 'PENDING', 'DELIVERY', 'FINANCE', 'PAID'];
+  const initialStatus = String(pageParams.statusFilter || 'PENDING').toUpperCase() as TransportStatus;
+  const [activeTab, setActiveTab] = useState<TransportStatus>(
+    validStatuses.includes(initialStatus) ? initialStatus : 'PENDING'
+  );
   const [searchTerm, setSearchTerm] = useState('');
   const [commodityFilter, setCommodityFilter] = useState('ALL');
   const [transporterFilter, setTransporterFilter] = useState('ALL');
@@ -48,6 +51,16 @@ export const TransportListScreen: React.FC = () => {
   // Pagination
   const [currentPageNum, setCurrentPageNum] = useState(1);
   const pageSize = 10;
+  const [reloadSequence, setReloadSequence] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [serverPage, setServerPage] = useState<PaginatedTransportsResult>({
+    results: [],
+    total: 0,
+    page: 1,
+    pageSize,
+    totalPages: 1
+  });
 
   // Confirm delete, status change & Action menu
   const [deleteTarget, setDeleteTarget] = useState<Transport | null>(null);
@@ -56,11 +69,51 @@ export const TransportListScreen: React.FC = () => {
     nextStatus: TransportStatus;
   } | null>(null);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const isPaidTab = activeTab === 'PAID';
 
   // Lookups
   const commodityMap = useMemo(() => new Map(commodities.map(c => [c.id, c])), [commodities]);
   const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c.name])), [clients]);
   const transporterMap = useMemo(() => new Map(transporters.map(t => [t.id, t.name])), [transporters]);
+
+  useEffect(() => {
+    let isCurrent = true;
+    setIsLoading(true);
+    setLoadError('');
+    transportsApi.listPaginated({
+      status: activeTab,
+      commodity: commodityFilter === 'ALL' ? undefined : commodityFilter,
+      transporter: transporterFilter === 'ALL' ? undefined : transporterFilter,
+      billingFirm: billingFirmFilter === 'ALL' ? undefined : billingFirmFilter,
+      page: currentPageNum,
+      pageSize
+    }, { clients, commodities, orders, transporters })
+      .then(result => {
+        if (isCurrent) setServerPage(result);
+      })
+      .catch((error: unknown) => {
+        if (isCurrent) setLoadError(error instanceof Error ? error.message : 'Failed to load transports');
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [
+    activeTab,
+    commodityFilter,
+    transporterFilter,
+    billingFirmFilter,
+    currentPageNum,
+    pageSize,
+    reloadSequence,
+    clients,
+    commodities,
+    orders,
+    transporters
+  ]);
 
   const openTransport = async (transportId: string, destination: 'transport-detail' | 'transport-form') => {
     try {
@@ -72,7 +125,7 @@ export const TransportListScreen: React.FC = () => {
   };
 
   const filteredTransports = useMemo(() => {
-    return transports.filter(t => {
+    return serverPage.results.filter(t => {
       const commName = commodityMap.get(t.commodityId)?.name || '';
       const transpName = transporterMap.get(t.transporterId) || '';
       const fromName = clientMap.get(t.fromClientId) || '';
@@ -87,17 +140,12 @@ export const TransportListScreen: React.FC = () => {
         toName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (t.anugya && String(t.anugya).toLowerCase().includes(searchTerm.toLowerCase()));
 
-      const matchesTab = activeTab === 'ALL' || t.status === activeTab;
-      const matchesCommodity = commodityFilter === 'ALL' || t.commodityId === commodityFilter;
-      const matchesTransporter = transporterFilter === 'ALL' || t.transporterId === transporterFilter;
-      const matchesBillingFirm = billingFirmFilter === 'ALL' || t.billingFirmId === billingFirmFilter;
-
-      return matchesSearch && matchesTab && matchesCommodity && matchesTransporter && matchesBillingFirm;
+      return matchesSearch;
     });
-  }, [transports, activeTab, searchTerm, commodityFilter, transporterFilter, billingFirmFilter, commodityMap, clientMap, transporterMap]);
+  }, [serverPage.results, searchTerm, commodityMap, clientMap, transporterMap]);
 
-  const totalPages = Math.ceil(filteredTransports.length / pageSize) || 1;
-  const paginatedTransports = filteredTransports.slice((currentPageNum - 1) * pageSize, currentPageNum * pageSize);
+  const totalPages = serverPage.totalPages || 1;
+  const paginatedTransports = filteredTransports;
 
   const getNextStatus = (current: TransportStatus): TransportStatus | null => {
     if (current === 'PENDING') return 'DELIVERY';
@@ -112,6 +160,7 @@ export const TransportListScreen: React.FC = () => {
     try {
       await transportsApi.updateStatus(transport.id, nextStatus);
       await refreshData();
+      setReloadSequence(sequence => sequence + 1);
       setStatusChangeTarget(null);
       showToast(`Vehicle ${transport.vehicleNumber} moved to ${nextStatus}`, 'success');
     } catch (error: any) {
@@ -124,6 +173,7 @@ export const TransportListScreen: React.FC = () => {
     try {
       await transportsApi.delete(deleteTarget.id);
       await refreshData();
+      setReloadSequence(sequence => sequence + 1);
       setDeleteTarget(null);
       showToast(`Transport consignment ${deleteTarget.billNumber} deleted`, 'info');
     } catch (error: any) {
@@ -132,25 +182,19 @@ export const TransportListScreen: React.FC = () => {
   };
 
   const handleResetFilters = () => {
-    setActiveTab('ALL');
     setSearchTerm('');
     setCommodityFilter('ALL');
     setTransporterFilter('ALL');
     setBillingFirmFilter('ALL');
+    setCurrentPageNum(1);
   };
-
-  // Status counts for tabs
-  const countPending = transports.filter(t => t.status === 'PENDING').length;
-  const countDelivery = transports.filter(t => t.status === 'DELIVERY').length;
-  const countFinance = transports.filter(t => t.status === 'FINANCE').length;
-  const countPaid = transports.filter(t => t.status === 'PAID').length;
 
   return (
     <div className="space-y-4">
       {/* Top Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Transport Logistics</h1>
+          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight"><Truck className="h-5 w-5 text-blue-600" />Transport Logistics</h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Monitor truck consignments, gross & received weights, waybills, and freight disbursements.
           </p>
@@ -176,55 +220,6 @@ export const TransportListScreen: React.FC = () => {
             New Transport
           </button>
         </div>
-      </div>
-
-      {/* Workflow Tabs */}
-      <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-xl overflow-x-auto">
-        <button
-          type="button"
-          onClick={() => { setActiveTab('ALL'); setCurrentPageNum(1); }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-            activeTab === 'ALL' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          All ({transports.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => { setActiveTab('PENDING'); setCurrentPageNum(1); }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-            activeTab === 'PENDING' ? 'bg-white text-amber-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          1. Pending / Loading ({countPending})
-        </button>
-        <button
-          type="button"
-          onClick={() => { setActiveTab('DELIVERY'); setCurrentPageNum(1); }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-            activeTab === 'DELIVERY' ? 'bg-white text-sky-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          2. In Delivery ({countDelivery})
-        </button>
-        <button
-          type="button"
-          onClick={() => { setActiveTab('FINANCE'); setCurrentPageNum(1); }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-            activeTab === 'FINANCE' ? 'bg-white text-purple-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          3. Finance Audit ({countFinance})
-        </button>
-        <button
-          type="button"
-          onClick={() => { setActiveTab('PAID'); setCurrentPageNum(1); }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-            activeTab === 'PAID' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          4. Settled & Paid ({countPaid})
-        </button>
       </div>
 
       {/* Filter and Search Bar */}
@@ -294,66 +289,72 @@ export const TransportListScreen: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => { setActiveTab(activeTab === 'PENDING' ? 'ALL' : 'PENDING'); setCurrentPageNum(1); }}
+            onClick={() => { setActiveTab('DRAFT'); setCurrentPageNum(1); }}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+              activeTab === 'DRAFT'
+                ? 'bg-slate-200 text-slate-900 border-slate-400 ring-2 ring-slate-400/30'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200/60'
+            }`}
+            title="Filter by Draft"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-slate-400 border border-slate-500"></span>
+            <span>Draft</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setActiveTab('PENDING'); setCurrentPageNum(1); }}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
               activeTab === 'PENDING'
                 ? 'bg-amber-100 text-amber-900 border-amber-300 ring-2 ring-amber-400/30'
                 : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/60'
             }`}
+            title="Filter by Pending"
           >
             <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-600"></span>
-            <span>1. Pending Loading</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-200/70 text-amber-900 ml-0.5 font-bold">
-              {countPending}
-            </span>
+            <span>Pending</span>
           </button>
 
           <button
             type="button"
-            onClick={() => { setActiveTab(activeTab === 'DELIVERY' ? 'ALL' : 'DELIVERY'); setCurrentPageNum(1); }}
+            onClick={() => { setActiveTab('DELIVERY'); setCurrentPageNum(1); }}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
               activeTab === 'DELIVERY'
                 ? 'bg-blue-100 text-blue-900 border-blue-300 ring-2 ring-blue-400/30'
                 : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100/60'
             }`}
+            title="Filter by Delivery"
           >
             <span className="w-2.5 h-2.5 rounded-full bg-blue-500 border border-blue-600"></span>
-            <span>2. In Transit</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-200/70 text-blue-900 ml-0.5 font-bold">
-              {countDelivery}
-            </span>
+            <span>Delivery</span>
           </button>
 
           <button
             type="button"
-            onClick={() => { setActiveTab(activeTab === 'FINANCE' ? 'ALL' : 'FINANCE'); setCurrentPageNum(1); }}
+            onClick={() => { setActiveTab('FINANCE'); setCurrentPageNum(1); }}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
               activeTab === 'FINANCE'
                 ? 'bg-purple-100 text-purple-900 border-purple-300 ring-2 ring-purple-400/30'
                 : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100/60'
             }`}
+            title="Filter by Finance"
           >
             <span className="w-2.5 h-2.5 rounded-full bg-purple-500 border border-purple-600"></span>
-            <span>3. Finance Check</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-200/70 text-purple-900 ml-0.5 font-bold">
-              {countFinance}
-            </span>
+            <span>Finance</span>
           </button>
 
           <button
             type="button"
-            onClick={() => { setActiveTab(activeTab === 'PAID' ? 'ALL' : 'PAID'); setCurrentPageNum(1); }}
+            onClick={() => { setActiveTab('PAID'); setCurrentPageNum(1); }}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
               activeTab === 'PAID'
                 ? 'bg-emerald-100 text-emerald-900 border-emerald-300 ring-2 ring-emerald-400/30'
                 : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/60'
             }`}
+            title="Filter by Paid"
           >
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-emerald-600"></span>
-            <span>4. Settled & Paid</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-200/70 text-emerald-900 ml-0.5 font-bold">
-              {countPaid}
-            </span>
+            <span>Paid</span>
           </button>
         </div>
       </div>
@@ -377,7 +378,24 @@ export const TransportListScreen: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {paginatedTransports.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-slate-500">Loading transports...</td>
+                </tr>
+              ) : loadError ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center">
+                    <p className="text-red-600 font-medium">{loadError}</p>
+                    <button
+                      type="button"
+                      onClick={() => setReloadSequence(sequence => sequence + 1)}
+                      className="mt-3 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50"
+                    >
+                      Retry
+                    </button>
+                  </td>
+                </tr>
+              ) : paginatedTransports.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-12 text-center">
                     <p className="text-slate-500 font-medium">No transport entries found matching criteria</p>
@@ -410,7 +428,9 @@ export const TransportListScreen: React.FC = () => {
 
                   // Color row background & left border by status
                   const rowBgClass =
-                    t.status === 'PENDING'
+                    t.status === 'DRAFT'
+                      ? 'bg-slate-50/70 hover:bg-slate-100/70 border-l-4 border-l-slate-400'
+                      : t.status === 'PENDING'
                       ? 'bg-amber-50/50 hover:bg-amber-100/60 border-l-4 border-l-amber-500'
                       : t.status === 'DELIVERY'
                       ? 'bg-blue-50/50 hover:bg-blue-100/60 border-l-4 border-l-blue-500'
@@ -423,7 +443,7 @@ export const TransportListScreen: React.FC = () => {
                       key={t.id}
                       onClick={(event) => {
                         if ((event.target as HTMLElement).closest('button, a, input, select')) return;
-                        void openTransport(t.id, 'transport-form');
+                        void openTransport(t.id, 'transport-detail');
                       }}
                       className={`${rowBgClass} transition-colors cursor-pointer`}
                     >
@@ -556,17 +576,19 @@ export const TransportListScreen: React.FC = () => {
                                   </button>
                                 )}
 
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenActionMenuId(null);
-                                    void openTransport(t.id, 'transport-form');
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5 text-slate-400" />
-                                  <span>Edit Consignment</span>
-                                </button>
+                                {(!isPaidTab || isOwner) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenActionMenuId(null);
+                                      void openTransport(t.id, 'transport-form');
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>Edit Consignment</span>
+                                  </button>
+                                )}
 
                                 {isOwner && (
                                   <>
@@ -598,10 +620,10 @@ export const TransportListScreen: React.FC = () => {
         </div>
 
         {/* Pagination Footer */}
-        {totalPages > 1 && (
+        {(serverPage.total > 0 || totalPages > 1) && (
           <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
             <span>
-              Showing {(currentPageNum - 1) * pageSize + 1} to {Math.min(currentPageNum * pageSize, filteredTransports.length)} of {filteredTransports.length} consignments
+              Showing {serverPage.total === 0 ? 0 : (currentPageNum - 1) * pageSize + 1} to {Math.min(currentPageNum * pageSize, serverPage.total)} of {serverPage.total} transports
             </span>
             <div className="flex items-center gap-1">
               <button
