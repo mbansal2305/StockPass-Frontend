@@ -560,7 +560,7 @@ export const TransportFormScreen: React.FC = () => {
         status: formData.status,
         items: sanitizedItems,
         notes: formData.notes.trim(),
-        createdBy: currentUser?.name || 'Operator'
+        createdBy: currentUser?.name || ''
       };
 
       const lookups = { clients, commodities, orders: contractOrders, transporters };

@@ -7,7 +7,8 @@ import { storage } from '../../services/storage';
 import { getUnitLabel } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
 import { SearchableSelect } from '../common/SearchableSelect';
-import { ArrowLeft, Save, AlertCircle, ArrowDownLeft, ArrowUpRight, CheckCircle2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, AlertCircle, ArrowDownLeft, ArrowUpRight, CheckCircle2, Loader2, Printer } from 'lucide-react';
+import { OrderPrintDocument } from './OrderPrintDocument';
 
 export const OrderFormScreen: React.FC = () => {
   const {
@@ -169,6 +170,7 @@ export const OrderFormScreen: React.FC = () => {
       }]
       : [])
   ];
+  const selectedCommodity = commoditySelectionOptions.find(commodity => commodity.id === formData.commodityId);
 
   useEffect(() => {
     if (existingOrder || !selectedTypeConfirmed || formData.type !== 'PURCHASE ORDER') {
@@ -761,6 +763,14 @@ export const OrderFormScreen: React.FC = () => {
         <div className="flex items-center justify-end gap-3 pt-2">
           <button
             type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            Print Order
+          </button>
+          <button
+            type="button"
             disabled={isSubmitting}
             onClick={() => navigate(existingOrder ? 'order-detail' : 'orders', { orderId: editingOrderId })}
             className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/50 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
@@ -786,6 +796,22 @@ export const OrderFormScreen: React.FC = () => {
           </button>
         </div>
       </form>
+      <OrderPrintDocument
+        orderNumber={formData.orderNumber}
+        type={formData.type}
+        status={formData.status}
+        commodity={[selectedCommodity?.name, selectedCommodity?.type].filter(Boolean).join(' - ')}
+        fromClient={fromClientSelectionOptions.find(client => client.id === formData.fromClientId)?.name || ''}
+        toClient={toClientSelectionOptions.find(client => client.id === formData.toClientId)?.name || ''}
+        quantity={formData.quantity}
+        unit={formData.unit}
+        rate={formData.rate}
+        contractDate={formData.contractDate}
+        startDate={formData.startDate}
+        expiryDate={formData.expiryDate}
+        broker={brokerSelectionOptions.find(broker => broker.id === formData.brokerId)?.name || ''}
+        notes={formData.notes}
+      />
     </div>
   );
 };

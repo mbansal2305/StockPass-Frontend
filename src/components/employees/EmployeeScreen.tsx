@@ -48,7 +48,7 @@ export const EmployeeScreen: React.FC = () => {
     email: '',
     phone_number: '',
     gender_code: 'M',
-    role: 'LABOUR' as UserRole,
+    role: '' as UserRole | '',
     password: '',
     confirmPassword: '',
     status: 'ACTIVE' as UserStatus
@@ -77,7 +77,7 @@ export const EmployeeScreen: React.FC = () => {
         email: u.email || '',
         phone_number: u.phone_number || '',
         gender_code: u.gender_code || 'M',
-        role: u.role,
+        role: u.role || '',
         password: '',
         confirmPassword: '',
         status: u.status
@@ -91,7 +91,7 @@ export const EmployeeScreen: React.FC = () => {
         email: '',
         phone_number: '',
         gender_code: 'M',
-        role: 'LABOUR',
+        role: '',
         password: '',
         confirmPassword: '',
         status: 'ACTIVE'
@@ -104,6 +104,10 @@ export const EmployeeScreen: React.FC = () => {
     e.preventDefault();
     if (!editingUser && !userForm.username.trim()) {
       showToast('Username is required', 'error');
+      return;
+    }
+    if (!editingUser && !userForm.role) {
+      showToast('Role is required for new accounts', 'error');
       return;
     }
 
@@ -124,7 +128,7 @@ export const EmployeeScreen: React.FC = () => {
         await createUserAccount({
           username: userForm.username.trim(),
           password: userForm.password,
-          role: userForm.role,
+          role: userForm.role || undefined,
           first_name: userForm.first_name.trim(),
           last_name: userForm.last_name.trim(),
           email: userForm.email.trim() || undefined,
@@ -135,7 +139,7 @@ export const EmployeeScreen: React.FC = () => {
         setUserModalOpen(false);
       } else {
         await updateUserAccount(editingUser.id, {
-          role: userForm.role,
+          role: userForm.role || undefined,
           first_name: userForm.first_name.trim(),
           last_name: userForm.last_name.trim(),
           email: userForm.email.trim() || undefined,
@@ -189,7 +193,7 @@ export const EmployeeScreen: React.FC = () => {
     const { user, nextStatus } = statusConfirmation;
     try {
       await updateUserAccount(user.id, {
-        role: user.role
+        role: user.role || undefined
       });
       storage.updateUser(user.id, { status: nextStatus });
       await refreshData();
@@ -397,7 +401,7 @@ export const EmployeeScreen: React.FC = () => {
                           }`}
                         >
                           <Shield className="w-3 h-3" />
-                          {u.role}
+                          {u.role || ''}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-500 tabular-nums">
@@ -560,10 +564,12 @@ export const EmployeeScreen: React.FC = () => {
                     System Role *
                   </label>
                   <select
+                    required={!editingUser}
                     value={userForm.role}
-                    onChange={(e) => setUserForm({ ...userForm, role: e.target.value as UserRole })}
+                    onChange={(e) => setUserForm({ ...userForm, role: e.target.value as UserRole | '' })}
                     className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white font-medium"
                   >
+                    {!userForm.role && <option value="">Select a role</option>}
                     <option value="LABOUR">LABOUR (Operations Only)</option>
                     <option value="ACCOUNTANT">ACCOUNTANT (Financial Access)</option>
                     <option value="OWNER">OWNER (Full Administrator)</option>

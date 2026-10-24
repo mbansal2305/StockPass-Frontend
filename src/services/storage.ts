@@ -6,7 +6,6 @@ import {
   Transporter,
   Order,
   Transport,
-  TransportItem,
   UserRole
 } from '../types';
 
@@ -21,402 +20,15 @@ const STORAGE_KEYS = {
   CURRENT_USER: 'vistar_current_user_v1'
 };
 
-const SEED_USERS: User[] = [
-  {
-    id: 'usr-1',
-    username: 'owner',
-    name: 'Rajesh Sharma',
-    role: 'OWNER',
-    status: 'ACTIVE',
-    createdAt: '2026-01-15'
-  },
-  {
-    id: 'usr-2',
-    username: 'accountant',
-    name: 'Amit Verma',
-    role: 'ACCOUNTANT',
-    status: 'ACTIVE',
-    createdAt: '2026-02-01'
-  },
-  {
-    id: 'usr-3',
-    username: 'labour',
-    name: 'Suresh Yadav',
-    role: 'LABOUR',
-    status: 'ACTIVE',
-    createdAt: '2026-02-10'
-  }
-];
-
-// Plaintext pass simulation for the simple internal tool
-const USER_PASSWORDS: Record<string, string> = {
-  'usr-1': 'owner123',
-  'usr-2': 'acc123',
-  'usr-3': 'labour123'
+const LEGACY_DEMO_IDS: Record<string, string[]> = {
+  [STORAGE_KEYS.USERS]: ['usr-1', 'usr-2', 'usr-3'],
+  [STORAGE_KEYS.COMMODITIES]: ['com-1', 'com-2', 'com-3', 'com-4', 'com-5', 'com-6'],
+  [STORAGE_KEYS.CLIENTS]: ['cli-1', 'cli-2', 'cli-3', 'cli-4', 'cli-5', 'cli-6', 'cli-7', 'cli-8'],
+  [STORAGE_KEYS.BROKERS]: ['brk-1', 'brk-2', 'brk-3'],
+  [STORAGE_KEYS.TRANSPORTERS]: ['trp-1', 'trp-2', 'trp-3', 'trp-4'],
+  [STORAGE_KEYS.ORDERS]: ['ord-101', 'ord-102', 'ord-103', 'ord-104', 'ord-105'],
+  [STORAGE_KEYS.TRANSPORTS]: ['trp-entry-1', 'trp-entry-2', 'trp-entry-3', 'trp-entry-4', 'trp-entry-5', 'trp-entry-6']
 };
-
-const SEED_COMMODITIES: Commodity[] = [
-  { id: 'com-1', name: 'Sharbati Wheat', type: 'Grain', createdAt: '2026-01-10' },
-  { id: 'com-2', name: 'Yellow Soybean', type: 'Oilseed', createdAt: '2026-01-10' },
-  { id: 'com-3', name: 'Basmati Rice (1121)', type: 'Grain', createdAt: '2026-01-12' },
-  { id: 'com-4', name: 'Desi Chana (Gram)', type: 'Pulse', createdAt: '2026-01-14' },
-  { id: 'com-5', name: 'Yellow Maize', type: 'Grain', createdAt: '2026-01-20' },
-  { id: 'com-6', name: 'Mustard Seeds', type: 'Oilseed', createdAt: '2026-02-05' }
-];
-
-const SEED_CLIENTS: BusinessClient[] = [
-  {
-    id: 'cli-1',
-    name: 'Om Agro Commodities Pvt Ltd',
-    address: 'Plot 42, Sanwer Road Industrial Area',
-    city: 'Indore',
-    pincode: '452015',
-    type: 'MY_FIRM',
-    flag: 'GOOD',
-    phone: '+91 98260 11223',
-    gstin: '23AAFCO1234F1Z5',
-    createdAt: '2026-01-01'
-  },
-  {
-    id: 'cli-2',
-    name: 'Indore Central Godown #4',
-    address: 'Laxmibai Nagar Mandi Complex',
-    city: 'Indore',
-    pincode: '452006',
-    type: 'MY_GODOWN',
-    flag: 'GOOD',
-    phone: '+91 98261 44556',
-    createdAt: '2026-01-05'
-  },
-  {
-    id: 'cli-3',
-    name: 'Bhopal Mandi Silo Facility',
-    address: 'Karond Mandi By-Pass',
-    city: 'Bhopal',
-    pincode: '462038',
-    type: 'MY_GODOWN',
-    flag: 'GOOD',
-    phone: '+91 75529 88990',
-    createdAt: '2026-01-08'
-  },
-  {
-    id: 'cli-4',
-    name: 'ITC Choupal Sagar Hub',
-    address: 'NH-86 Agra-Bombay Road',
-    city: 'Sehore',
-    pincode: '466001',
-    type: 'COMPANY',
-    flag: 'GOOD',
-    phone: '+91 75622 33445',
-    gstin: '23AAACI1681G1ZM',
-    createdAt: '2026-01-12'
-  },
-  {
-    id: 'cli-5',
-    name: 'Adani Wilmar Processing Plant',
-    address: 'Sagar Road Industrial Area',
-    city: 'Vidisha',
-    pincode: '464001',
-    type: 'COMPANY',
-    flag: 'GOOD',
-    phone: '+91 75924 55667',
-    gstin: '23AABCA2211C1ZX',
-    createdAt: '2026-01-15'
-  },
-  {
-    id: 'cli-6',
-    name: 'Dewas Krishi Mandi Yard #2',
-    address: 'Station Road Krishi Upaj Mandi',
-    city: 'Dewas',
-    pincode: '455001',
-    type: 'LOCATION',
-    flag: 'GOOD',
-    phone: '+91 72722 77889',
-    createdAt: '2026-01-18'
-  },
-  {
-    id: 'cli-7',
-    name: 'Vidisha Regional Agro Warehouse',
-    address: 'Warehouse No 12, Puranpura',
-    city: 'Vidisha',
-    pincode: '464001',
-    type: 'OTHER_GODOWN',
-    flag: 'UNREASONABLE_CLAIMS',
-    phone: '+91 75922 99001',
-    createdAt: '2026-01-22'
-  },
-  {
-    id: 'cli-8',
-    name: 'Shree Balaji Traders',
-    address: 'Mandi Gate, Ganj Basoda',
-    city: 'Ganj Basoda',
-    pincode: '464221',
-    type: 'COMPANY',
-    flag: 'NEUTRAL',
-    phone: '+91 94250 88991',
-    createdAt: '2026-02-01'
-  }
-];
-
-const SEED_BROKERS: Broker[] = [
-  { id: 'brk-1', name: 'Suresh Bhai Brokerage', phone_number: '+91 98260 55441', phone: '+91 98260 55441', city: 'Indore', notes: 'Top wheat broker in Malwa region', createdAt: '2026-01-10' },
-  { id: 'brk-2', name: 'Jagdish Sharma Dalal', phone_number: '+91 94250 66772', phone: '+91 94250 66772', city: 'Bhopal', notes: 'Pulse & Soybean specialist', createdAt: '2026-01-12' },
-  { id: 'brk-3', name: 'Rameshwar & Sons Dalali', phone_number: '+91 98270 33221', phone: '+91 98270 33221', city: 'Dewas', notes: 'Mandi direct auctions', createdAt: '2026-01-15' }
-];
-
-const SEED_TRANSPORTERS: Transporter[] = [
-  { id: 'trp-1', name: 'Mahesh Sharma', agency: 'Sharma Goods Transport Co.', phone_number: '+91 98261 99001', phone: '+91 98261 99001', city: 'Indore', contactPerson: 'Mahesh Sharma', notes: 'Own fleet of 25 10-wheeler trucks', createdAt: '2026-01-10' },
-  { id: 'trp-2', name: 'Bhim Singh Rajput', agency: 'Rajput Roadways Logistics', phone_number: '+91 94251 44332', phone: '+91 94251 44332', city: 'Bhopal', contactPerson: 'Bhim Singh Rajput', notes: 'Prompt delivery with GPS tracking', createdAt: '2026-01-12' },
-  { id: 'trp-3', name: 'Dinesh Patel', agency: 'Malwa Freight Carrier', phone_number: '+91 98264 12345', phone: '+91 98264 12345', city: 'Ujjain', contactPerson: 'Dinesh Patel', notes: 'Trailer & bulk trucks available', createdAt: '2026-01-15' },
-  { id: 'trp-4', name: 'Govind Patel', agency: 'Patel Roadways', phone_number: '+91 98270 99887', phone: '+91 98270 99887', city: 'Dewas', contactPerson: 'Govind Patel', notes: 'Reliable local mandi feeder', createdAt: '2026-01-20' }
-];
-
-const SEED_ORDERS: Order[] = [
-  {
-    id: 'ord-101',
-    type: 'SALES ORDER',
-    orderNumber: 'SO-2026-088',
-    fromClientId: 'cli-2', // Indore Central Godown #4
-    toClientId: 'cli-4', // ITC Choupal Sagar Hub
-    commodityId: 'com-1', // Sharbati Wheat
-    rate: 28500, // ₹28,500 / MT
-    quantity: 120, // 120 MT
-    startDate: '2026-09-10',
-    expiryDate: '2026-10-05',
-    quantityFulfilled: 74,
-    brokerId: 'brk-1',
-    status: 'PENDING',
-    notes: 'Premium grade Sharbati wheat, max moisture 11.5%. Inspection at gate.',
-    createdAt: '2026-09-10'
-  },
-  {
-    id: 'ord-102',
-    type: 'PURCHASE ORDER',
-    orderNumber: 'PO-2026-054',
-    fromClientId: 'cli-6', // Dewas Krishi Mandi Yard #2
-    toClientId: 'cli-1', // Om Agro Commodities Pvt Ltd (My Firm)
-    commodityId: 'com-2', // Yellow Soybean
-    rate: 46200, // ₹46,200 / MT
-    quantity: 80, // 80 MT
-    startDate: '2026-09-15',
-    expiryDate: '2026-09-28', // Nearing expiry!
-    quantityFulfilled: 80,
-    brokerId: 'brk-2',
-    status: 'COMPLETED',
-    notes: 'Direct Mandi auction purchase, prompt lifting required.',
-    createdAt: '2026-09-15'
-  },
-  {
-    id: 'ord-103',
-    type: 'SALES ORDER',
-    orderNumber: 'SO-2026-092',
-    fromClientId: 'cli-3', // Bhopal Mandi Silo
-    toClientId: 'cli-5', // Adani Wilmar
-    commodityId: 'com-2', // Yellow Soybean
-    rate: 47800, // ₹47,800 / MT
-    quantity: 150, // 150 MT
-    startDate: '2026-09-18',
-    expiryDate: '2026-09-30', // Nearing expiry!
-    quantityFulfilled: 48,
-    brokerId: 'brk-2',
-    status: 'PENDING',
-    notes: 'High oil content lot. Delivery to Vidisha processing plant.',
-    createdAt: '2026-09-18'
-  },
-  {
-    id: 'ord-104',
-    type: 'SALES ORDER',
-    orderNumber: 'SO-2026-095',
-    fromClientId: 'cli-2', // Indore Central Godown
-    toClientId: 'cli-8', // Shree Balaji Traders
-    commodityId: 'com-4', // Desi Chana
-    rate: 59000,
-    quantity: 60,
-    startDate: '2026-09-20',
-    expiryDate: '2026-10-15',
-    quantityFulfilled: 0,
-    brokerId: 'brk-3',
-    status: 'PENDING',
-    notes: 'Payment within 7 days of delivery confirmation.',
-    createdAt: '2026-09-20'
-  },
-  {
-    id: 'ord-105',
-    type: 'PURCHASE ORDER',
-    orderNumber: 'PO-2026-061',
-    fromClientId: 'cli-6',
-    toClientId: 'cli-2',
-    commodityId: 'com-3', // Basmati Rice
-    rate: 68000,
-    quantity: 100,
-    startDate: '2026-09-22',
-    expiryDate: '2026-10-20',
-    quantityFulfilled: 25,
-    brokerId: 'brk-1',
-    status: 'PENDING',
-    notes: 'Aged basmati, fumigation certificate attached.',
-    createdAt: '2026-09-22'
-  }
-];
-
-const SEED_TRANSPORTS: Transport[] = [
-  {
-    id: 'trp-entry-1',
-    billNumber: 'BIL-2026-0341',
-    billingFirmId: 'cli-1',
-    commodityId: 'com-1', // Sharbati Wheat
-    fromClientId: 'cli-2',
-    toClientId: 'cli-4',
-    vehicleNumber: 'MP09HH4521',
-    transporterId: 'trp-1',
-    grossWeight: 26.5,
-    bagNumbers: 530,
-    bagWeight: 50,
-    anugya: 'AG-99214',
-    gatepass: 'GP-8812',
-    rent: 28500,
-    advanceByClient: 0,
-    advanceByFirm: 15000,
-    finalPaid: 13500,
-    unloadDate: '2026-09-12',
-    receivedWeight: 26.48,
-    sourceWeightReceipt: 'RCPT-WB-09-4521',
-    destinationWeightReceipt: 'ITC-WB-6712',
-    status: 'PAID',
-    items: [{ orderId: 'ord-101', allocatedQuantity: 26.5 }],
-    notes: 'Smooth delivery, weight variance negligible (20 kg).',
-    createdBy: 'Rajesh Sharma',
-    createdAt: '2026-09-11'
-  },
-  {
-    id: 'trp-entry-2',
-    billNumber: 'BIL-2026-0348',
-    billingFirmId: 'cli-1',
-    commodityId: 'com-1', // Sharbati Wheat
-    fromClientId: 'cli-2',
-    toClientId: 'cli-4',
-    vehicleNumber: 'MP04K7812',
-    transporterId: 'trp-2',
-    grossWeight: 24.0,
-    bagNumbers: 480,
-    bagWeight: 50,
-    anugya: 'AG-99304',
-    gatepass: 'GP-8850',
-    rent: 26000,
-    advanceByClient: 0,
-    advanceByFirm: 16000,
-    finalPaid: 9900,
-    unloadDate: '2026-09-15',
-    receivedWeight: 23.95,
-    sourceWeightReceipt: 'RCPT-WB-04-7812',
-    destinationWeightReceipt: 'ITC-WB-6789',
-    status: 'PAID',
-    items: [{ orderId: 'ord-101', allocatedQuantity: 24.0 }],
-    notes: 'Settled minus 100 Rs tare deduction.',
-    createdBy: 'Amit Verma',
-    createdAt: '2026-09-14'
-  },
-  {
-    id: 'trp-entry-3',
-    billNumber: 'BIL-2026-0360',
-    billingFirmId: 'cli-1',
-    commodityId: 'com-1', // Sharbati Wheat
-    fromClientId: 'cli-2',
-    toClientId: 'cli-4',
-    vehicleNumber: 'MP09GF3319',
-    transporterId: 'trp-1',
-    grossWeight: 23.5,
-    bagNumbers: 470,
-    bagWeight: 50,
-    anugya: 'AG-99411',
-    gatepass: 'GP-8902',
-    rent: 25500,
-    advanceByClient: 0,
-    advanceByFirm: 15000,
-    finalPaid: 0,
-    unloadDate: '2026-09-24',
-    receivedWeight: 23.42,
-    sourceWeightReceipt: 'RCPT-WB-09-3319',
-    destinationWeightReceipt: 'ITC-WB-6890',
-    status: 'FINANCE',
-    items: [{ orderId: 'ord-101', allocatedQuantity: 23.5 }],
-    notes: 'Unloaded yesterday. Awaiting final freight balance approval.',
-    createdBy: 'Suresh Yadav',
-    createdAt: '2026-09-23'
-  },
-  {
-    id: 'trp-entry-4',
-    billNumber: 'BIL-2026-0365',
-    billingFirmId: 'cli-1',
-    commodityId: 'com-2', // Yellow Soybean
-    fromClientId: 'cli-3',
-    toClientId: 'cli-5',
-    vehicleNumber: 'MP13ZB9012',
-    transporterId: 'trp-3',
-    grossWeight: 25.0,
-    bagNumbers: 500,
-    bagWeight: 50,
-    anugya: 'AG-99480',
-    gatepass: 'GP-8940',
-    rent: 22000,
-    advanceByClient: 0,
-    advanceByFirm: 12000,
-    finalPaid: 0,
-    status: 'DELIVERY',
-    items: [{ orderId: 'ord-103', allocatedQuantity: 25.0 }],
-    notes: 'Dispatched 2026-09-24. In transit to Vidisha plant.',
-    createdBy: 'Suresh Yadav',
-    createdAt: '2026-09-24'
-  },
-  {
-    id: 'trp-entry-5',
-    billNumber: 'BIL-2026-0369',
-    billingFirmId: 'cli-1',
-    commodityId: 'com-2', // Yellow Soybean
-    fromClientId: 'cli-3',
-    toClientId: 'cli-5',
-    vehicleNumber: 'MP04L2288',
-    transporterId: 'trp-2',
-    grossWeight: 23.0,
-    bagNumbers: 460,
-    bagWeight: 50,
-    anugya: 'AG-99501',
-    gatepass: 'GP-8965',
-    rent: 21500,
-    advanceByClient: 0,
-    advanceByFirm: 10000,
-    finalPaid: 0,
-    status: 'PENDING',
-    items: [{ orderId: 'ord-103', allocatedQuantity: 23.0 }],
-    notes: 'Loading currently underway at Bhopal Silo.',
-    createdBy: 'Suresh Yadav',
-    createdAt: '2026-09-25'
-  },
-  {
-    id: 'trp-entry-6',
-    billNumber: 'BIL-2026-0371',
-    billingFirmId: 'cli-1',
-    commodityId: 'com-3', // Basmati Rice
-    fromClientId: 'cli-6',
-    toClientId: 'cli-2',
-    vehicleNumber: 'MP09CX7765',
-    transporterId: 'trp-4',
-    grossWeight: 25.0,
-    bagNumbers: 500,
-    bagWeight: 50,
-    anugya: 'AG-99522',
-    gatepass: 'GP-8991',
-    rent: 18000,
-    advanceByClient: 0,
-    advanceByFirm: 10000,
-    finalPaid: 0,
-    status: 'DELIVERY',
-    items: [{ orderId: 'ord-105', allocatedQuantity: 25.0 }],
-    notes: 'Moving from Dewas mandi yard to Indore godown.',
-    createdBy: 'Suresh Yadav',
-    createdAt: '2026-09-25'
-  }
-];
 
 class StorageService {
   private get<T>(key: string, fallback: T): T {
@@ -438,49 +50,28 @@ class StorageService {
   }
 
   public init() {
-    if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
-      this.set(STORAGE_KEYS.USERS, SEED_USERS);
-      localStorage.setItem('vistar_passwords', JSON.stringify(USER_PASSWORDS));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.COMMODITIES)) {
-      this.set(STORAGE_KEYS.COMMODITIES, SEED_COMMODITIES);
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.CLIENTS)) {
-      this.set(STORAGE_KEYS.CLIENTS, SEED_CLIENTS);
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.BROKERS)) {
-      this.set(STORAGE_KEYS.BROKERS, SEED_BROKERS);
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.TRANSPORTERS)) {
-      this.set(STORAGE_KEYS.TRANSPORTERS, SEED_TRANSPORTERS);
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.ORDERS)) {
-      this.set(STORAGE_KEYS.ORDERS, SEED_ORDERS);
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.TRANSPORTS)) {
-      this.set(STORAGE_KEYS.TRANSPORTS, SEED_TRANSPORTS);
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.CURRENT_USER)) {
-      this.set(STORAGE_KEYS.CURRENT_USER, SEED_USERS[0]); // default owner
-    }
-  }
+    if (localStorage.getItem('vistar_demo_data_removed_v1') === 'true') return;
 
-  public resetToDefault() {
-    this.set(STORAGE_KEYS.USERS, SEED_USERS);
-    localStorage.setItem('vistar_passwords', JSON.stringify(USER_PASSWORDS));
-    this.set(STORAGE_KEYS.COMMODITIES, SEED_COMMODITIES);
-    this.set(STORAGE_KEYS.CLIENTS, SEED_CLIENTS);
-    this.set(STORAGE_KEYS.BROKERS, SEED_BROKERS);
-    this.set(STORAGE_KEYS.TRANSPORTERS, SEED_TRANSPORTERS);
-    this.set(STORAGE_KEYS.ORDERS, SEED_ORDERS);
-    this.set(STORAGE_KEYS.TRANSPORTS, SEED_TRANSPORTS);
-    this.set(STORAGE_KEYS.CURRENT_USER, SEED_USERS[0]);
+    for (const [key, demoIds] of Object.entries(LEGACY_DEMO_IDS)) {
+      const records = this.get<Array<{ id: string }>>(key, []);
+      this.set(key, records.filter(record => !demoIds.includes(record.id)));
+    }
+
+    const currentUser = this.get<User | null>(STORAGE_KEYS.CURRENT_USER, null);
+    if (currentUser && LEGACY_DEMO_IDS[STORAGE_KEYS.USERS].includes(currentUser.id)) {
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+    }
+
+    const passwords = this.get<Record<string, string>>('vistar_passwords', {});
+    LEGACY_DEMO_IDS[STORAGE_KEYS.USERS].forEach(id => delete passwords[id]);
+    this.set('vistar_passwords', passwords);
+    localStorage.setItem('vistar_demo_data_removed_v1', 'true');
   }
 
   // --- Auth & Users ---
-  public getCurrentUser(): User {
+  public getCurrentUser(): User | null {
     this.init();
-    return this.get<User>(STORAGE_KEYS.CURRENT_USER, SEED_USERS[0]);
+    return this.get<User | null>(STORAGE_KEYS.CURRENT_USER, null);
   }
 
   public setCurrentUser(user: User): void {
@@ -489,7 +80,7 @@ class StorageService {
 
   public authenticate(username: string, password: string): { user: User | null; error?: string } {
     this.init();
-    const users = this.get<User[]>(STORAGE_KEYS.USERS, SEED_USERS);
+    const users = this.get<User[]>(STORAGE_KEYS.USERS, []);
     const passwords = JSON.parse(localStorage.getItem('vistar_passwords') || '{}');
     
     const user = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
@@ -508,7 +99,7 @@ class StorageService {
 
   public getUsers(): User[] {
     this.init();
-    return this.get<User[]>(STORAGE_KEYS.USERS, SEED_USERS);
+    return this.get<User[]>(STORAGE_KEYS.USERS, []);
   }
 
   public createUser(userData: { username: string; name: string; role: UserRole; password: string }): User {
@@ -543,7 +134,7 @@ class StorageService {
 
     // If updating current user
     const cur = this.getCurrentUser();
-    if (cur.id === id) {
+    if (cur?.id === id) {
       this.setCurrentUser(users[index]);
     }
     return users[index];
@@ -558,7 +149,7 @@ class StorageService {
   // --- Master Data: Commodities ---
   public getCommodities(): Commodity[] {
     this.init();
-    return this.get<Commodity[]>(STORAGE_KEYS.COMMODITIES, SEED_COMMODITIES);
+    return this.get<Commodity[]>(STORAGE_KEYS.COMMODITIES, []);
   }
 
   public saveCommodity(commodity: Omit<Commodity, 'id' | 'createdAt'> & { id?: string }): Commodity {
@@ -591,7 +182,7 @@ class StorageService {
   // --- Master Data: Clients ---
   public getClients(): BusinessClient[] {
     this.init();
-    return this.get<BusinessClient[]>(STORAGE_KEYS.CLIENTS, SEED_CLIENTS);
+    return this.get<BusinessClient[]>(STORAGE_KEYS.CLIENTS, []);
   }
 
   public saveClient(client: Omit<BusinessClient, 'id' | 'createdAt'> & { id?: string }): BusinessClient {
@@ -622,7 +213,7 @@ class StorageService {
   // --- Master Data: Brokers ---
   public getBrokers(): Broker[] {
     this.init();
-    return this.get<Broker[]>(STORAGE_KEYS.BROKERS, SEED_BROKERS);
+    return this.get<Broker[]>(STORAGE_KEYS.BROKERS, []);
   }
 
   public saveBroker(broker: Omit<Broker, 'id' | 'createdAt'> & { id?: string }): Broker {
@@ -653,7 +244,7 @@ class StorageService {
   // --- Master Data: Transporters ---
   public getTransporters(): Transporter[] {
     this.init();
-    return this.get<Transporter[]>(STORAGE_KEYS.TRANSPORTERS, SEED_TRANSPORTERS);
+    return this.get<Transporter[]>(STORAGE_KEYS.TRANSPORTERS, []);
   }
 
   public saveTransporter(transporter: Omit<Transporter, 'id' | 'createdAt'> & { id?: string }): Transporter {
@@ -684,7 +275,7 @@ class StorageService {
   // --- Orders ---
   public getOrders(): Order[] {
     this.init();
-    return this.get<Order[]>(STORAGE_KEYS.ORDERS, SEED_ORDERS);
+    return this.get<Order[]>(STORAGE_KEYS.ORDERS, []);
   }
 
   public getOrderById(id: string): Order | undefined {
@@ -762,7 +353,7 @@ class StorageService {
   // --- Transport ---
   public getTransports(): Transport[] {
     this.init();
-    return this.get<Transport[]>(STORAGE_KEYS.TRANSPORTS, SEED_TRANSPORTS);
+    return this.get<Transport[]>(STORAGE_KEYS.TRANSPORTS, []);
   }
 
   public getTransportById(id: string): Transport | undefined {

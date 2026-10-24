@@ -24,25 +24,19 @@ export function normalizeRole(rawRole: any): UserRole | null {
   return null;
 }
 
-export function transformBackendUser(raw: any, fallbackUser?: User): User {
+export function transformBackendUser(raw: any): User {
   if (!raw) {
-    return {
-      id: 'usr-unknown',
-      username: 'user',
-      name: 'User',
-      role: 'LABOUR',
-      status: 'ACTIVE'
-    };
+    throw new Error('User response was empty');
   }
 
   const userData = raw.user || raw.data?.user || raw.data || raw;
-  const rawId = userData.id || userData.pk || userData.user_id;
-  const id = String(rawId || 'usr-' + Date.now());
-  const username = userData.username || userData.email || 'user';
-  const matchesFallback = fallbackUser && (
-    (rawId && String(rawId) === fallbackUser.id) ||
-    (username !== 'user' && username.toLowerCase() === fallbackUser.username.toLowerCase())
-  );
+  const rawId = userData.id ?? userData.pk ?? userData.user_id;
+  const idValue = rawId == null ? '' : String(rawId);
+  const username = userData.username || userData.email || '';
+  if (!idValue && !username) {
+    throw new Error('User response did not include identity details');
+  }
+  const id = idValue || `usr-${Date.now()}`;
   const firstName = userData.first_name || '';
   const lastName = userData.last_name || '';
   const fullName = (firstName || lastName) ? `${firstName} ${lastName}`.trim() : (userData.name || username);
@@ -59,7 +53,7 @@ export function transformBackendUser(raw: any, fallbackUser?: User): User {
     profile_picture: userData.profile_picture || null,
     role: normalizeRole(
       userData.role ?? userData.user_role ?? userData.role_name ?? userData.account_type ?? userData.user_type
-    ) || (matchesFallback ? fallbackUser.role : 'LABOUR'),
+    ),
     status: (userData.is_active === false || userData.status === 'DISABLED') ? 'DISABLED' : 'ACTIVE',
     createdAt: userData.created_at || userData.date_joined || new Date().toISOString().split('T')[0]
   };
@@ -91,7 +85,7 @@ export const authApi = {
       try {
         user = await authApi.getMe();
       } catch {
-        user = transformBackendUser({ username, id: 'usr-current' });
+        throw new Error('Login succeeded, but the user profile could not be loaded');
       }
     }
 
@@ -120,9 +114,9 @@ export const authApi = {
   /**
    * GET api/auth/me
    */
-  async getMe(fallbackUser?: User): Promise<User> {
+  async getMe(): Promise<User> {
     const data = await apiClient.get<any>('/auth/me/');
-    return transformBackendUser(data, fallbackUser);
+    return transformBackendUser(data);
   },
 
   /**

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Eye, EyeOff, Lock, User, Truck, ShieldCheck, ArrowRight, Server } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, Truck, ArrowRight, Server } from 'lucide-react';
 
 export const LoginScreen: React.FC = () => {
   const { login } = useApp();
-  const [username, setUsername] = useState('ownerraj');
-  const [password, setPassword] = useState('password');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,23 +17,6 @@ export const LoginScreen: React.FC = () => {
 
     try {
       const res = await login(username, password);
-      if (!res.success) {
-        setError(res.error || 'Invalid credentials');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Authentication error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleQuickLogin = async (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-    setError(null);
-    setLoading(true);
-    try {
-      const res = await login(u, p);
       if (!res.success) {
         setError(res.error || 'Invalid credentials');
       }
@@ -130,53 +113,6 @@ export const LoginScreen: React.FC = () => {
             </button>
           </form>
 
-          {/* Quick Role-Select Test Helper */}
-          <div className="mt-6 pt-5 border-t border-slate-100">
-            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 text-center">
-              Quick Test Credentials
-            </p>
-            <div className="grid grid-cols-2 gap-2 mb-2">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('ownerraj', 'password')}
-                className="px-2 py-1.5 bg-blue-50/60 hover:bg-blue-100 border border-blue-200 rounded-lg text-left transition-colors cursor-pointer group"
-              >
-                <div className="text-[11px] font-bold text-blue-900">API: ownerraj</div>
-                <div className="text-[10px] text-blue-600 font-mono">password</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('owner', 'owner123')}
-                className="px-2 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-left transition-colors cursor-pointer group"
-              >
-                <div className="text-[11px] font-bold text-slate-800">Demo Owner</div>
-                <div className="text-[10px] text-slate-500 font-mono">owner123</div>
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('accountant', 'acc123')}
-                className="px-2 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-left transition-colors cursor-pointer group"
-              >
-                <div className="text-[11px] font-bold text-slate-800">Accountant</div>
-                <div className="text-[10px] text-slate-500 font-mono">acc123</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('labour', 'labour123')}
-                className="px-2 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-left transition-colors cursor-pointer group"
-              >
-                <div className="text-[11px] font-bold text-slate-800">Labour</div>
-                <div className="text-[10px] text-slate-500 font-mono">labour123</div>
-              </button>
-            </div>
-
-            <p className="mt-3 text-[11px] text-slate-400 text-center flex items-center justify-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 inline" />
-              Auto-refreshes JWT access tokens seamlessly
-            </p>
-          </div>
         </div>
       </div>
     </div>

@@ -120,7 +120,6 @@ interface AppContextType {
 
   // Refresher
   refreshData: () => Promise<void>;
-  resetAllDemoData: () => void;
 
   // Toasts
   toasts: ToastMessage[];
@@ -136,7 +135,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => storage.getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentPage, setCurrentPage] = useState<NavigationPage>('dashboard');
   const [pageParams, setPageParams] = useState<Record<string, any>>({});
   const [masterDataTab, setMasterDataTab] = useState<'commodities' | 'clients' | 'brokers' | 'transporters'>('commodities');
@@ -288,7 +287,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const hasToken = apiClient.getAccessToken();
       if (hasToken) {
         try {
-          const me = await authApi.getMe(storage.getCurrentUser());
+          const me = await authApi.getMe();
           setCurrentUser(me);
           storage.setCurrentUser(me);
           setIsBackendConnected(true);
@@ -367,10 +366,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch (err: any) {
       console.warn('Backend user creation failed, attempting local fallback:', err);
       // Fallback
+      if (!payload.role) {
+        throw new Error('A role is required to create an employee account');
+      }
       const fallback = storage.createUser({
         username: payload.username,
         name: [payload.first_name, payload.last_name].filter(Boolean).join(' ') || payload.username,
-        role: (payload.role as UserRole) || 'LABOUR',
+        role: payload.role as UserRole,
         password: payload.password
       });
       showToast(`Employee saved (Offline mode): ${err.message || ''}`, 'info');
@@ -627,13 +629,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const resetAllDemoData = () => {
-    storage.resetToDefault();
-    setCurrentUser(storage.getCurrentUser());
-    refreshData();
-    showToast('Reset all demo data to default successfully', 'success');
-  };
-
   return (
     <AppContext.Provider
       value={{
@@ -669,7 +664,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         orderSelect,
         transportGet,
         refreshData,
-        resetAllDemoData,
         toasts,
         showToast,
         dismissToast,

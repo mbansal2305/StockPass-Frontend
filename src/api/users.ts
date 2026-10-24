@@ -25,7 +25,7 @@ export const usersApi = {
    * Schema:
    *  username: str
    *  password: str
-   *  role: User.Role = User.Role.LABOUR
+   *  role: User.Role
    *  first_name: str = ""
    *  last_name: str = ""
    *  email: Optional[str] = None
@@ -37,11 +37,11 @@ export const usersApi = {
     const body: Record<string, any> = {
       username: payload.username.trim(),
       password: payload.password,
-      role: payload.role || 'LABOUR',
       first_name: payload.first_name || '',
       last_name: payload.last_name || ''
     };
 
+    if (payload.role) body.role = payload.role;
     if (payload.email) body.email = payload.email.trim();
     if (payload.phone_number) body.phone_number = payload.phone_number.trim();
     if (payload.gender_code) body.gender_code = payload.gender_code;

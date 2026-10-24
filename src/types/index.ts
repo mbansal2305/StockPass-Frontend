@@ -11,7 +11,7 @@ export interface User {
   phone_number?: string | null;
   gender_code?: string | null;
   profile_picture?: string | null;
-  role: UserRole;
+  role: UserRole | null;
   status: UserStatus;
   createdAt?: string;
 }

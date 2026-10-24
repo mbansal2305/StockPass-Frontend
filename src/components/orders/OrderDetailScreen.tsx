@@ -12,10 +12,12 @@ import {
   ExternalLink,
   Clock,
   ShieldCheck,
-  Loader2
+  Loader2,
+  Printer
 } from 'lucide-react';
 import { OrderProgressBar } from '../common/OrderProgressBar';
 import { formatCurrency, formatQuantityWithUnit, getUnitLabel, formatDate, getDaysRemaining, getTransportStatusBadge } from '../../utils/formatters';
+import { OrderPrintDocument } from './OrderPrintDocument';
 
 export const OrderDetailScreen: React.FC = () => {
   const {
@@ -216,8 +218,16 @@ export const OrderDetailScreen: React.FC = () => {
           </div>
         </div>
 
-        {!isLabour && (
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            Print Order
+          </button>
+          {!isLabour && (
             <button
               type="button"
               onClick={() => void handleEditOrder()}
@@ -227,8 +237,8 @@ export const OrderDetailScreen: React.FC = () => {
               {isLoadingEdit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Edit className="w-3.5 h-3.5" />}
               {isLoadingEdit ? 'Loading...' : 'Edit Order'}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Summary KPI Cards Grid */}
@@ -464,6 +474,22 @@ export const OrderDetailScreen: React.FC = () => {
           </table>
         </div>
       </div>
+      <OrderPrintDocument
+        orderNumber={order.orderNumber}
+        type={order.type}
+        status={order.status}
+        commodity={[comm?.name || order.commodityName, comm?.type || order.commodityType].filter(Boolean).join(' - ')}
+        fromClient={fromClient}
+        toClient={toClient}
+        quantity={order.quantity}
+        unit={order.unit || 'mt'}
+        rate={order.rate}
+        contractDate={order.contractDate || order.startDate}
+        startDate={order.startDate}
+        expiryDate={order.expiryDate}
+        broker={brokerName}
+        notes={order.notes || ''}
+      />
     </div>
   );
 };

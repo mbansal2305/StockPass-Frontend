@@ -17,7 +17,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
-  RotateCcw,
   CheckCircle,
   AlertCircle,
   Info
@@ -34,7 +33,6 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
     currentPage,
     navigate,
     setMasterDataTab,
-    resetAllDemoData,
     toasts,
     dismissToast,
     mobileMenuOpen,
@@ -130,16 +128,6 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Reset Demo Data Button */}
-          <button
-            type="button"
-            onClick={resetAllDemoData}
-            title="Reset to fresh demo data"
-            className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-
           {/* User Profile & Role Info */}
           <div className="relative">
             <button
@@ -148,16 +136,18 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
               className="flex items-center gap-2 pl-2 pr-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
             >
               <div className="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-semibold">
-                {currentUser?.name?.charAt(0) || 'U'}
+                {currentUser?.name?.trim() ? currentUser.name.trim().charAt(0) : ''}
               </div>
               <div className="hidden sm:flex flex-col text-left">
                 <span className="text-xs font-semibold text-slate-800 leading-tight">
-                  {currentUser?.name}
+                  {currentUser?.name?.trim() && currentUser.name}
                 </span>
-                <span className="text-[10px] font-medium text-slate-500 flex items-center gap-0.5">
-                  <Shield className="w-2.5 h-2.5" />
-                  {currentUser?.role}
-                </span>
+                {currentUser?.role && (
+                  <span className="text-[10px] font-medium text-slate-500 flex items-center gap-0.5">
+                    <Shield className="w-2.5 h-2.5" />
+                    {currentUser.role}
+                  </span>
+                )}
               </div>
             </button>
 
@@ -306,11 +296,15 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
               <div className="p-3 border-t border-slate-200 bg-slate-50">
                 <div className="flex items-center gap-2.5 mb-2 px-1">
                   <div className="w-7 h-7 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-semibold">
-                    {currentUser?.name?.charAt(0)}
+                    {currentUser?.name?.trim() ? currentUser.name.trim().charAt(0) : ''}
                   </div>
                   <div className="text-left">
-                    <div className="text-xs font-semibold text-slate-900">{currentUser?.name}</div>
-                    <div className="text-[10px] text-slate-500">{currentUser?.role}</div>
+                    {currentUser?.name?.trim() && (
+                      <div className="text-xs font-semibold text-slate-900">{currentUser.name}</div>
+                    )}
+                    {currentUser?.role && (
+                      <div className="text-[10px] text-slate-500">{currentUser.role}</div>
+                    )}
                   </div>
                 </div>
                 <button
