@@ -578,19 +578,20 @@ export const OrderListScreen: React.FC = () => {
                     VALIDITY <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
+                <th className="px-4 py-3">NOTES</th>
                 <th className="px-4 py-3 text-right">ACTIONS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-slate-500">
+                  <td colSpan={13} className="py-12 text-center text-slate-500">
                     <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading orders...</span>
                   </td>
                 </tr>
               ) : loadError ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center">
+                  <td colSpan={13} className="py-12 text-center">
                     <p className="text-red-600 font-medium">{loadError}</p>
                     <button type="button" onClick={() => setReloadSequence(sequence => sequence + 1)} className="mt-2 text-xs font-semibold text-blue-700 hover:underline">
                       Retry
@@ -599,7 +600,7 @@ export const OrderListScreen: React.FC = () => {
                 </tr>
               ) : paginatedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center">
+                  <td colSpan={13} className="py-12 text-center">
                     <p className="text-slate-500 font-medium">No orders found matching criteria</p>
                     <p className="text-slate-400 text-[11px] mt-1">Adjust filters or create a new order</p>
                     <button
@@ -763,6 +764,14 @@ export const OrderListScreen: React.FC = () => {
                             )}
                           </div>
                         )}
+                      </td>
+
+                      {/* Notes */}
+                      <td
+                        className="px-4 py-3 max-w-[240px] truncate text-slate-600"
+                        title={order.notes || undefined}
+                      >
+                        {order.notes || '-'}
                       </td>
 
                       {/* Actions: Vertical Three Dots with Dropdown */}

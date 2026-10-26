@@ -28,6 +28,15 @@ import { getClientFlagBadge, getClientTypeBadge, getClientTypeLabel } from '../.
 import { getImageSource } from '../../utils/images';
 import { masterApi } from '../../api/master';
 
+const clientFlagOptions: { value: ClientFlag; description: string }[] = [
+  { value: 'good', description: 'Good Standing' },
+  { value: 'neutral', description: 'Neutral/Unrated' },
+  { value: 'bad', description: 'Slow Payer / Caution' },
+  { value: 'unreasonable_claims', description: 'Weight Disputes' },
+  { value: 'fraud', description: 'Payment Default / Risk' },
+  { value: 'blacklisted', description: 'Do Not Transact' }
+];
+
 export const MasterDataScreen: React.FC = () => {
   const {
     currentUser,
@@ -77,6 +86,7 @@ export const MasterDataScreen: React.FC = () => {
   }>({ name: '', type: 'Grain', notes: '' });
 
   const [clientModalOpen, setClientModalOpen] = useState(false);
+  const [clientFlagMenuOpen, setClientFlagMenuOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<BusinessClient | null>(null);
   const [clientForm, setClientForm] = useState<{
     name: string;
@@ -102,7 +112,7 @@ export const MasterDataScreen: React.FC = () => {
     sec_contact: '',
     maan_no: '',
     type: 'company' as ClientType,
-    flag: 'good' as ClientFlag,
+    flag: 'neutral' as ClientFlag,
     location_url: '',
     notes: '',
     profile_picture: ''
@@ -207,7 +217,7 @@ export const MasterDataScreen: React.FC = () => {
             pri_contact: c.pri_contact || '',
             sec_contact: c.sec_contact || '',
             type: c.type || 'COMPANY',
-            flag: c.flag || 'GOOD',
+            flag: c.flag || 'NEUTRAL',
             location_url: c.location_url || '',
             profile_picture: c.profile_picture || c.image || null,
             notes: c.notes || ''
@@ -312,7 +322,7 @@ export const MasterDataScreen: React.FC = () => {
       setEditingCommodity(item);
       setCommodityForm({
         name: item.name,
-        type: item.type,
+        type: item.type || 'Grain',
         notes: item.notes || ''
       });
     } else {
@@ -324,8 +334,8 @@ export const MasterDataScreen: React.FC = () => {
 
   const handleSaveCommodity = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!commodityForm.name.trim() || !commodityForm.type.trim()) {
-      showToast('Commodity name and type are required', 'error');
+    if (!commodityForm.name.trim()) {
+      showToast('Commodity name is required', 'error');
       return;
     }
     setIsSubmitting(true);
@@ -363,7 +373,7 @@ export const MasterDataScreen: React.FC = () => {
         sec_contact: item.sec_contact || '',
         maan_no: item.maan_no || '',
         type: (item.type || 'company').toLowerCase() as ClientType,
-        flag: (item.flag || 'good').toLowerCase() as ClientFlag,
+        flag: (item.flag || 'neutral').toLowerCase() as ClientFlag,
         location_url: item.location_url || '',
         notes: item.notes || '',
         profile_picture: item.profile_picture || item.image || ''
@@ -380,7 +390,7 @@ export const MasterDataScreen: React.FC = () => {
         sec_contact: '',
         maan_no: '',
         type: 'company' as ClientType,
-        flag: 'good' as ClientFlag,
+        flag: 'neutral' as ClientFlag,
         location_url: '',
         notes: '',
         profile_picture: ''
@@ -410,7 +420,7 @@ export const MasterDataScreen: React.FC = () => {
         sec_contact: clientForm.sec_contact.trim(),
         maan_no: clientForm.maan_no.trim(),
         type: String(clientForm.type || 'company').toLowerCase() as ClientType,
-        flag: String(clientForm.flag || 'good').toLowerCase() as ClientFlag,
+        flag: String(clientForm.flag || 'neutral').toLowerCase() as ClientFlag,
         location_url: clientForm.location_url.trim(),
         notes: clientForm.notes.trim(),
         ...(isMyFirm && (!editingClient || profilePictureChanged)
@@ -450,8 +460,8 @@ export const MasterDataScreen: React.FC = () => {
 
   const handleSaveBroker = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!brokerForm.name.trim() || !brokerForm.phone_number.trim()) {
-      showToast('Broker name and phone number are required', 'error');
+    if (!brokerForm.name.trim()) {
+      showToast('Broker name is required', 'error');
       return;
     }
     setIsSubmitting(true);
@@ -517,8 +527,8 @@ export const MasterDataScreen: React.FC = () => {
 
   const handleSaveTransporter = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!transporterForm.name.trim() || !transporterForm.phone_number.trim()) {
-      showToast('Transporter name and phone number are required', 'error');
+    if (!transporterForm.name.trim()) {
+      showToast('Transporter name is required', 'error');
       return;
     }
     setIsSubmitting(true);
@@ -1423,10 +1433,9 @@ export const MasterDataScreen: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Type *</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Type</label>
                 <input
                   type="text"
-                  required
                   value={commodityForm.type}
                   onChange={(e) => setCommodityForm({ ...commodityForm, type: e.target.value })}
                   placeholder="e.g. Grain, Oilseed, Pulse, Spice"
@@ -1502,18 +1511,65 @@ export const MasterDataScreen: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">Flag *</label>
-                  <select
-                    value={clientForm.flag.toLowerCase()}
-                    onChange={(e) => setClientForm({ ...clientForm, flag: e.target.value.toLowerCase() as ClientFlag })}
-                    className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
+                  <div
+                    className="relative"
+                    onBlur={(event) => {
+                      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                        setClientFlagMenuOpen(false);
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') setClientFlagMenuOpen(false);
+                    }}
                   >
-                    <option value="good">GOOD (Good Standing)</option>
-                    <option value="neutral">NEUTRAL (Neutral/Unrated)</option>
-                    <option value="bad">BAD (Slow Payer / Caution)</option>
-                    <option value="unreasonable_claims">UNREASONABLE_CLAIMS (Weight Disputes)</option>
-                    <option value="fraud">FRAUD (Payment Default / Risk)</option>
-                    <option value="blacklisted">BLACKLISTED (Do Not Transact)</option>
-                  </select>
+                    {(() => {
+                      const selectedFlag = getClientFlagBadge(clientForm.flag);
+                      return (
+                        <button
+                          type="button"
+                          aria-haspopup="listbox"
+                          aria-expanded={clientFlagMenuOpen}
+                          onClick={() => setClientFlagMenuOpen((isOpen) => !isOpen)}
+                          className="flex w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-xs focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        >
+                          <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-medium ${selectedFlag.bg} ${selectedFlag.text} ${selectedFlag.border}`}>
+                            {selectedFlag.label}
+                          </span>
+                          <span className="text-slate-400" aria-hidden="true">▾</span>
+                        </button>
+                      );
+                    })()}
+                    {clientFlagMenuOpen && (
+                      <div
+                        role="listbox"
+                        aria-label="Client flag"
+                        className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg"
+                      >
+                        {clientFlagOptions.map(({ value, description }) => {
+                          const badge = getClientFlagBadge(value);
+                          const isSelected = clientForm.flag.toLowerCase() === value;
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              role="option"
+                              aria-selected={isSelected}
+                              onClick={() => {
+                                setClientForm({ ...clientForm, flag: value });
+                                setClientFlagMenuOpen(false);
+                              }}
+                              className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left hover:bg-slate-50"
+                            >
+                              <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-medium ${badge.bg} ${badge.text} ${badge.border}`}>
+                                {badge.label}
+                              </span>
+                              <span className="text-[10px] text-slate-500">{description}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1684,10 +1740,9 @@ export const MasterDataScreen: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Phone Number *</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Phone Number</label>
                 <input
                   type="text"
-                  required
                   value={brokerForm.phone_number}
                   onChange={(e) => setBrokerForm({ ...brokerForm, phone_number: e.target.value })}
                   placeholder="+91 98260 00000"
@@ -1766,10 +1821,9 @@ export const MasterDataScreen: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Phone Number *</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Phone Number</label>
                 <input
                   type="text"
-                  required
                   value={transporterForm.phone_number}
                   onChange={(e) => setTransporterForm({ ...transporterForm, phone_number: e.target.value })}
                   placeholder="+91 98260 00000"
