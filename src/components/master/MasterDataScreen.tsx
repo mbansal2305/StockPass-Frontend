@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Commodity, BusinessClient, Broker, Transporter, ClientType, ClientFlag, MasterEntityType } from '../../types';
 import {
@@ -26,7 +26,7 @@ import {
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { getClientFlagBadge, getClientTypeBadge, getClientTypeLabel } from '../../utils/formatters';
 import { getImageSource } from '../../utils/images';
-import { masterApi } from '../../api/master';
+import { masterApi, MasterEntityCounts } from '../../api/master';
 
 const clientFlagOptions: { value: ClientFlag; description: string }[] = [
   { value: 'good', description: 'Good Standing' },
@@ -48,12 +48,12 @@ export const MasterDataScreen: React.FC = () => {
     transporters,
     orders,
     transports,
-    refreshData,
     showToast,
     navigate,
     masterAdd,
     masterUpdate,
     masterDelete,
+    syncMasterCache,
   } = useApp();
 
   const isOwner = currentUser?.role === 'OWNER';
@@ -67,6 +67,10 @@ export const MasterDataScreen: React.FC = () => {
   const [currentPageNum, setCurrentPageNum] = useState(1);
   const pageSize = 100;
   const [serverPage, setServerPage] = useState({ total: 0, totalPages: 1 });
+  const [masterCounts, setMasterCounts] = useState<MasterEntityCounts | null>(null);
+
+  const localMasterDataRef = useRef({ commodities, clients, brokers, transporters });
+  localMasterDataRef.current = { commodities, clients, brokers, transporters };
 
   // Server-fetched datasets for live search/list query
   const [serverData, setServerData] = useState<{
@@ -192,74 +196,83 @@ export const MasterDataScreen: React.FC = () => {
       }
 
       if (masterDataTab === 'commodities') {
+        const normalizedRows = results.map(c => ({
+          ...c,
+          id: String(c.id || c._id),
+          name: c.name || '',
+          type: c.type || '',
+          notes: c.notes || ''
+        }));
         setServerData(prev => ({
           ...prev,
-          commodities: results.map(c => ({
-            ...c,
-            id: String(c.id || c._id),
-            name: c.name || '',
-            type: c.type || '',
-            notes: c.notes || ''
-          }))
+          commodities: normalizedRows
         }));
+        syncMasterCache('commodity', normalizedRows);
       } else if (masterDataTab === 'clients') {
+        const normalizedRows = results.map(c => ({
+          ...c,
+          id: String(c.id || c._id),
+          name: c.name || '',
+          address: c.address || '',
+          city: c.city || '',
+          pincode: c.pincode || '',
+          maan_no: c.maan_no || '',
+          contact_name: c.contact_name || '',
+          pri_contact: c.pri_contact || '',
+          sec_contact: c.sec_contact || '',
+          type: c.type || 'COMPANY',
+          flag: c.flag || 'NEUTRAL',
+          location_url: c.location_url || '',
+          profile_picture: c.profile_picture || c.image || null,
+          notes: c.notes || ''
+        }));
         setServerData(prev => ({
           ...prev,
-          clients: results.map(c => ({
-            ...c,
-            id: String(c.id || c._id),
-            name: c.name || '',
-            address: c.address || '',
-            city: c.city || '',
-            pincode: c.pincode || '',
-            maan_no: c.maan_no || '',
-            contact_name: c.contact_name || '',
-            pri_contact: c.pri_contact || '',
-            sec_contact: c.sec_contact || '',
-            type: c.type || 'COMPANY',
-            flag: c.flag || 'NEUTRAL',
-            location_url: c.location_url || '',
-            profile_picture: c.profile_picture || c.image || null,
-            notes: c.notes || ''
-          }))
+          clients: normalizedRows
         }));
+        syncMasterCache('businessclient', normalizedRows);
       } else if (masterDataTab === 'brokers') {
+        const normalizedRows = results.map(b => ({
+          ...b,
+          id: String(b.id || b._id),
+          name: b.name || '',
+          phone_number: b.phone_number || b.phone || '',
+          phone: b.phone_number || b.phone || '',
+          city: b.city || '',
+          notes: b.notes || ''
+        }));
         setServerData(prev => ({
           ...prev,
-          brokers: results.map(b => ({
-            ...b,
-            id: String(b.id || b._id),
-            name: b.name || '',
-            phone_number: b.phone_number || b.phone || '',
-            phone: b.phone_number || b.phone || '',
-            city: b.city || '',
-            notes: b.notes || ''
-          }))
+          brokers: normalizedRows
         }));
+        syncMasterCache('broker', normalizedRows);
       } else {
+        const normalizedRows = results.map(t => ({
+          ...t,
+          id: String(t.id || t._id),
+          name: t.name || '',
+          agency: t.agency || '',
+          phone_number: t.phone_number || t.phone || '',
+          phone: t.phone_number || t.phone || '',
+          city: t.city || '',
+          notes: t.notes || ''
+        }));
         setServerData(prev => ({
           ...prev,
-          transporters: results.map(t => ({
-            ...t,
-            id: String(t.id || t._id),
-            name: t.name || '',
-            agency: t.agency || '',
-            phone_number: t.phone_number || t.phone || '',
-            phone: t.phone_number || t.phone || '',
-            city: t.city || '',
-            notes: t.notes || ''
-          }))
+          transporters: normalizedRows
         }));
+        syncMasterCache('transporter', normalizedRows);
       }
     } catch (err) {
       console.warn('Failed querying master API, falling back to local dataset:', err);
+      const localData = localMasterDataRef.current;
       const localRows = masterDataTab === 'commodities'
-        ? commodities
+        ? localData.commodities
         : masterDataTab === 'clients'
-          ? clients
+          ? localData.clients
           : masterDataTab === 'brokers'
-            ? brokers
-            : transporters;
+            ? localData.brokers
+            : localData.transporters;
       const totalPages = Math.max(1, Math.ceil(localRows.length / pageSize));
       if (currentPageNum > totalPages) setCurrentPageNum(totalPages);
       setServerPage({ total: localRows.length, totalPages });
@@ -267,12 +280,25 @@ export const MasterDataScreen: React.FC = () => {
     } finally {
       setIsLoadingApi(false);
     }
-  }, [masterDataTab, currentPageNum, pageSize, commodities, clients, brokers, transporters]);
+  }, [masterDataTab, currentPageNum, pageSize, syncMasterCache]);
 
   // Fetch a page when changing tabs or page; typing in search stays local.
   useEffect(() => {
     fetchCurrentEntityData();
   }, [fetchCurrentEntityData]);
+
+  const fetchMasterCounts = useCallback(async () => {
+    try {
+      setMasterCounts(await masterApi.getCounts());
+    } catch (err) {
+      console.error('Failed to load master data counts:', err);
+      showToast('Failed to load master data counts', 'error');
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    void fetchMasterCounts();
+  }, [fetchMasterCounts]);
 
   const matchesSearch = (item: object) => {
     const term = searchTerm.trim().toLowerCase();
@@ -349,6 +375,7 @@ export const MasterDataScreen: React.FC = () => {
         await masterUpdate('commodity', editingCommodity.id, content);
       } else {
         await masterAdd('commodity', content);
+        void fetchMasterCounts();
       }
       setCommodityModalOpen(false);
       fetchCurrentEntityData();
@@ -431,6 +458,7 @@ export const MasterDataScreen: React.FC = () => {
         await masterUpdate('businessclient', editingClient.id, content);
       } else {
         await masterAdd('businessclient', content);
+        void fetchMasterCounts();
       }
       setClientModalOpen(false);
       fetchCurrentEntityData();
@@ -477,6 +505,7 @@ export const MasterDataScreen: React.FC = () => {
         await masterUpdate('broker', editingBroker.id, content);
       } else {
         await masterAdd('broker', content);
+        void fetchMasterCounts();
       }
       setBrokerModalOpen(false);
       fetchCurrentEntityData();
@@ -551,6 +580,7 @@ export const MasterDataScreen: React.FC = () => {
         await masterUpdate('transporter', editingTransporter.id, content);
       } else {
         await masterAdd('transporter', content);
+        void fetchMasterCounts();
       }
       setTransporterModalOpen(false);
       fetchCurrentEntityData();
@@ -569,6 +599,7 @@ export const MasterDataScreen: React.FC = () => {
       await masterDelete(entity, id);
       setDeleteConfirmation(null);
       fetchCurrentEntityData();
+      void fetchMasterCounts();
     } catch (err: any) {
       showToast(err.message || 'Failed to delete record', 'error');
     }
@@ -603,7 +634,7 @@ export const MasterDataScreen: React.FC = () => {
             }`}
           >
             <Package className="w-3.5 h-3.5" />
-            Commodities ({displayedCommodities.length})
+            Commodities ({masterCounts?.commodity ?? '—'})
           </button>
           <button
             type="button"
@@ -615,7 +646,7 @@ export const MasterDataScreen: React.FC = () => {
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
-            Clients & Godowns ({displayedClients.length})
+            Clients & Godowns ({masterCounts?.businessclient ?? '—'})
           </button>
           <button
             type="button"
@@ -627,7 +658,7 @@ export const MasterDataScreen: React.FC = () => {
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
-            Brokers ({displayedBrokers.length})
+            Brokers ({masterCounts?.broker ?? '—'})
           </button>
           <button
             type="button"
@@ -639,7 +670,7 @@ export const MasterDataScreen: React.FC = () => {
             }`}
           >
             <Truck className="w-3.5 h-3.5" />
-            Transporters ({displayedTransporters.length})
+            Transporters ({masterCounts?.transporter ?? '—'})
           </button>
         </div>
       </div>
@@ -678,7 +709,11 @@ export const MasterDataScreen: React.FC = () => {
             {/* Manual Refresh */}
             <button
               type="button"
-              onClick={() => { fetchCurrentEntityData(); refreshData(); }}
+              onClick={() => {
+                void fetchCurrentEntityData();
+                void fetchMasterCounts();
+              }}
+              disabled={isLoadingApi}
               className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
               title="Refresh from server"
             >

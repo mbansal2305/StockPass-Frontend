@@ -77,6 +77,10 @@ export const usersApi = {
     return transformBackendUser(res);
   },
 
+  async toggleUserStatus(userId: string): Promise<void> {
+    await apiClient.patch(`/users/${userId}/toggle/`);
+  },
+
   /**
    * POST api/users/{user_id}/password/ -> Change User Password
    * Schema:

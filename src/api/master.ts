@@ -44,6 +44,13 @@ export interface SelectionClient {
   city: string;
 }
 
+export interface MasterEntityCounts {
+  commodity: number;
+  businessclient: number;
+  broker: number;
+  transporter: number;
+}
+
 function getSelectionRows(response: any): any[] {
   const data = response?.data ?? response;
   const candidates = [data, data?.results, data?.items, data?.data];
@@ -122,6 +129,33 @@ function parsePaginatedResponse<T>(res: any): PaginatedResult<T> {
 }
 
 export const masterApi = {
+  async getCounts(): Promise<MasterEntityCounts> {
+    const response = await apiClient.get<{
+      success: boolean;
+      data?: Partial<Record<keyof MasterEntityCounts, unknown>>;
+    }>('/master/count/');
+    const data = response?.data;
+
+    if (response?.success !== true || !data || typeof data !== 'object') {
+      throw new Error('Invalid master count response');
+    }
+
+    const getCount = (entity: keyof MasterEntityCounts): number => {
+      const count = data[entity];
+      if (typeof count !== 'number' || !Number.isInteger(count) || count < 0) {
+        throw new Error(`Invalid master count for ${entity}`);
+      }
+      return count;
+    };
+
+    return {
+      commodity: getCount('commodity'),
+      businessclient: getCount('businessclient'),
+      broker: getCount('broker'),
+      transporter: getCount('transporter')
+    };
+  },
+
   async selectFirms(): Promise<SelectionFirm[]> {
     const response = await apiClient.get<any>('/master/sel/firms/');
     return getSelectionRows(response).flatMap((item: any) => {

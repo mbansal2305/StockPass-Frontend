@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { User, UserRole, UserStatus } from '../../types';
-import { storage } from '../../services/storage';
 import {
   Users,
   Search,
@@ -22,17 +21,18 @@ export const EmployeeScreen: React.FC = () => {
   const {
     users,
     currentUser,
-    refreshData,
+    refreshUsers,
     showToast,
     createUserAccount,
     updateUserAccount,
+    toggleUserStatus,
     changeUserPassword,
     isBackendConnected
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ACTIVE');
 
   // Create / Edit Modal & Action Menu
   const [userModalOpen, setUserModalOpen] = useState(false);
@@ -60,6 +60,10 @@ export const EmployeeScreen: React.FC = () => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+
+  useEffect(() => {
+    void refreshUsers();
+  }, [refreshUsers]);
 
   // Status Change Confirmation Modal
   const [statusConfirmation, setStatusConfirmation] = useState<{
@@ -136,6 +140,7 @@ export const EmployeeScreen: React.FC = () => {
           gender_code: userForm.gender_code || undefined
         });
 
+        await refreshUsers();
         setUserModalOpen(false);
       } else {
         await updateUserAccount(editingUser.id, {
@@ -147,6 +152,7 @@ export const EmployeeScreen: React.FC = () => {
           gender_code: userForm.gender_code || undefined
         });
 
+        await refreshUsers();
         setUserModalOpen(false);
       }
     } catch (err: any) {
@@ -192,11 +198,8 @@ export const EmployeeScreen: React.FC = () => {
     if (!statusConfirmation) return;
     const { user, nextStatus } = statusConfirmation;
     try {
-      await updateUserAccount(user.id, {
-        role: user.role || undefined
-      });
-      storage.updateUser(user.id, { status: nextStatus });
-      await refreshData();
+      await toggleUserStatus(user.id);
+      await refreshUsers();
       setStatusConfirmation(null);
       showToast(
         `Employee account ${user.name} has been ${nextStatus === 'ACTIVE' ? 'activated' : 'disabled'}`,

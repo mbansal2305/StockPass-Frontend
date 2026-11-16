@@ -99,12 +99,14 @@ interface AppContextType {
   // User Actions (API integrated)
   createUserAccount: (payload: UserCreatePayload) => Promise<User>;
   updateUserAccount: (userId: string, payload: UserUpdatePayload) => Promise<User>;
+  toggleUserStatus: (userId: string) => Promise<void>;
   changeUserPassword: (userId: string, newPassword: string) => Promise<void>;
 
   // Master Data API Operations (/master/add/, /master/upd/, /master/del/, /master/lst/, /master/search/)
   masterAdd: (entity: MasterEntityType, content: Record<string, any>) => Promise<any>;
   masterUpdate: (entity: MasterEntityType, id: string | number, content: Record<string, any>) => Promise<any>;
   masterDelete: (entity: MasterEntityType, id: string | number) => Promise<void>;
+  syncMasterCache: (entity: MasterEntityType, rows: any[], removedId?: string) => void;
   masterSearch: (entity: MasterEntityType, search: string, filters?: Record<string, any>) => Promise<any[]>;
   masterList: (entity: MasterEntityType, filters?: Record<string, any>, page?: number, pageSize?: number) => Promise<any[]>;
 
@@ -120,6 +122,7 @@ interface AppContextType {
 
   // Refresher
   refreshData: () => Promise<void>;
+  refreshUsers: () => Promise<void>;
 
   // Toasts
   toasts: ToastMessage[];
@@ -143,7 +146,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);
   
   // Cached collections
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>(() => storage.getUsers());
   const [commodities, setCommodities] = useState<Commodity[]>([]);
   const [clients, setClients] = useState<BusinessClient[]>([]);
   const [brokers, setBrokers] = useState<Broker[]>([]);
@@ -152,17 +155,51 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [transports, setTransports] = useState<Transport[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const showToast = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const showToast = useCallback((text: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = `toast-${Date.now()}-${Math.random()}`;
     setToasts(prev => [...prev, { id, text, type }]);
     setTimeout(() => {
       dismissToast(id);
     }, 4500);
-  };
+  }, [dismissToast]);
 
-  const dismissToast = (id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  };
+  const refreshUsers = useCallback(async () => {
+    try {
+      const apiUsers = await usersApi.getUsers();
+      if (Array.isArray(apiUsers) && apiUsers.length > 0) {
+        setUsers(apiUsers);
+        setIsBackendConnected(true);
+      } else {
+        setUsers(storage.getUsers());
+      }
+    } catch (err) {
+      console.warn('Backend users fetch failed (using local store):', err);
+      setUsers(storage.getUsers());
+      setIsBackendConnected(false);
+    }
+  }, []);
+
+  const syncMasterCache = useCallback((entity: MasterEntityType, rows: any[], removedId?: string) => {
+    const mergeById = <T extends { id: string }>(current: T[], incoming: T[]): T[] => {
+      const byId = new Map(current.filter(item => item.id !== removedId).map(item => [item.id, item]));
+      incoming.forEach(item => byId.set(item.id, item));
+      return Array.from(byId.values());
+    };
+
+    if (entity === 'commodity') {
+      setCommodities(current => mergeById(current, rows as Commodity[]));
+    } else if (entity === 'businessclient') {
+      setClients(current => mergeById(current, rows as BusinessClient[]));
+    } else if (entity === 'broker') {
+      setBrokers(current => mergeById(current, rows as Broker[]));
+    } else {
+      setTransporters(current => mergeById(current, rows as Transporter[]));
+    }
+  }, []);
 
   const refreshData = async () => {
     storage.syncOrderFulfillments();
@@ -252,20 +289,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setTransporters(refreshedTransporters);
     }
 
-    // Fetch users from backend API
-    try {
-      const apiUsers = await usersApi.getUsers();
-      if (Array.isArray(apiUsers) && apiUsers.length > 0) {
-        setUsers(apiUsers);
-        setIsBackendConnected(true);
-      } else {
-        setUsers(storage.getUsers());
-      }
-    } catch (err) {
-      console.warn('Backend users fetch failed (using local store):', err);
-      setUsers(storage.getUsers());
-      setIsBackendConnected(false);
-    }
   };
 
   // Listen for auth expiration events dispatched by apiClient
@@ -361,7 +384,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Primary: API
       const newUser = await usersApi.createUser(payload);
       showToast(`Employee "${newUser.name}" created via API`, 'success');
-      await refreshData();
       return newUser;
     } catch (err: any) {
       console.warn('Backend user creation failed, attempting local fallback:', err);
@@ -376,7 +398,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         password: payload.password
       });
       showToast(`Employee saved (Offline mode): ${err.message || ''}`, 'info');
-      await refreshData();
       return fallback;
     }
   };
@@ -385,18 +406,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       const updated = await usersApi.updateUser(userId, payload);
       showToast('Employee updated via API', 'success');
-      await refreshData();
       return updated;
     } catch (err: any) {
       console.warn('Backend user update failed, using local update:', err);
-      const updated = storage.updateUser(userId, {
-        name: [payload.first_name, payload.last_name].filter(Boolean).join(' '),
-        role: payload.role as UserRole
-      });
+      const localUpdates: Partial<User> = {};
+      if (payload.first_name !== undefined || payload.last_name !== undefined) {
+        localUpdates.name = [payload.first_name, payload.last_name].filter(Boolean).join(' ');
+      }
+      if (payload.role !== undefined) localUpdates.role = payload.role as UserRole;
+      const updated = storage.updateUser(userId, localUpdates);
       showToast('Employee updated in local storage', 'info');
-      await refreshData();
       return updated;
     }
+  };
+
+  const toggleUserStatus = async (userId: string): Promise<void> => {
+    await usersApi.toggleUserStatus(userId);
   };
 
   const changeUserPassword = async (userId: string, newPassword: string): Promise<void> => {
@@ -421,7 +446,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       const res = await masterApi.add(entity, payloadContent);
       showToast(`${entity} added via API`, 'success');
-      await refreshData();
       return res;
     } catch (err: any) {
       console.warn(`Backend master add for ${entity} failed, saving to local store:`, err);
@@ -435,8 +459,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } else if (entity === 'transporter') {
         localSaved = storage.saveTransporter({ name: content.name, agency: content.agency, phone_number: content.phone_number, phone: content.phone_number, city: content.city, notes: content.notes });
       }
+      syncMasterCache(entity, [localSaved]);
       showToast(`${entity} saved in local storage (${err.message || 'Offline'})`, 'info');
-      await refreshData();
       return localSaved;
     }
   };
@@ -450,23 +474,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       const res = await masterApi.update(entity, id, payloadContent);
       showToast(`${entity} updated via API`, 'success');
-      await refreshData();
       return res;
     } catch (err: any) {
       console.warn(`Backend master update for ${entity} failed, saving locally:`, err);
       const strId = String(id);
+      let localUpdated: any;
       if (entity === 'commodity') {
-        storage.saveCommodity({ id: strId, name: content.name, type: content.type, notes: content.notes });
+        localUpdated = storage.saveCommodity({ id: strId, name: content.name, type: content.type, notes: content.notes });
       } else if (entity === 'businessclient') {
-        storage.saveClient({ id: strId, ...content } as any);
+        localUpdated = storage.saveClient({ id: strId, ...content } as any);
       } else if (entity === 'broker') {
-        storage.saveBroker({ id: strId, name: content.name, phone_number: content.phone_number, phone: content.phone_number, city: content.city, notes: content.notes });
+        localUpdated = storage.saveBroker({ id: strId, name: content.name, phone_number: content.phone_number, phone: content.phone_number, city: content.city, notes: content.notes });
       } else if (entity === 'transporter') {
-        storage.saveTransporter({ id: strId, name: content.name, agency: content.agency, phone_number: content.phone_number, phone: content.phone_number, city: content.city, notes: content.notes });
+        localUpdated = storage.saveTransporter({ id: strId, name: content.name, agency: content.agency, phone_number: content.phone_number, phone: content.phone_number, city: content.city, notes: content.notes });
       }
+      syncMasterCache(entity, [localUpdated]);
       showToast(`${entity} updated in local storage (${err.message || 'Offline'})`, 'info');
-      await refreshData();
-      return content;
+      return localUpdated;
     }
   };
 
@@ -483,7 +507,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (entity === 'businessclient') storage.deleteClient(strId);
     if (entity === 'broker') storage.deleteBroker(strId);
     if (entity === 'transporter') storage.deleteTransporter(strId);
-    await refreshData();
+    syncMasterCache(entity, [], strId);
   };
 
   const masterSearch = async (entity: MasterEntityType, search: string, filters: Record<string, any> = {}) => {
@@ -649,10 +673,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         transports,
         createUserAccount,
         updateUserAccount,
+        toggleUserStatus,
         changeUserPassword,
         masterAdd,
         masterUpdate,
         masterDelete,
+        syncMasterCache,
         masterSearch,
         masterList,
         orderAdd,
@@ -664,6 +690,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         orderSelect,
         transportGet,
         refreshData,
+        refreshUsers,
         toasts,
         showToast,
         dismissToast,
