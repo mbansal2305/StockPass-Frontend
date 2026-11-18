@@ -42,6 +42,23 @@ export function formatDate(dateStr: string | undefined | null): string {
   }
 }
 
+export function formatShortDate(dateStr: string | undefined | null): string {
+  if (!dateStr) return '-';
+  try {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      const day = d.toLocaleDateString('en-IN', { day: '2-digit' });
+      const month = d.toLocaleDateString('en-IN', { month: 'short' });
+      const year = d.getFullYear().toString().slice(-2);
+      return `${day} ${month}'${year}`;
+    }
+    return dateStr;
+  } catch {
+    return dateStr;
+  }
+}
+
 export function getDaysRemaining(expiryDateStr: string): { days: number; isExpired: boolean; isUrgent: boolean } {
   const today = new Date();
   today.setHours(0, 0, 0, 0);

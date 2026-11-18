@@ -117,9 +117,9 @@ export const OrderDetailScreen: React.FC = () => {
   }
 
   const comm = commodityMap.get(order.commodityId);
-  const fromClient = clientMap.get(order.fromClientId) || order.fromClientId || 'Unknown Source';
-  const toClient = clientMap.get(order.toClientId) || order.toClientId || 'Unknown Destination';
-  const brokerName = brokerMap.get(order.brokerId) || order.brokerId || 'Direct (No Broker)';
+  const fromClient = clientMap.get(order.fromClientId) || order.fromClientName || order.fromClientId || 'Unknown Source';
+  const toClient = clientMap.get(order.toClientId) || order.toClientName || order.toClientId || 'Unknown Destination';
+  const brokerName = brokerMap.get(order.brokerId) || order.brokerName || order.brokerId || 'Direct (No Broker)';
   const remaining = Math.max(0, order.quantity - order.quantityFulfilled);
   const totalValue = order.quantity * order.rate;
   const daysMeta = getDaysRemaining(order.expiryDate);

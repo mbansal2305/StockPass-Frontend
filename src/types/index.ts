@@ -150,6 +150,7 @@ export type BackendQuantityUnit = 'mt' | 'quintal' | 'kg';
 export interface OrderCreateSchema {
   type: BackendOrderType;
   order_no?: string | null;
+  is_dummy?: boolean;
   from_client?: number | null;
   to_client?: number | null;
   commodity: number;
@@ -169,6 +170,7 @@ export interface OrderUpdateSchema {
   id: number;
   type?: BackendOrderType | null;
   order_no?: string | null;
+  is_dummy?: boolean;
   from_client?: number | null;
   to_client?: number | null;
   commodity?: number | null;
@@ -213,6 +215,7 @@ export interface Order {
   id: string;
   type: OrderType;
   orderNumber: string;
+  isDummy?: boolean;
   fromClientId: string;
   fromClientName?: string;
   toClientId: string;

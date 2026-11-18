@@ -7,8 +7,97 @@ import { storage } from '../../services/storage';
 import { getUnitLabel } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
 import { SearchableSelect } from '../common/SearchableSelect';
-import { ArrowLeft, Save, AlertCircle, ArrowDownLeft, ArrowUpRight, CheckCircle2, Loader2, Printer } from 'lucide-react';
+import { ArrowLeft, Save, AlertCircle, ArrowDownLeft, ArrowUpRight, CheckCircle2, Loader2, Printer, Calendar } from 'lucide-react';
 import { OrderPrintDocument } from './OrderPrintDocument';
+
+interface FormattedDateInputProps {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  className: string;
+  required?: boolean;
+}
+
+const formatDateInputValue = (value: string): string => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match ? `${match[3]} / ${match[2]} / ${match[1]}` : value;
+};
+
+const parseDateInputValue = (value: string): string | null => {
+  const match = /^\s*(\d{2})\s*\/\s*(\d{2})\s*\/\s*(\d{4})\s*$/.exec(value);
+  if (!match) return null;
+
+  const [, dayText, monthText, yearText] = match;
+  const day = Number(dayText);
+  const month = Number(monthText);
+  const year = Number(yearText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${yearText}-${monthText}-${dayText}`;
+};
+
+const FormattedDateInput: React.FC<FormattedDateInputProps> = ({
+  id,
+  value,
+  onChange,
+  className,
+  required
+}) => {
+  const [inputValue, setInputValue] = useState(() => formatDateInputValue(value));
+
+  useEffect(() => {
+    setInputValue(formatDateInputValue(value));
+  }, [value]);
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type="text"
+        required={required}
+        pattern="[0-9]{2} */ *[0-9]{2} */ *[0-9]{4}"
+        value={inputValue}
+        placeholder="DD / MM / YYYY"
+        onChange={event => {
+          const nextValue = event.target.value;
+          setInputValue(nextValue);
+          const parsedValue = parseDateInputValue(nextValue);
+          if (parsedValue) onChange(parsedValue);
+        }}
+        onBlur={() => {
+          const parsedValue = parseDateInputValue(inputValue);
+          if (parsedValue) {
+            onChange(parsedValue);
+          } else {
+            setInputValue('');
+            onChange('');
+          }
+        }}
+        className={`${className} pr-10`}
+      />
+      <div className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-500">
+        <Calendar className="h-4 w-4" aria-hidden="true" />
+        <input
+          type="date"
+          aria-label={`Choose ${id.replace(/^order-/, '').replace(/-/g, ' ')} date`}
+          value={value}
+          onChange={event => {
+            setInputValue(formatDateInputValue(event.target.value));
+            onChange(event.target.value);
+          }}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        />
+      </div>
+    </div>
+  );
+};
 
 export const OrderFormScreen: React.FC = () => {
   const {
@@ -34,8 +123,11 @@ export const OrderFormScreen: React.FC = () => {
     Boolean(existingOrder || requestedType)
   );
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const thirtyDaysLaterStr = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const defaultExpiryDate = new Date(today);
+  defaultExpiryDate.setDate(defaultExpiryDate.getDate() + 7);
+  const sevenDaysLaterStr = `${defaultExpiryDate.getFullYear()}-${String(defaultExpiryDate.getMonth() + 1).padStart(2, '0')}-${String(defaultExpiryDate.getDate()).padStart(2, '0')}`;
 
   // Form state
   const [formData, setFormData] = useState({
@@ -49,7 +141,7 @@ export const OrderFormScreen: React.FC = () => {
     rate: 0,
     contractDate: todayStr,
     startDate: todayStr,
-    expiryDate: thirtyDaysLaterStr,
+    expiryDate: sevenDaysLaterStr,
     brokerId: '',
     status: 'PENDING' as OrderStatus,
     notes: '',
@@ -59,6 +151,11 @@ export const OrderFormScreen: React.FC = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoadingPurchaseOrderNumber, setIsLoadingPurchaseOrderNumber] = useState(false);
   const [purchaseOrderNumberError, setPurchaseOrderNumberError] = useState('');
+  const [useDummySalesOrderNumber, setUseDummySalesOrderNumber] = useState(
+    existingOrder?.type === 'SALES ORDER' && existingOrder.isDummy === true
+  );
+  const [isLoadingSalesOrderNumber, setIsLoadingSalesOrderNumber] = useState(false);
+  const [salesOrderNumberError, setSalesOrderNumberError] = useState('');
   const [routeClients, setRouteClients] = useState<{
     fromClient: OrderClientOption[];
     toClient: OrderClientOption[];
@@ -78,11 +175,6 @@ export const OrderFormScreen: React.FC = () => {
       const nextBrokers = brokersResult.status === 'fulfilled' ? brokersResult.value : brokers;
       setCommodityOptions(nextCommodities);
       setBrokerOptions(nextBrokers);
-      setFormData(current => ({
-        ...current,
-        commodityId: current.commodityId || nextCommodities[0]?.id || '',
-        brokerId: current.brokerId || nextBrokers[0]?.id || ''
-      }));
     });
 
     return () => {
@@ -104,11 +196,6 @@ export const OrderFormScreen: React.FC = () => {
         const toClient = [...options.toClient];
 
         setRouteClients({ fromClient, toClient });
-        setFormData(prev => ({
-          ...prev,
-          fromClientId: prev.fromClientId || fromClient[0]?.id || '',
-          toClientId: prev.toClientId || toClient[0]?.id || ''
-        }));
       } catch (err) {
         if (!isCurrent) return;
 
@@ -213,32 +300,23 @@ export const OrderFormScreen: React.FC = () => {
         rate: existingOrder.rate,
         contractDate: existingOrder.contractDate || existingOrder.startDate || todayStr,
         startDate: existingOrder.startDate || todayStr,
-        expiryDate: existingOrder.expiryDate || thirtyDaysLaterStr,
+        expiryDate: existingOrder.expiryDate || sevenDaysLaterStr,
         brokerId: existingOrder.brokerId || '',
         status: existingOrder.status,
         notes: existingOrder.notes || '',
         quantityFulfilled: existingOrder.quantityFulfilled || 0
       });
+      setUseDummySalesOrderNumber(existingOrder.type === 'SALES ORDER' && existingOrder.isDummy === true);
       setSelectedTypeConfirmed(true);
     } else {
       const chosenType = requestedType || formData.type;
-      const prefix = chosenType === 'SALES ORDER' ? 'SO' : 'PO';
-      const year = new Date().getFullYear();
-      const randomNum = Math.floor(100 + Math.random() * 900);
-
       setFormData(prev => ({
         ...prev,
         type: chosenType,
-        orderNumber: chosenType === 'PURCHASE ORDER'
-          ? (prev.type === chosenType ? prev.orderNumber : '')
-          : (prev.type === chosenType && prev.orderNumber ? prev.orderNumber : `${prefix}-${year}-${randomNum}`),
-        commodityId: commodities[0]?.id || '',
-        fromClientId: clients[0]?.id || '',
-        toClientId: clients[1]?.id || clients[0]?.id || '',
-        brokerId: brokers[0]?.id || '',
+        orderNumber: '',
         contractDate: todayStr,
         startDate: todayStr,
-        expiryDate: thirtyDaysLaterStr
+        expiryDate: sevenDaysLaterStr
       }));
 
       if (requestedType) {
@@ -249,21 +327,46 @@ export const OrderFormScreen: React.FC = () => {
 
   // Update order number prefix if type changes in new mode
   const handleTypeChange = (newType: OrderType) => {
+    if (newType !== 'SALES ORDER') {
+      setUseDummySalesOrderNumber(false);
+    }
+
     if (!existingOrder) {
-      const prefix = 'SO';
-      const year = new Date().getFullYear();
-      const currentNumberSuffix = formData.orderNumber.split('-')[2] || Math.floor(100 + Math.random() * 900);
+      setSalesOrderNumberError('');
+      setIsLoadingSalesOrderNumber(false);
       setFormData(prev => ({
         ...prev,
         type: newType,
-        orderNumber: newType === 'PURCHASE ORDER'
-          ? ''
-          : `${prefix}-${year}-${currentNumberSuffix}`
+        orderNumber: ''
       }));
     } else {
       setFormData(prev => ({ ...prev, type: newType }));
     }
     setSelectedTypeConfirmed(true);
+  };
+
+  const handleDummySalesOrderNumberChange = async (checked: boolean) => {
+    setUseDummySalesOrderNumber(checked);
+    setSalesOrderNumberError('');
+
+    if (!checked) {
+      setIsLoadingSalesOrderNumber(false);
+      setFormData(prev => ({ ...prev, orderNumber: '' }));
+      return;
+    }
+
+    setIsLoadingSalesOrderNumber(true);
+    setFormData(prev => ({ ...prev, orderNumber: '' }));
+    try {
+      const orderNumber = await ordersApi.getSalesOrderNumber();
+      setFormData(prev => ({ ...prev, orderNumber }));
+    } catch (err: any) {
+      setUseDummySalesOrderNumber(false);
+      setFormData(prev => ({ ...prev, orderNumber: '' }));
+      setSalesOrderNumberError(err.message || 'Could not generate Sales Order number');
+    } finally {
+      setIsLoadingSalesOrderNumber(false);
+    }
   };
 
   const handleUnitChange = (newUnit: QuantityUnit) => {
@@ -307,6 +410,7 @@ export const OrderFormScreen: React.FC = () => {
       const orderPayload: Partial<Order> = {
         type: formData.type,
         orderNumber: formData.orderNumber.trim(),
+        isDummy: formData.type === 'SALES ORDER' ? useDummySalesOrderNumber : undefined,
         commodityId: formData.commodityId,
         fromClientId: formData.fromClientId,
         toClientId: formData.toClientId,
@@ -494,25 +598,45 @@ export const OrderFormScreen: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Order Number *</label>
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <label className="block text-xs font-medium text-slate-700">Order Number *</label>
+                {formData.type === 'SALES ORDER' && (
+                  <label className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useDummySalesOrderNumber}
+                      disabled={isLoadingSalesOrderNumber}
+                      onChange={(e) => void handleDummySalesOrderNumberChange(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer disabled:cursor-not-allowed"
+                    />
+                    Generate Dummy Number
+                  </label>
+                )}
+              </div>
               <input
                 type="text"
                 required
-                readOnly={formData.type === 'PURCHASE ORDER'}
+                readOnly={formData.type === 'PURCHASE ORDER' || useDummySalesOrderNumber}
                 value={formData.orderNumber}
                 onChange={(e) => setFormData({ ...formData, orderNumber: e.target.value })}
-                placeholder={isLoadingPurchaseOrderNumber ? 'Generating order number...' : 'e.g. SO-2026-101'}
-                className={`w-full text-xs border rounded-lg px-3 py-2 font-mono text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none ${
-                  errors.orderNumber || purchaseOrderNumberError
-                    ? 'border-red-400 bg-red-50/30'
+                placeholder={
+                  isLoadingPurchaseOrderNumber || isLoadingSalesOrderNumber
+                    ? 'Generating order number...'
                     : formData.type === 'PURCHASE ORDER'
+                    ? 'Purchase order number'
+                    : 'Enter sales order number'
+                }
+                className={`w-full text-xs border rounded-lg px-3 py-2 font-mono text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none ${
+                  errors.orderNumber || purchaseOrderNumberError || salesOrderNumberError
+                    ? 'border-red-400 bg-red-50/30'
+                    : formData.type === 'PURCHASE ORDER' || useDummySalesOrderNumber
                     ? 'border-slate-300 bg-slate-50 text-slate-600 cursor-not-allowed'
                     : 'border-slate-300'
                 }`}
               />
-              {(errors.orderNumber || purchaseOrderNumberError) && (
+              {(errors.orderNumber || purchaseOrderNumberError || salesOrderNumberError) && (
                 <p className="text-[10px] text-red-600 mt-1 flex items-center gap-1">
-                  <AlertCircle className="w-2.5 h-2.5" /> {purchaseOrderNumberError || errors.orderNumber}
+                  <AlertCircle className="w-2.5 h-2.5" /> {purchaseOrderNumberError || salesOrderNumberError || errors.orderNumber}
                 </p>
               )}
             </div>
@@ -669,11 +793,11 @@ export const OrderFormScreen: React.FC = () => {
             {/* Contract Date - default today date */}
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Contract Date *</label>
-              <input
-                type="date"
+              <FormattedDateInput
+                id="order-contract-date"
                 required
                 value={formData.contractDate}
-                onChange={(e) => setFormData({ ...formData, contractDate: e.target.value })}
+                onChange={contractDate => setFormData({ ...formData, contractDate })}
                 className={`w-full text-xs border rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none ${
                   errors.contractDate ? 'border-red-400 bg-red-50/30' : 'border-slate-300'
                 }`}
@@ -686,11 +810,11 @@ export const OrderFormScreen: React.FC = () => {
             {/* Contract Start Date */}
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Start Date *</label>
-              <input
-                type="date"
+              <FormattedDateInput
+                id="order-start-date"
                 required
                 value={formData.startDate}
-                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                onChange={startDate => setFormData({ ...formData, startDate })}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
               {errors.startDate && (
@@ -701,11 +825,11 @@ export const OrderFormScreen: React.FC = () => {
             {/* Contract Expiry Date */}
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Expiry Date *</label>
-              <input
-                type="date"
+              <FormattedDateInput
+                id="order-expiry-date"
                 required
                 value={formData.expiryDate}
-                onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                onChange={expiryDate => setFormData({ ...formData, expiryDate })}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
               {errors.expiryDate && (
@@ -716,18 +840,20 @@ export const OrderFormScreen: React.FC = () => {
             {/* Broker */}
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Broker / Dalal</label>
-              <select
+              <SearchableSelect
+                id="order-broker"
                 value={formData.brokerId}
-                onChange={(e) => setFormData({ ...formData, brokerId: e.target.value })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
-              >
-                <option value="">Direct Deal (No Broker)</option>
-                {brokerSelectionOptions.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.city || 'Mandi'})
-                  </option>
-                ))}
-              </select>
+                onChange={(brokerId) => setFormData({ ...formData, brokerId })}
+                placeholder="Select or search broker"
+                options={[
+                  { id: '', label: 'Direct Deal (No Broker)' },
+                  ...brokerSelectionOptions.map(broker => ({
+                    id: broker.id,
+                    label: broker.city ? `${broker.name} (${broker.city})` : broker.name,
+                    searchText: broker.city
+                  }))
+                ]}
+              />
             </div>
 
             {/* Order Status */}
@@ -779,7 +905,12 @@ export const OrderFormScreen: React.FC = () => {
           </button>
           <button
             type="submit"
-            disabled={isSubmitting || isLoadingPurchaseOrderNumber || (formData.type === 'PURCHASE ORDER' && !formData.orderNumber)}
+            disabled={
+              isSubmitting ||
+              isLoadingPurchaseOrderNumber ||
+              isLoadingSalesOrderNumber ||
+              (formData.type === 'PURCHASE ORDER' && !formData.orderNumber)
+            }
             className="inline-flex items-center gap-2 px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer disabled:opacity-60"
           >
             {isSubmitting ? (

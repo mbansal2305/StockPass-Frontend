@@ -21,7 +21,9 @@ import {
   Globe,
   RefreshCw,
   MoreVertical,
-  Database
+  Database,
+  Copy,
+  EyeOff
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { getClientFlagBadge, getClientTypeBadge, getClientTypeLabel } from '../../utils/formatters';
@@ -68,6 +70,7 @@ export const MasterDataScreen: React.FC = () => {
   const pageSize = 100;
   const [serverPage, setServerPage] = useState({ total: 0, totalPages: 1 });
   const [masterCounts, setMasterCounts] = useState<MasterEntityCounts | null>(null);
+  const [visibleTransporterAccounts, setVisibleTransporterAccounts] = useState<Set<string>>(() => new Set());
 
   const localMasterDataRef = useRef({ commodities, clients, brokers, transporters });
   localMasterDataRef.current = { commodities, clients, brokers, transporters };
@@ -334,6 +337,15 @@ export const MasterDataScreen: React.FC = () => {
     const rows = serverData.transporters ?? transporters.slice(start, start + pageSize);
     return rows.filter(matchesSearch);
   }, [transporters, serverData.transporters, searchTerm, currentPageNum, pageSize]);
+
+  const copyTransporterDetail = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      showToast(`${label} copied`, 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? `Could not copy ${label.toLowerCase()}: ${error.message}` : `Could not copy ${label.toLowerCase()}`, 'error');
+    }
+  };
 
   const searchPlaceholder = {
     commodities: 'Search current page of commodities...',
@@ -888,7 +900,6 @@ export const MasterDataScreen: React.FC = () => {
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Flag</th>
                   <th className="px-4 py-3">Address</th>
-                  <th className="px-4 py-3">City & Pincode</th>
                   <th className="px-4 py-3">Contact</th>
                   <th className="px-4 py-3">Maan No.</th>
                   <th className="px-4 py-3">Notes</th>
@@ -898,7 +909,7 @@ export const MasterDataScreen: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {displayedClients.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-slate-500">
+                    <td colSpan={8} className="py-8 text-center text-slate-500">
                       {isLoadingApi ? (
                         <div className="flex items-center justify-center gap-2 text-slate-400">
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -920,8 +931,9 @@ export const MasterDataScreen: React.FC = () => {
                             type="button"
                             onClick={() => setSelectedClientForDetails(client)}
                             className="font-semibold text-slate-900 hover:text-blue-600 text-left cursor-pointer"
+                            title={client.name}
                           >
-                            {client.name}
+                            {client.name.length > 30 ? `${client.name.slice(0, 30)}...` : client.name}
                           </button>
                         </td>
                         <td className="px-4 py-3">
@@ -935,7 +947,7 @@ export const MasterDataScreen: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-slate-600 max-w-xs">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 whitespace-nowrap">
                             {client.location_url && (
                               <a
                                 href={client.location_url}
@@ -948,11 +960,17 @@ export const MasterDataScreen: React.FC = () => {
                                 <MapPin className="w-3.5 h-3.5" />
                               </a>
                             )}
-                            <span className="truncate">{client.address || '-'}</span>
+                            <span title={client.address || undefined}>
+                              {client.address
+                                ? client.address.length > 30
+                                  ? `${client.address.slice(0, 30)}...`
+                                  : client.address
+                                : '-'}
+                            </span>
                           </div>
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {client.city} {client.pincode && `· ${client.pincode}`}
+                          <div className="mt-1 text-[11px] text-slate-500 whitespace-nowrap">
+                            {client.city} {client.pincode && `· ${client.pincode}`}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                           <div title={client.contact_name || undefined}>
@@ -1152,7 +1170,7 @@ export const MasterDataScreen: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 4: TRANSPORTERS TABLE (Strictly: name, agency, phone_number, city, notes) */}
+      {/* TAB 4: TRANSPORTERS TABLE */}
       {masterDataTab === 'transporters' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">
@@ -1160,7 +1178,8 @@ export const MasterDataScreen: React.FC = () => {
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
                 <tr>
                   <th className="px-4 py-3">Transporter Name</th>
-                  <th className="px-4 py-3">Agency</th>
+                  <th className="px-4 py-3">Bank Details</th>
+                  <th className="px-4 py-3">Account Details</th>
                   <th className="px-4 py-3">Phone Number</th>
                   <th className="px-4 py-3">City</th>
                   <th className="px-4 py-3">Notes</th>
@@ -1170,7 +1189,7 @@ export const MasterDataScreen: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {displayedTransporters.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-500">
+                    <td colSpan={7} className="py-8 text-center text-slate-500">
                       {isLoadingApi ? (
                         <div className="flex items-center justify-center gap-2 text-slate-400">
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -1184,10 +1203,82 @@ export const MasterDataScreen: React.FC = () => {
                 ) : (
                   displayedTransporters.map((trp) => {
                     const phone = trp.phone_number || (trp as any).phone || '-';
+                    const accountNumber = trp.account_number || '';
+                    const ifscCode = trp.ifsc_code || '';
+                    const email = trp.email || '';
+                    const accountVisible = visibleTransporterAccounts.has(trp.id);
+                    const maskedAccountNumber = accountNumber.length > 4
+                      ? `${'•'.repeat(accountNumber.length - 4)}${accountNumber.slice(-4)}`
+                      : accountNumber;
                     return (
                       <tr key={trp.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="px-4 py-3 font-semibold text-slate-900">{trp.name}</td>
-                        <td className="px-4 py-3 text-slate-700 font-medium">{trp.agency || '-'}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-slate-900">{trp.name}</div>
+                          {trp.agency && <div className="mt-0.5 text-[11px] font-medium text-slate-500">{trp.agency}</div>}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          <div className="font-medium text-slate-800">{trp.bank || '-'}</div>
+                          {trp.branch && <div className="mt-0.5">{trp.branch}</div>}
+                          {ifscCode && (
+                            <div className="mt-1 flex items-center gap-1.5 font-mono">
+                              <span>{ifscCode}</span>
+                              <button
+                                type="button"
+                                onClick={() => copyTransporterDetail(ifscCode, 'IFSC code')}
+                                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                title="Copy IFSC code"
+                                aria-label={`Copy IFSC code for ${trp.name}`}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          <div className="font-medium text-slate-800">{trp.account_name || '-'}</div>
+                          {accountNumber && (
+                            <div className="mt-0.5 flex items-center gap-1.5 font-mono">
+                              <span>{accountVisible ? accountNumber : maskedAccountNumber}</span>
+                              <button
+                                type="button"
+                                onClick={() => setVisibleTransporterAccounts(current => {
+                                  const next = new Set(current);
+                                  if (next.has(trp.id)) next.delete(trp.id);
+                                  else next.add(trp.id);
+                                  return next;
+                                })}
+                                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                title={accountVisible ? 'Hide account number' : 'Show account number'}
+                                aria-label={`${accountVisible ? 'Hide' : 'Show'} account number for ${trp.name}`}
+                              >
+                                {accountVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => copyTransporterDetail(accountNumber, 'Account number')}
+                                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                title="Copy account number"
+                                aria-label={`Copy account number for ${trp.name}`}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
+                          {email && (
+                            <div className="mt-1 flex items-center gap-1.5">
+                              <span className="max-w-[12rem] truncate">{email}</span>
+                              <button
+                                type="button"
+                                onClick={() => copyTransporterDetail(email, 'Email')}
+                                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                title="Copy email"
+                                aria-label={`Copy email for ${trp.name}`}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-slate-600 font-mono">{phone}</td>
                         <td className="px-4 py-3 text-slate-600">{trp.city || '-'}</td>
                         <td className="px-4 py-3 text-slate-500 max-w-xs truncate">{trp.notes || '-'}</td>

@@ -20,11 +20,12 @@ import {
   MoreVertical,
   Loader2,
   CheckCircle2,
-  Clock
+  Clock,
+  Building2
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { MultiSearchableSelect } from '../common/SearchableSelect';
-import { formatCurrency, formatWeight, formatQuantityWithUnit, getUnitLabel, formatDate, getDaysRemaining } from '../../utils/formatters';
+import { formatCurrency, formatWeight, formatQuantityWithUnit, getUnitLabel, formatShortDate, getDaysRemaining } from '../../utils/formatters';
 import { PaginatedOrdersResult } from '../../api/orders';
 import { masterApi, SelectionClient, SelectionFirm } from '../../api/master';
 
@@ -550,7 +551,6 @@ export const OrderListScreen: React.FC = () => {
                 </th>
                 <th className="px-4 py-3">COMMODITY</th>
                 <th className="px-4 py-3">ROUTE / PARTY</th>
-                <th className="px-4 py-3">BILLING FIRM</th>
                 <th className="px-4 py-3">BROKER</th>
                 <th className="px-4 py-3 text-right">RATE</th>
                 <th 
@@ -585,13 +585,13 @@ export const OrderListScreen: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={13} className="py-12 text-center text-slate-500">
+                  <td colSpan={12} className="py-12 text-center text-slate-500">
                     <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading orders...</span>
                   </td>
                 </tr>
               ) : loadError ? (
                 <tr>
-                  <td colSpan={13} className="py-12 text-center">
+                  <td colSpan={12} className="py-12 text-center">
                     <p className="text-red-600 font-medium">{loadError}</p>
                     <button type="button" onClick={() => setReloadSequence(sequence => sequence + 1)} className="mt-2 text-xs font-semibold text-blue-700 hover:underline">
                       Retry
@@ -600,7 +600,7 @@ export const OrderListScreen: React.FC = () => {
                 </tr>
               ) : paginatedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="py-12 text-center">
+                  <td colSpan={12} className="py-12 text-center">
                     <p className="text-slate-500 font-medium">No orders found matching criteria</p>
                     <p className="text-slate-400 text-[11px] mt-1">Adjust filters or create a new order</p>
                     <button
@@ -616,8 +616,8 @@ export const OrderListScreen: React.FC = () => {
               ) : (
                 paginatedOrders.map(order => {
                   const comm = commodityMap.get(order.commodityId);
-                  const fromClient = clientMap.get(order.fromClientId) || '-';
-                  const toClient = clientMap.get(order.toClientId) || '-';
+                  const fromClient = clientMap.get(order.fromClientId) || order.fromClientName || '-';
+                  const toClient = clientMap.get(order.toClientId) || order.toClientName || '-';
                   const billingFirm = order.type === 'SALES ORDER' ? fromClient : toClient;
                   const remaining = Math.max(0, order.quantity - order.quantityFulfilled);
                   const daysMeta = getDaysRemaining(order.expiryDate);
@@ -651,7 +651,7 @@ export const OrderListScreen: React.FC = () => {
                     >
                       {/* Contract Date */}
                       <td className="px-4 py-3 whitespace-nowrap text-slate-600 tabular-nums">
-                        {formatDate(order.contractDate)}
+                        {formatShortDate(order.contractDate)}
                       </td>
 
                       {/* Order Number */}
@@ -659,16 +659,17 @@ export const OrderListScreen: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => navigate('order-detail', { orderId: order.id })}
-                          className="font-bold text-slate-900 hover:text-blue-600 text-left font-mono cursor-pointer"
+                          className="text-left cursor-pointer"
                         >
-                          <span className={`mr-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-sans font-bold ${
+                          <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-mono font-bold ${
                             order.type === 'SALES ORDER'
-                              ? 'bg-blue-100 text-blue-800'
+                              ? order.isDummy
+                                ? 'bg-[#efebe9] text-[#5d4037]'
+                                : 'bg-blue-100 text-blue-800'
                               : 'bg-emerald-100 text-emerald-800'
                           }`}>
-                            {order.type === 'SALES ORDER' ? 'SO' : 'PO'}
+                            {order.orderNumber}
                           </span>
-                          {order.orderNumber}
                         </button>
                       </td>
 
@@ -681,25 +682,32 @@ export const OrderListScreen: React.FC = () => {
                       {/* Route based on order type: Purchase -> From only, Sales -> To only */}
                       <td className="px-4 py-3 max-w-[200px]">
                         {order.type === 'PURCHASE ORDER' ? (
-                          <div className="truncate" title={`From: ${fromClient}`}>
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded mr-1.5 inline-block">
-                              From
-                            </span>
-                            <span className="text-slate-800 font-semibold">{fromClient}</span>
+                          <div>
+                            <div className="truncate" title={`From: ${fromClient}`}>
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded mr-1.5 inline-block">
+                                From
+                              </span>
+                              <span className="text-slate-800 font-semibold">{fromClient}</span>
+                            </div>
+                            <div className="mt-1 flex items-center gap-1 truncate text-[10px] font-semibold text-violet-700" title={`Billing firm: ${billingFirm}`}>
+                              <Building2 className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{billingFirm}</span>
+                            </div>
                           </div>
                         ) : (
-                          <div className="truncate" title={`To: ${toClient}`}>
-                            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded mr-1.5 inline-block">
-                              To
-                            </span>
-                            <span className="text-slate-800 font-semibold">{toClient}</span>
+                          <div>
+                            <div className="truncate" title={`To: ${toClient}`}>
+                              <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded mr-1.5 inline-block">
+                                To
+                              </span>
+                              <span className="text-slate-800 font-semibold">{toClient}</span>
+                            </div>
+                            <div className="mt-1 flex items-center gap-1 truncate text-[10px] font-semibold text-violet-700" title={`Billing firm: ${billingFirm}`}>
+                              <Building2 className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{billingFirm}</span>
+                            </div>
                           </div>
                         )}
-                      </td>
-
-                      {/* Billing Firm */}
-                      <td className="px-4 py-3 max-w-[180px] truncate text-slate-700" title={billingFirm}>
-                        {billingFirm}
                       </td>
 
                       {/* Broker */}
@@ -735,7 +743,7 @@ export const OrderListScreen: React.FC = () => {
 
                       {/* Start Date */}
                       <td className="px-4 py-3 whitespace-nowrap text-slate-600 tabular-nums">
-                        {formatDate(order.startDate)}
+                        {formatShortDate(order.startDate)}
                         <div className={`mt-0.5 text-[10px] font-semibold ${hasStarted ? 'text-emerald-600' : 'text-slate-500'}`}>
                           {hasStarted ? 'contract started' : 'upcoming'}
                         </div>
@@ -745,7 +753,7 @@ export const OrderListScreen: React.FC = () => {
                       <td className="px-4 py-3 text-slate-600 tabular-nums whitespace-nowrap">
                         <div className="flex items-center gap-1">
                           <Calendar className="w-3 h-3 text-slate-400" />
-                          <span>{formatDate(order.expiryDate)}</span>
+                          <span>{formatShortDate(order.expiryDate)}</span>
                         </div>
                         {order.status === 'PENDING' && (
                           <div className="mt-0.5">

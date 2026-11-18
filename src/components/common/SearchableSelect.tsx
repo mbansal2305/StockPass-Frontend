@@ -24,6 +24,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(-1);
   const selectedOption = options.find(option => option.id === value);
   const normalizedQuery = query.trim().toLowerCase();
   const filteredOptions = normalizedQuery
@@ -31,6 +32,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         `${option.label} ${option.searchText || ''}`.toLowerCase().includes(normalizedQuery)
       )
     : options;
+  const activeOptionIndex = filteredOptions.length
+    ? Math.min(activeIndex, filteredOptions.length - 1)
+    : -1;
 
   const selectOption = (option: SearchableOption) => {
     onChange(option.id);
@@ -52,16 +56,43 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         onFocus={() => {
           setQuery('');
           setIsOpen(true);
+          const selectedIndex = options.findIndex(option => option.id === value);
+          setActiveIndex(selectedIndex);
         }}
         onChange={(event) => {
           setQuery(event.target.value);
+          setActiveIndex(-1);
           setIsOpen(true);
         }}
         onBlur={() => setIsOpen(false)}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') setIsOpen(false);
+          if (event.key === 'Escape') {
+            setIsOpen(false);
+          } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (!isOpen) {
+              setQuery('');
+              setIsOpen(true);
+              const selectedIndex = options.findIndex(option => option.id === value);
+              setActiveIndex(selectedIndex);
+            } else if (filteredOptions.length) {
+              setActiveIndex(index => {
+                if (event.key === 'ArrowDown') {
+                  return index < 0 ? 0 : Math.min(index + 1, filteredOptions.length - 1);
+                }
+                return index < 0 ? filteredOptions.length - 1 : Math.max(index - 1, 0);
+              });
+            }
+          } else if (event.key === 'Enter' && isOpen && activeOptionIndex >= 0) {
+            event.preventDefault();
+            selectOption(filteredOptions[activeOptionIndex]);
+          } else if (event.key === 'Enter' && isOpen && filteredOptions.length) {
+            event.preventDefault();
+            selectOption(filteredOptions[0]);
+          }
         }}
         placeholder={placeholder}
+        aria-activedescendant={isOpen && activeOptionIndex >= 0 ? `${id}-option-${activeOptionIndex}` : undefined}
         className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
       />
       {isOpen && (
@@ -70,15 +101,19 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           role="listbox"
           className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
         >
-          {filteredOptions.length ? filteredOptions.map(option => (
+          {filteredOptions.length ? filteredOptions.map((option, index) => (
             <button
               key={option.id}
+              id={`${id}-option-${index}`}
               type="button"
               role="option"
               aria-selected={option.id === value}
               onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
               onClick={() => selectOption(option)}
               className={`block w-full px-3 py-2 text-left text-xs hover:bg-blue-50 ${
+                index === activeOptionIndex ? 'bg-blue-50' : ''
+              } ${
                 option.id === value ? 'bg-blue-50 text-blue-700' : 'text-slate-900'
               }`}
             >

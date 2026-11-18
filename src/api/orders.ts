@@ -108,6 +108,10 @@ export function transformBackendOrderToFrontend(raw: any): Order {
 
   // Order Number
   const orderNumber = String(raw.order_no || raw.order_number || raw.orderNumber || raw.orderNo || `ORD-${id}`);
+  const rawIsDummy = raw.is_dummy ?? raw.isDummy;
+  const isDummy = rawIsDummy === true ||
+    rawIsDummy === 1 ||
+    (typeof rawIsDummy === 'string' && ['true', '1'].includes(rawIsDummy.trim().toLowerCase()));
 
   // Relations: support either integer IDs, strings, or nested objects
   const getRelationId = (val: any): string => {
@@ -119,7 +123,13 @@ export function transformBackendOrderToFrontend(raw: any): Order {
   const fromClientId = getRelationId(raw.from_client_id ?? raw.fromClientId ?? raw.from_client);
   const toClientId = getRelationId(raw.to_client_id ?? raw.toClientId ?? raw.to_client);
   const commodityId = getRelationId(raw.commodity_id ?? raw.commodityId ?? raw.commodity);
+  const rawBroker = raw.broker ?? raw.broker_id ?? raw.brokerId;
   const brokerId = getRelationId(raw.broker_id ?? raw.brokerId ?? raw.broker);
+  const brokerName = rawBroker && typeof rawBroker === 'object'
+    ? rawBroker.name ?? rawBroker.broker_name ?? rawBroker.label ?? raw.broker_name ?? raw.brokerName
+    : typeof raw.broker === 'string' && !/^\d+$/.test(raw.broker)
+    ? raw.broker
+    : raw.broker_name ?? raw.brokerName;
   const orderTransports: OrderTransport[] | undefined = Array.isArray(raw.order_transports)
     ? raw.order_transports.map((transport: any) => {
       const rawGrossWeightUnit = String(transport.gross_wt_unit || 'mt').toLowerCase();
@@ -178,6 +188,7 @@ export function transformBackendOrderToFrontend(raw: any): Order {
     id,
     type,
     orderNumber,
+    isDummy,
     fromClientId,
     fromClientName: typeof raw.from_client === 'string' ? raw.from_client : raw.from_client_name,
     toClientId,
@@ -185,7 +196,7 @@ export function transformBackendOrderToFrontend(raw: any): Order {
     commodityId,
     commodityName: typeof raw.commodity === 'string' ? raw.commodity : raw.commodityName,
     commodityType: raw.commodity_type ? String(raw.commodity_type) : raw.commodityType,
-    brokerName: typeof raw.broker === 'string' ? raw.broker : raw.broker_name,
+    brokerName: brokerName ? String(brokerName) : undefined,
     orderTransports,
     rate,
     quantity,
@@ -226,6 +237,7 @@ export function toBackendCreateSchema(order: Partial<Order>): OrderCreateSchema 
   return {
     type,
     order_no: order.orderNumber ? order.orderNumber.trim() : null,
+    ...(isPurchase ? {} : { is_dummy: Boolean(order.isDummy) }),
     from_client: parseNumId(order.fromClientId),
     to_client: parseNumId(order.toClientId),
     commodity: parseNumId(order.commodityId) || 1,
@@ -271,6 +283,7 @@ export function toBackendUpdateSchema(id: number | string, order: Partial<Order>
       : 'sales_order';
   }
   if (order.orderNumber !== undefined) payload.order_no = order.orderNumber;
+  if (order.isDummy !== undefined && order.type !== 'PURCHASE ORDER') payload.is_dummy = order.isDummy;
   if (order.fromClientId !== undefined) payload.from_client = parseNumId(order.fromClientId);
   if (order.toClientId !== undefined) payload.to_client = parseNumId(order.toClientId);
   if (order.commodityId !== undefined) payload.commodity = parseNumId(order.commodityId) || 1;
@@ -363,6 +376,20 @@ export const ordersApi = {
 
     if (typeof orderNumber !== 'string' || !orderNumber.trim()) {
       throw new Error('The API did not return a Purchase Order number');
+    }
+
+    return orderNumber.trim();
+  },
+
+  async getSalesOrderNumber(): Promise<string> {
+    const res = await apiClient.get<any>('/orders/ordernum/so/');
+    const data = res?.data?.data ?? res?.data ?? res;
+    const orderNumber = typeof data === 'string'
+      ? data
+      : data?.order_no ?? data?.order_number ?? data?.orderNumber ?? data?.number;
+
+    if (typeof orderNumber !== 'string' || !orderNumber.trim()) {
+      throw new Error('The API did not return a Sales Order number');
     }
 
     return orderNumber.trim();
