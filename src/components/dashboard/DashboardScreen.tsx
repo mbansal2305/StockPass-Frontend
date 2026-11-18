@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, Clock, Layers, Loader2, Plus, RefreshCw, Truck } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Building2, CheckCircle2, ClipboardList, Clock, Layers, Loader2, Plus, RefreshCw, Truck } from 'lucide-react';
 import { dashboardApi, DashboardData, DashboardTimeRange } from '../../api/dashboard';
 import { useApp } from '../../context/AppContext';
 import { formatDate, formatQuantityWithUnit, getTransportStatusBadge } from '../../utils/formatters';
@@ -18,7 +18,7 @@ const transportStages = [
 ];
 
 export const DashboardScreen: React.FC = () => {
-  const { navigate } = useApp();
+  const { navigate, transportGet, showToast } = useApp();
   const [timeRange, setTimeRange] = useState<DashboardTimeRange>('all_time');
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,6 +54,15 @@ export const DashboardScreen: React.FC = () => {
     return match?.[1] ?? 0;
   };
   const totalTransports = transportStages.reduce((total, stage) => total + statusCount(stage.status), 0);
+
+  const openTransport = async (transportId: string) => {
+    try {
+      await transportGet(transportId);
+      navigate('transport-detail', { transportId });
+    } catch (requestError: unknown) {
+      showToast(requestError instanceof Error ? requestError.message : 'Failed to load transport details', 'error');
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -178,7 +187,15 @@ export const DashboardScreen: React.FC = () => {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono font-bold text-slate-900">{order.order_no}</span>
+                          <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-mono font-bold ${
+                            order.type === 'sales_order'
+                              ? order.is_dummy
+                                ? 'bg-[#efebe9] text-[#5d4037]'
+                                : 'bg-blue-100 text-blue-800'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {order.order_no}
+                          </span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">{order.commodity}</span>
                         </div>
                         <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
@@ -225,15 +242,27 @@ export const DashboardScreen: React.FC = () => {
                 ) : dashboard.in_transit_transports.map(transport => {
                   const badge = getTransportStatusBadge(transport.status.toUpperCase());
                   return (
-                    <div key={transport.id} onClick={() => navigate('transport-detail', { transportId: String(transport.id) })} className="p-3.5 hover:bg-slate-50 transition-colors cursor-pointer text-xs">
+                    <div key={transport.id} onClick={() => void openTransport(String(transport.id))} className="p-3.5 hover:bg-slate-50 transition-colors cursor-pointer text-xs">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono font-bold text-slate-900">{transport.vehicle_no}</span>
-                            <span className="text-slate-400 font-mono text-[10px]">({transport.bill_no})</span>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span className="font-mono font-bold text-slate-900">{transport.bill_no}</span>
+                            <span className="flex min-w-0 max-w-full items-center gap-1 truncate text-[10px] font-sans font-semibold text-violet-700" title={`Billing firm: ${transport.billing_firm || '-'}`}>
+                              <Building2 className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{transport.billing_firm || '-'}</span>
+                            </span>
                           </div>
-                          <div className="text-[11px] text-slate-500 mt-1">Gross weight: {formatQuantityWithUnit(transport.gross_wt, transport.quantity_unit)}</div>
-                          {transport.unload_date && <div className="text-[10px] text-slate-400 mt-1">Unload: {formatDate(transport.unload_date)}</div>}
+                          <div className="flex flex-wrap items-center gap-x-2 mt-1">
+                            <span className="inline-flex items-center rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-mono font-bold text-sky-800">
+                              {transport.vehicle_no}
+                            </span>
+                            <span className="text-[11px] text-slate-500">{transport.transporter || '-'}</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-2 text-[11px] mt-1">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">{transport.commodity || '-'}</span>
+                            <span className="text-slate-500">Gross weight: {formatQuantityWithUnit(transport.gross_wt, transport.quantity_unit)}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-1">Unload: {transport.unload_date ? formatDate(transport.unload_date) : '-'}</div>
                         </div>
                         <span className={`inline-flex shrink-0 items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${badge.bg} ${badge.text} ${badge.border}`}>
                           {badge.label}

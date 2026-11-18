@@ -6,6 +6,7 @@ export interface DashboardExpiringOrder {
   id: string | number;
   order_no: string;
   type: string;
+  is_dummy: boolean;
   expiry_date: string;
   days_until_expiry: number;
   quantity: number;
@@ -21,6 +22,11 @@ export interface DashboardInTransitTransport {
   vehicle_no: string;
   bill_no: string;
   status: string;
+  transporter: string | null;
+  from_client: string | null;
+  to_client: string | null;
+  billing_firm: string | null;
+  commodity: string | null;
   gross_wt: number;
   quantity_unit: string;
   unload_date: string | null;
