@@ -15,6 +15,7 @@ import {
   ArrowRight,
   FilterX,
   Calendar,
+  Building2,
   FileSpreadsheet,
   MoreVertical
 } from 'lucide-react';
@@ -44,6 +45,9 @@ const shiftDateByMonths = (date: Date, months: number): Date => {
   shifted.setDate(Math.min(date.getDate(), lastDay));
   return shifted;
 };
+
+const formatTransportListDate = (date: string | null | undefined): string =>
+  formatDate(date).replace(/ (\d{4})$/, (_, year: string) => `'${year.slice(-2)}`);
 
 export const TransportListScreen: React.FC = () => {
   const {
@@ -532,7 +536,7 @@ export const TransportListScreen: React.FC = () => {
               <tr>
                 <th className="px-4 py-3">Loading Date</th>
                 <th className="px-4 py-3">Bill / Bilty</th>
-                <th className="px-4 py-3">Vehicle No</th>
+                <th className="w-[140px] max-w-[140px] px-4 py-3">Vehicle No</th>
                 <th className="px-4 py-3">Commodity</th>
                 <th className="px-4 py-3">Route (From → To)</th>
                 <th className="px-4 py-3 text-right">Gross Weight</th>
@@ -578,8 +582,9 @@ export const TransportListScreen: React.FC = () => {
                 paginatedTransports.map((t) => {
                   const comm = commodityMap.get(t.commodityId);
                   const transp = transporterMap.get(t.transporterId) || '-';
-                  const fromClient = clientMap.get(t.fromClientId) || '-';
-                  const toClient = clientMap.get(t.toClientId) || '-';
+                  const billingFirm = t.billingFirmName || clientMap.get(t.billingFirmId) || '-';
+                  const fromClient = t.fromClientName || clientMap.get(t.fromClientId) || '-';
+                  const toClient = t.toClientName || clientMap.get(t.toClientId) || '-';
                   const nextStatus = getNextStatus(t.status);
                   const grossWeightKg = t.grossWeightUnit === 'mt'
                     ? t.grossWeight * 1000
@@ -614,7 +619,7 @@ export const TransportListScreen: React.FC = () => {
                     >
                       {/* Loading Date */}
                       <td className="px-4 py-3 text-slate-600 tabular-nums whitespace-nowrap">
-                        {formatDate(t.loadingDate)}
+                        {formatTransportListDate(t.loadingDate)}
                       </td>
 
                       {/* Bill Number */}
@@ -626,13 +631,14 @@ export const TransportListScreen: React.FC = () => {
                         >
                           {t.billNumber}
                         </button>
-                        <div className="text-[10px] text-slate-500 truncate" title={clientMap.get(t.billingFirmId) || '-'}>
-                          {clientMap.get(t.billingFirmId) || '-'}
+                        <div className="mt-1 flex items-center gap-1 truncate text-[10px] font-sans font-semibold text-violet-700" title={`Billing firm: ${billingFirm}`}>
+                          <Building2 className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{billingFirm}</span>
                         </div>
                       </td>
 
                       {/* Vehicle Number */}
-                      <td className="px-4 py-3 font-mono font-bold text-slate-900">
+                      <td className="w-[140px] max-w-[140px] px-4 py-3 font-mono font-bold text-slate-900">
                         <button
                           type="button"
                           onClick={() => void openTransport(t.id, 'transport-detail')}
@@ -640,7 +646,7 @@ export const TransportListScreen: React.FC = () => {
                         >
                           {t.vehicleNumber}
                         </button>
-                        <div className="text-[10px] font-sans font-normal text-slate-500 truncate" title={transp}>
+                        <div className="text-[10px] font-sans font-normal text-slate-500 whitespace-normal break-words" title={transp}>
                           {transp}
                         </div>
                       </td>
@@ -686,7 +692,7 @@ export const TransportListScreen: React.FC = () => {
 
                       {/* Unload Date */}
                       <td className="px-4 py-3 text-slate-600 tabular-nums whitespace-nowrap">
-                        {formatDate(t.unloadDate)}
+                        {formatTransportListDate(t.unloadDate)}
                       </td>
 
                       {/* Actions: Vertical Three Dots with Dropdown */}

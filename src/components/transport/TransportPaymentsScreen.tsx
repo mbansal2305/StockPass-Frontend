@@ -7,7 +7,7 @@ import { masterApi } from '../../api/master';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
-import { Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, Wallet, X, Calendar } from 'lucide-react';
+import { Building2, Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, Wallet, X, Calendar } from 'lucide-react';
 import { TransportPaymentBill } from './TransportPaymentBill';
 import { MultiSearchableSelect, SearchableOption } from '../common/SearchableSelect';
 
@@ -32,6 +32,11 @@ const shiftDateByMonths = (date: Date, months: number): Date => {
   const lastDay = new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0).getDate();
   shifted.setDate(Math.min(date.getDate(), lastDay));
   return shifted;
+};
+
+const formatDateInputDisplay = (date: string): string => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
 };
 
 interface PaymentDraft {
@@ -725,8 +730,8 @@ export const TransportPaymentsScreen: React.FC = () => {
               <th className="w-[75px] px-2 py-2 text-right">Left</th>
               {isPendingTab && <th className="w-[120px] px-1 py-2">Export Amtount</th>}
               <th className="w-[145px] px-2 py-2">Notes</th>
-              <th className="w-[82px] px-1 py-2">Status</th>
-              <th className="w-[68px] px-1 py-2 text-center">Submit</th>
+              <th className="w-[72px] px-0 py-2">Status</th>
+              <th className="w-[60px] px-0 py-2 text-center">Submit</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -754,17 +759,15 @@ export const TransportPaymentsScreen: React.FC = () => {
               const totalRent = Math.trunc(draft.rentType === 'per_unit' ? billableQuantity * draft.rent : draft.rent);
               const paymentAmounts = effectivePaymentAmounts(draft, exportPaymentDraft);
               const left = totalRent - draft.advanceByClient - paymentAmounts.advanceByFirm - draft.shortageAmount - paymentAmounts.finalPaid + draft.extraAmount;
-              const party = clientMap.get(transport.billingFirmId) || '-';
-              const carrier = transporterMap.get(transport.transporterId) || '-';
-              const displayedParty = party.length > 15 ? `${party.slice(0, 15)}...` : party;
-              const displayedCarrier = carrier.length > 12 ? `${carrier.slice(0, 12)}...` : carrier;
+              const party = transport.billingFirmName || clientMap.get(transport.billingFirmId) || '-';
+              const carrier = transport.transporterName || transporterMap.get(transport.transporterId) || '-';
               const formattedLoadingDate = formatDate(transport.loadingDate);
               const loadingYear = formattedLoadingDate.match(/\b\d{4}\b$/)?.[0];
               const loadingDateLabel = loadingYear
                 ? formattedLoadingDate.slice(0, -loadingYear.length).trim()
                 : formattedLoadingDate;
-              const from = clientMap.get(transport.fromClientId) || '-';
-              const to = clientMap.get(transport.toClientId) || '-';
+              const from = transport.fromClientName || clientMap.get(transport.fromClientId) || '-';
+              const to = transport.toClientName || clientMap.get(transport.toClientId) || '-';
               const isFocusedRow = focusedRowId === transport.id;
               const isHoveredRow = hoveredRowId === transport.id;
               const rowColor = isFocusedRow
@@ -879,13 +882,16 @@ export const TransportPaymentsScreen: React.FC = () => {
                     <div className="w-full">{loadingDateLabel}</div>
                     {loadingYear && <div className="w-full">{loadingYear}</div>}
                   </td>
-                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[107px] z-20 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[107px] z-20 w-[95px] max-w-[95px] overflow-hidden px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="font-mono font-semibold text-slate-900">{transport.billNumber}</div>
-                    <div className="truncate text-[10px] text-slate-500" title={party}>{displayedParty}</div>
+                    <div className="mt-1 flex min-w-0 items-start gap-1 overflow-hidden text-[10px] font-semibold text-violet-700" title={`Billing firm: ${party}`}>
+                      <Building2 className="h-3 w-3 shrink-0" />
+                      <span className="min-w-0 max-w-[13ch] whitespace-normal break-words">{party}</span>
+                    </div>
                   </td>
-                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[202px] z-20 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
-                    <div className="truncate font-mono text-slate-800" title={transport.vehicleNumber}>{transport.vehicleNumber}</div>
-                    <div className="truncate text-[10px] text-slate-500" title={carrier}>{displayedCarrier}</div>
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[202px] z-20 w-[80px] max-w-[80px] overflow-hidden px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
+                    <div className="truncate font-mono font-bold text-slate-800" title={transport.vehicleNumber}>{transport.vehicleNumber}</div>
+                    <div className="min-w-0 max-w-[14ch] whitespace-normal break-words text-[10px] text-slate-500" title={carrier}>{carrier}</div>
                   </td>
                   <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[282px] z-20 px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
                     <div className="truncate text-slate-700" title={from}>{from}</div>
@@ -909,7 +915,28 @@ export const TransportPaymentsScreen: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-2 py-2">
-                    <input type="date" value={draft.unloadDate} onChange={event => updateDraft(transport, { unloadDate: event.target.value })} disabled={!isPendingTab} className="w-full min-w-[115px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" />
+                    <div
+                      onClick={event => {
+                        if (!isPendingTab) return;
+                        const dateInput = event.currentTarget.querySelector<HTMLInputElement>('input[type="date"]');
+                        if (dateInput?.showPicker) dateInput.showPicker();
+                        else dateInput?.click();
+                      }}
+                      className={`relative w-full min-w-[115px] cursor-pointer rounded border border-slate-300 px-1.5 py-1 pr-6 text-[11px] focus-within:ring-2 focus-within:ring-blue-500 ${!isPendingTab ? 'cursor-not-allowed opacity-70' : ''}`}
+                    >
+                      <span className={`pointer-events-none ${draft.unloadDate ? 'text-slate-900' : 'text-slate-400'}`}>
+                        {formatDateInputDisplay(draft.unloadDate) || 'DD/MM/YYYY'}
+                      </span>
+                      <input
+                        type="date"
+                        aria-label={`Unload date for bill ${transport.billNumber}`}
+                        value={draft.unloadDate}
+                        onChange={event => updateDraft(transport, { unloadDate: event.target.value })}
+                        disabled={!isPendingTab}
+                        className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
+                      />
+                      <Calendar className="pointer-events-none absolute right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                    </div>
                   </td>
                   <td className="px-2 py-2">
                     <div className="flex items-center gap-1">
@@ -937,8 +964,8 @@ export const TransportPaymentsScreen: React.FC = () => {
                     </div>
                   </td>}
                   <td className="px-2 py-2"><input aria-label="Payment notes" value={draft.notes} onChange={event => updateDraft(transport, { notes: event.target.value })} disabled={!isPendingTab} className="w-full min-w-[150px] rounded border border-slate-300 px-1.5 py-1 text-[11px] text-slate-900 disabled:cursor-not-allowed disabled:opacity-70" /></td>
-                  <td className="px-1 py-2">
-                    <select value={isPaidTab && !canManagePaidTransports ? transport.status : draft.status} onChange={event => updateDraft(transport, { status: event.target.value as TransportStatus })} disabled={isPaidTab && !canManagePaidTransports} className={`w-full rounded border px-1 py-1 text-[10px] font-semibold disabled:cursor-not-allowed disabled:opacity-70 ${statusSelectColor}`}>
+                  <td className="px-0 py-2">
+                    <select value={isPaidTab && !canManagePaidTransports ? transport.status : draft.status} onChange={event => updateDraft(transport, { status: event.target.value as TransportStatus })} disabled={isPaidTab && !canManagePaidTransports} className={`w-[68px] rounded border px-1 py-1 text-[10px] font-semibold disabled:cursor-not-allowed disabled:opacity-70 ${statusSelectColor}`}>
                       <option value="DRAFT">Draft</option>
                       <option value="PENDING">Pending</option>
                       <option value="DELIVERY">Delivery</option>
@@ -946,8 +973,8 @@ export const TransportPaymentsScreen: React.FC = () => {
                       <option value="PAID">Paid</option>
                     </select>
                   </td>
-                  <td className="px-1 py-2">
-                    <button type="button" disabled={savingId === transport.id || !hasChanges || (isPaidTab && !canManagePaidTransports)} onClick={() => void savePayment(transport)} className={`w-full rounded px-1 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${submittedRow && !hasChanges ? 'bg-emerald-700 hover:bg-emerald-700' : 'bg-slate-900 hover:bg-slate-700'}`}>
+                  <td className="px-0 py-2">
+                    <button type="button" disabled={savingId === transport.id || !hasChanges || (isPaidTab && !canManagePaidTransports)} onClick={() => void savePayment(transport)} className={`mx-auto block w-[56px] rounded px-1 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${submittedRow && !hasChanges ? 'bg-emerald-700 hover:bg-emerald-700' : 'bg-slate-900 hover:bg-slate-700'}`}>
                       {savingId === transport.id ? 'Saving...' : submittedRow && !hasChanges ? 'Submitted' : 'Submit'}
                     </button>
                   </td>

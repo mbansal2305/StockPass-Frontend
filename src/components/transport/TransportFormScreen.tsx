@@ -11,6 +11,7 @@ import {
   Truck,
   Building,
   CheckCircle2,
+  Calendar,
 } from 'lucide-react';
 import { formatQuantityWithUnit, formatCurrency } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
@@ -49,6 +50,46 @@ const sameId = (left: string, right: string): boolean => {
   return /^\d+$/.test(leftId) && /^\d+$/.test(rightId) && Number(leftId) === Number(rightId);
 };
 
+interface TransportDateInputProps {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+}
+
+const formatTransportDate = (value: string): string => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match ? `${match[3]} / ${match[2]} / ${match[1]}` : '';
+};
+
+const TransportDateInput: React.FC<TransportDateInputProps> = ({ id, value, onChange, required }) => (
+  <div className="relative">
+    <button
+      id={id}
+      type="button"
+      aria-label={`Choose ${id.replace(/^transport-/, '').replace(/-/g, ' ')} date`}
+      aria-required={required}
+      onClick={event => {
+        const dateInput = event.currentTarget.parentElement?.querySelector<HTMLInputElement>('input[type="date"]');
+        if (dateInput?.showPicker) dateInput.showPicker();
+        else dateInput?.click();
+      }}
+      className="flex w-full items-center justify-between rounded-lg border border-slate-300 px-3 py-2 text-left text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+    >
+      <span>{formatTransportDate(value) || 'DD / MM / YYYY'}</span>
+      <Calendar className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+    </button>
+    <input
+      type="date"
+      aria-hidden="true"
+      tabIndex={-1}
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
+    />
+  </div>
+);
+
 export const TransportFormScreen: React.FC = () => {
   const {
     transports,
@@ -67,22 +108,20 @@ export const TransportFormScreen: React.FC = () => {
   const existingTransport = editingTransportId ? transports.find(t => sameId(t.id, editingTransportId)) : null;
 
   // Context prefill from order if navigated via "Create Transport" button
-  const prefillOrderId = pageParams.prefillOrderId;
   const prefillCommodityId = pageParams.prefillCommodityId;
   const prefillFromClientId = pageParams.prefillFromClientId;
   const prefillToClientId = pageParams.prefillToClientId;
-  const defaultBillingFirm = clients.find(c => c.type === 'MY_FIRM')?.id || clients[0]?.id || '';
 
   // Form State
   const [formData, setFormData] = useState({
     billNumber: '',
     loadingDate: getTodayDate(),
-    billingFirmId: defaultBillingFirm,
-    commodityId: prefillCommodityId || commodities[0]?.id || '',
-    fromClientId: prefillFromClientId || clients[0]?.id || '',
-    toClientId: prefillToClientId || clients[1]?.id || clients[0]?.id || '',
+    billingFirmId: '',
+    commodityId: prefillCommodityId || '',
+    fromClientId: prefillFromClientId || '',
+    toClientId: prefillToClientId || '',
     vehicleNumber: '',
-    transporterId: transporters[0]?.id || '',
+    transporterId: '',
     grossWeight: 0,
     grossWeightUnit: 'quintal' as QuantityUnit,
     bagNumbers: 0,
@@ -195,13 +234,6 @@ export const TransportFormScreen: React.FC = () => {
       setSalesOrders(nextSalesOrders);
       setPurchaseOrders(nextPurchaseOrders);
       setSelectionCommodities(nextCommodities);
-      setFormData(current => ({
-        ...current,
-        billingFirmId: current.billingFirmId || nextFirms[0]?.id || '',
-        fromClientId: current.fromClientId || nextLocations[0]?.id || '',
-        toClientId: current.toClientId || nextLocations[1]?.id || nextLocations[0]?.id || '',
-        transporterId: current.transporterId || nextAgencies[0]?.id || ''
-      }));
     });
 
     return () => {
@@ -242,34 +274,15 @@ export const TransportFormScreen: React.FC = () => {
       });
       setItems(existingTransport.items);
     } else {
-      // Auto-generate Bill number
-      const year = new Date().getFullYear();
-      const randNum = Math.floor(1000 + Math.random() * 9000);
-      const randomBill = `BIL-${year}-${randNum}`;
-
-      // Pick matching active order if not prefilled
-      const matchingOrder = prefillOrderId 
-        ? orders.find(o => o.id === prefillOrderId)
-        : orders.find(o => o.status === 'PENDING') || orders[0];
-
-      const initialCommodity = matchingOrder ? matchingOrder.commodityId : (commodities[0]?.id || '');
-      const initialFrom = matchingOrder ? matchingOrder.fromClientId : (clients[0]?.id || '');
-      const initialTo = matchingOrder ? matchingOrder.toClientId : (clients[1]?.id || '');
-
       setFormData(prev => ({
         ...prev,
-        billNumber: randomBill,
-        commodityId: initialCommodity,
-        fromClientId: initialFrom,
-        toClientId: initialTo,
-        vehicleNumber: 'MP09HH' + Math.floor(1000 + Math.random() * 9000),
         anugya: false,
         gatepass: false
       }));
 
       setItems([]);
     }
-  }, [existingTransport, prefillOrderId]);
+  }, [existingTransport]);
 
   // When gross weight changes in normal 1-item mode, sync the single allocated quantity
   const handleGrossWeightChange = (newGross: number) => {
@@ -478,6 +491,7 @@ export const TransportFormScreen: React.FC = () => {
 
     if (!formData.billNumber.trim()) newErrors.billNumber = 'Bill / Bilty number is required';
     if (!formData.vehicleNumber.trim()) newErrors.vehicleNumber = 'Vehicle number is required';
+    if (!formData.loadingDate) newErrors.loadingDate = 'Loading date is required';
     if (!formData.billingFirmId) newErrors.billingFirmId = 'Billing firm is required';
     if (!formData.commodityId) newErrors.commodityId = 'Commodity is required';
     if (!formData.transporterId) newErrors.transporterId = 'Transporter is required';
@@ -613,8 +627,8 @@ export const TransportFormScreen: React.FC = () => {
                 required
                 value={formData.vehicleNumber}
                 onChange={(e) => setFormData({ ...formData, vehicleNumber: e.target.value })}
-                placeholder="e.g. MP04AB1234"
-                className={`w-full text-xs border rounded-lg px-3 py-2 font-mono font-bold uppercase text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none ${
+                placeholder="Enter vehicle number"
+                className={`w-full text-xs border rounded-lg px-3 py-2 font-mono font-bold uppercase placeholder:normal-case text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none ${
                   errors.vehicleNumber ? 'border-red-400 bg-red-50/30' : 'border-slate-300'
                 }`}
               />
@@ -630,35 +644,40 @@ export const TransportFormScreen: React.FC = () => {
                 required
                 value={formData.billNumber}
                 onChange={(e) => setFormData({ ...formData, billNumber: e.target.value })}
-                placeholder="BIL-2026-0000"
+                placeholder="Enter bill number"
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Transporter Agency *</label>
-              <select
+              <label htmlFor="transport-agency" className="block text-xs font-medium text-slate-700 mb-1">Transporter Agency *</label>
+              <SearchableSelect
+                id="transport-agency"
                 value={formData.transporterId}
-                onChange={(e) => setFormData({ ...formData, transporterId: e.target.value })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white font-medium"
-              >
-                {agencyOptionsWithFallback.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.city || 'Depot'})
-                  </option>
-                ))}
-              </select>
+                onChange={transporterId => setFormData({ ...formData, transporterId })}
+                placeholder="Select or search transporter agency"
+                options={agencyOptionsWithFallback.map(agency => ({
+                  id: agency.id,
+                  label: `${agency.name} (${agency.city || 'Depot'})`,
+                  searchText: `${agency.agency || ''} ${agency.city || ''} ${agency.phone || agency.phone_number || ''}`
+                }))}
+              />
+              {errors.transporterId && (
+                <p className="text-[10px] text-red-600 mt-1">{errors.transporterId}</p>
+              )}
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Loading Date *</label>
-              <input
-                type="date"
-                required
+              <label htmlFor="transport-loading-date" className="block text-xs font-medium text-slate-700 mb-1">Loading Date *</label>
+              <TransportDateInput
+                id="transport-loading-date"
                 value={formData.loadingDate}
-                onChange={(event) => setFormData({ ...formData, loadingDate: event.target.value })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                onChange={loadingDate => setFormData({ ...formData, loadingDate })}
+                required
               />
+              {errors.loadingDate && (
+                <p className="text-[10px] text-red-600 mt-1">{errors.loadingDate}</p>
+              )}
             </div>
           </div>
 
@@ -957,12 +976,11 @@ export const TransportFormScreen: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Unload Date</label>
-              <input
-                type="date"
+              <label htmlFor="transport-unload-date" className="block text-xs font-medium text-slate-700 mb-1">Unload Date</label>
+              <TransportDateInput
+                id="transport-unload-date"
                 value={formData.unloadDate}
-                onChange={(e) => setFormData({ ...formData, unloadDate: e.target.value })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                onChange={unloadDate => setFormData({ ...formData, unloadDate })}
               />
             </div>
 

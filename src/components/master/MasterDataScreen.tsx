@@ -930,10 +930,10 @@ export const MasterDataScreen: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setSelectedClientForDetails(client)}
-                            className="font-semibold text-slate-900 hover:text-blue-600 text-left cursor-pointer"
+                            className="block max-w-[240px] whitespace-normal break-words font-semibold text-slate-900 hover:text-blue-600 text-left cursor-pointer"
                             title={client.name}
                           >
-                            {client.name.length > 30 ? `${client.name.slice(0, 30)}...` : client.name}
+                            {client.name}
                           </button>
                         </td>
                         <td className="px-4 py-3">
@@ -947,7 +947,7 @@ export const MasterDataScreen: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-slate-600 max-w-xs">
-                          <div className="flex items-center gap-2 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
                             {client.location_url && (
                               <a
                                 href={client.location_url}
@@ -955,21 +955,19 @@ export const MasterDataScreen: React.FC = () => {
                                 rel="noopener noreferrer"
                                 aria-label={`Open location for ${client.name}`}
                                 title="Open location"
-                                className="inline-flex shrink-0 items-center text-blue-600 hover:text-blue-800"
+                                className="inline-flex shrink-0 items-center rounded-full border border-blue-200 bg-blue-50 p-1.5 text-blue-600 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-100 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                               >
                                 <MapPin className="w-3.5 h-3.5" />
                               </a>
                             )}
-                            <span title={client.address || undefined}>
-                              {client.address
-                                ? client.address.length > 30
-                                  ? `${client.address.slice(0, 30)}...`
-                                  : client.address
-                                : '-'}
-                            </span>
-                          </div>
-                          <div className="mt-1 text-[11px] text-slate-500 whitespace-nowrap">
-                            {client.city} {client.pincode && `· ${client.pincode}`}
+                            <div className="min-w-0">
+                              <span className="block max-w-[240px] whitespace-normal break-words" title={client.address || undefined}>
+                                {client.address || '-'}
+                              </span>
+                              <div className="mt-1 text-[11px] text-slate-500 whitespace-nowrap">
+                                {client.city} {client.pincode && `· ${client.pincode}`}
+                              </div>
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-slate-600 whitespace-nowrap">

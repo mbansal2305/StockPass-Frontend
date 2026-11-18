@@ -569,13 +569,12 @@ export const OrderListScreen: React.FC = () => {
                     REM QTY <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="px-4 py-3">START DATE</th>
                 <th 
                   onClick={() => toggleSort('expiryDate')}
                   className="px-4 py-3 cursor-pointer hover:text-slate-900"
                 >
                   <div className="flex items-center gap-1">
-                    VALIDITY <ArrowUpDown className="w-3 h-3" />
+                    CONTRACT PERIOD <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
                 <th className="px-4 py-3">NOTES</th>
@@ -585,13 +584,13 @@ export const OrderListScreen: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-slate-500">
+                  <td colSpan={11} className="py-12 text-center text-slate-500">
                     <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading orders...</span>
                   </td>
                 </tr>
               ) : loadError ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center">
+                  <td colSpan={11} className="py-12 text-center">
                     <p className="text-red-600 font-medium">{loadError}</p>
                     <button type="button" onClick={() => setReloadSequence(sequence => sequence + 1)} className="mt-2 text-xs font-semibold text-blue-700 hover:underline">
                       Retry
@@ -600,7 +599,7 @@ export const OrderListScreen: React.FC = () => {
                 </tr>
               ) : paginatedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center">
+                  <td colSpan={11} className="py-12 text-center">
                     <p className="text-slate-500 font-medium">No orders found matching criteria</p>
                     <p className="text-slate-400 text-[11px] mt-1">Adjust filters or create a new order</p>
                     <button
@@ -684,9 +683,9 @@ export const OrderListScreen: React.FC = () => {
                         {order.type === 'PURCHASE ORDER' ? (
                           <div>
                             <div className="truncate" title={`From: ${fromClient}`}>
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded mr-1.5 inline-block">
+                              {/* <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded mr-1.5 inline-block">
                                 From
-                              </span>
+                              </span> */}
                               <span className="text-slate-800 font-semibold">{fromClient}</span>
                             </div>
                             <div className="mt-1 flex items-center gap-1 truncate text-[10px] font-semibold text-violet-700" title={`Billing firm: ${billingFirm}`}>
@@ -697,9 +696,9 @@ export const OrderListScreen: React.FC = () => {
                         ) : (
                           <div>
                             <div className="truncate" title={`To: ${toClient}`}>
-                              <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded mr-1.5 inline-block">
+                              {/* <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded mr-1.5 inline-block">
                                 To
-                              </span>
+                              </span> */}
                               <span className="text-slate-800 font-semibold">{toClient}</span>
                             </div>
                             <div className="mt-1 flex items-center gap-1 truncate text-[10px] font-semibold text-violet-700" title={`Billing firm: ${billingFirm}`}>
@@ -741,37 +740,31 @@ export const OrderListScreen: React.FC = () => {
                         </span>
                       </td>
 
-                      {/* Start Date */}
+                      {/* Contract Period */}
                       <td className="px-4 py-3 whitespace-nowrap text-slate-600 tabular-nums">
                         {formatShortDate(order.startDate)}
-                        <div className={`mt-0.5 text-[10px] font-semibold ${hasStarted ? 'text-emerald-600' : 'text-slate-500'}`}>
-                          {hasStarted ? 'contract started' : 'upcoming'}
+                        <div className="mt-0.5 text-[10px] text-slate-500">
+                          Expiry: {formatShortDate(order.expiryDate)}
                         </div>
-                      </td>
-
-                      {/* Validity */}
-                      <td className="px-4 py-3 text-slate-600 tabular-nums whitespace-nowrap">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3 text-slate-400" />
-                          <span>{formatShortDate(order.expiryDate)}</span>
+                        <div className={`mt-0.5 text-[10px] font-semibold ${
+                          daysMeta.isExpired
+                            ? 'text-red-600'
+                            : !hasStarted
+                            ? 'text-slate-500'
+                            : daysMeta.isUrgent
+                            ? 'text-amber-600'
+                            : 'text-emerald-600'
+                        }`}>
+                          {daysMeta.isExpired ? (
+                            <span className="inline-flex items-center gap-0.5">
+                              <AlertTriangle className="h-2.5 w-2.5" /> Expired
+                            </span>
+                          ) : !hasStarted ? (
+                            'Upcoming'
+                          ) : (
+                            `Started · ${daysMeta.days} day${daysMeta.days === 1 ? '' : 's'} left`
+                          )}
                         </div>
-                        {order.status === 'PENDING' && (
-                          <div className="mt-0.5">
-                            {daysMeta.isExpired ? (
-                              <span className="text-[10px] font-semibold text-red-600 flex items-center gap-0.5">
-                                <AlertTriangle className="w-2.5 h-2.5" /> Expired
-                              </span>
-                            ) : daysMeta.isUrgent ? (
-                              <span className="text-[10px] font-semibold text-amber-600">
-                                {daysMeta.days} days left
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-slate-400">
-                                {daysMeta.days} days left
-                              </span>
-                            )}
-                          </div>
-                        )}
                       </td>
 
                       {/* Notes */}

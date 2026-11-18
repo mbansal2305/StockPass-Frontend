@@ -23,26 +23,6 @@ const formatDateInputValue = (value: string): string => {
   return match ? `${match[3]} / ${match[2]} / ${match[1]}` : value;
 };
 
-const parseDateInputValue = (value: string): string | null => {
-  const match = /^\s*(\d{2})\s*\/\s*(\d{2})\s*\/\s*(\d{4})\s*$/.exec(value);
-  if (!match) return null;
-
-  const [, dayText, monthText, yearText] = match;
-  const day = Number(dayText);
-  const month = Number(monthText);
-  const year = Number(yearText);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== month - 1 ||
-    date.getUTCDate() !== day
-  ) {
-    return null;
-  }
-
-  return `${yearText}-${monthText}-${dayText}`;
-};
-
 const FormattedDateInput: React.FC<FormattedDateInputProps> = ({
   id,
   value,
@@ -50,51 +30,31 @@ const FormattedDateInput: React.FC<FormattedDateInputProps> = ({
   className,
   required
 }) => {
-  const [inputValue, setInputValue] = useState(() => formatDateInputValue(value));
-
-  useEffect(() => {
-    setInputValue(formatDateInputValue(value));
-  }, [value]);
-
   return (
     <div className="relative">
-      <input
+      <button
         id={id}
-        type="text"
-        required={required}
-        pattern="[0-9]{2} */ *[0-9]{2} */ *[0-9]{4}"
-        value={inputValue}
-        placeholder="DD / MM / YYYY"
-        onChange={event => {
-          const nextValue = event.target.value;
-          setInputValue(nextValue);
-          const parsedValue = parseDateInputValue(nextValue);
-          if (parsedValue) onChange(parsedValue);
+        type="button"
+        aria-label={`Choose ${id.replace(/^order-/, '').replace(/-/g, ' ')} date`}
+        aria-required={required}
+        onClick={event => {
+          const dateInput = event.currentTarget.parentElement?.querySelector<HTMLInputElement>('input[type="date"]');
+          if (dateInput?.showPicker) dateInput.showPicker();
+          else dateInput?.click();
         }}
-        onBlur={() => {
-          const parsedValue = parseDateInputValue(inputValue);
-          if (parsedValue) {
-            onChange(parsedValue);
-          } else {
-            setInputValue('');
-            onChange('');
-          }
-        }}
-        className={`${className} pr-10`}
+        className={`${className} flex items-center justify-between text-left`}
+      >
+        <span>{formatDateInputValue(value) || 'DD / MM / YYYY'}</span>
+        <Calendar className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+      </button>
+      <input
+        type="date"
+        aria-hidden="true"
+        tabIndex={-1}
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
       />
-      <div className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-500">
-        <Calendar className="h-4 w-4" aria-hidden="true" />
-        <input
-          type="date"
-          aria-label={`Choose ${id.replace(/^order-/, '').replace(/-/g, ' ')} date`}
-          value={value}
-          onChange={event => {
-            setInputValue(formatDateInputValue(event.target.value));
-            onChange(event.target.value);
-          }}
-          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-        />
-      </div>
     </div>
   );
 };
