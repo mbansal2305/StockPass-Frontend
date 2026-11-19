@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Transport, TransportStatus, Transporter } from '../../types';
+import { Broker, Transport, TransportStatus, Transporter } from '../../types';
 import { PaginatedTransportsResult, transportsApi } from '../../api';
 import { masterApi } from '../../api/master';
 import {
@@ -30,6 +30,17 @@ const toNumericIds = (ids: string[]): number[] | undefined => {
   return numericIds.length ? numericIds : undefined;
 };
 
+const DIRECT_DEAL_FILTER_ID = 'direct-deal';
+
+const toBrokerIds = (ids: string[]): (number | null)[] | undefined => {
+  const brokerIds = ids.flatMap(id => {
+    if (id === DIRECT_DEAL_FILTER_ID) return [null];
+    const numericId = Number(id);
+    return Number.isSafeInteger(numericId) && numericId > 0 ? [numericId] : [];
+  });
+  return brokerIds.length ? brokerIds : undefined;
+};
+
 type DatePreset = 'all' | 'month' | 'three-months' | 'six-months' | 'range';
 
 const toDateInputValue = (date: Date): string => {
@@ -51,10 +62,6 @@ const formatTransportListDate = (date: string | null | undefined): string =>
 
 export const TransportListScreen: React.FC = () => {
   const {
-    commodities,
-    clients,
-    transporters,
-    orders,
     currentUser,
     refreshData,
     showToast,
@@ -79,27 +86,15 @@ export const TransportListScreen: React.FC = () => {
   const [transporterFilter, setTransporterFilter] = useState<string[]>([]);
   const [billingFirmFilter, setBillingFirmFilter] = useState<string[]>([]);
   const [partyFilter, setPartyFilter] = useState<string[]>([]);
+  const [brokerFilter, setBrokerFilter] = useState<string[]>([]);
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   const [loadingDateFrom, setLoadingDateFrom] = useState('');
   const [loadingDateTo, setLoadingDateTo] = useState('');
   const [transporterOptions, setTransporterOptions] = useState<Transporter[]>([]);
-  const [partyOptions, setPartyOptions] = useState(() => clients.map(client => ({
-    id: client.id,
-    label: client.city ? `${client.name} (${client.city})` : client.name,
-    searchText: `${client.type} ${client.city || ''}`
-  })));
-  const [commodityOptions, setCommodityOptions] = useState(() => commodities.map(commodity => ({
-    id: commodity.id,
-    label: commodity.type ? `${commodity.name} (${commodity.type})` : commodity.name,
-    searchText: commodity.type
-  })));
-  const [billingFirmOptions, setBillingFirmOptions] = useState(() => clients
-    .filter(client => String(client.type).toUpperCase() === 'MY_FIRM')
-    .map(client => ({
-      id: client.id,
-      label: client.city ? `${client.name} (${client.city})` : client.name,
-      searchText: client.city || ''
-    })));
+  const [brokerOptions, setBrokerOptions] = useState<Broker[]>([]);
+  const [partyOptions, setPartyOptions] = useState<{ id: string; label: string; searchText: string }[]>([]);
+  const [commodityOptions, setCommodityOptions] = useState<{ id: string; label: string; searchText?: string }[]>([]);
+  const [billingFirmOptions, setBillingFirmOptions] = useState<{ id: string; label: string; searchText: string }[]>([]);
 
   // Pagination
   const [currentPageNum, setCurrentPageNum] = useState(1);
@@ -125,18 +120,15 @@ export const TransportListScreen: React.FC = () => {
   const isPaidTab = activeTab === 'PAID';
 
   // Lookups
-  const commodityMap = useMemo(() => new Map(commodities.map(c => [c.id, c])), [commodities]);
-  const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c.name])), [clients]);
-  const transporterMap = useMemo(() => new Map(transporters.map(t => [t.id, t.name])), [transporters]);
-
   useEffect(() => {
     let isCurrent = true;
     Promise.allSettled([
       masterApi.selectAllClients(),
       masterApi.selectFirms(),
       masterApi.selectCommodities(),
+      masterApi.selectBrokers(),
       transportsApi.selectAgencyOptions()
-    ]).then(([clientsResult, firmsResult, commoditiesResult, transportersResult]) => {
+    ]).then(([clientsResult, firmsResult, commoditiesResult, brokersResult, transportersResult]) => {
       if (!isCurrent) return;
       if (clientsResult.status === 'fulfilled') {
         setPartyOptions(clientsResult.value.map(client => ({
@@ -159,12 +151,11 @@ export const TransportListScreen: React.FC = () => {
           searchText: commodity.type
         })));
       }
+      if (brokersResult.status === 'fulfilled') setBrokerOptions(brokersResult.value);
       if (transportersResult.status === 'fulfilled') {
         setTransporterOptions(transportersResult.value);
-      } else {
-        setTransporterOptions(transporters);
       }
-      });
+    });
 
     return () => {
       isCurrent = false;
@@ -186,12 +177,13 @@ export const TransportListScreen: React.FC = () => {
       transporter: toNumericIds(transporterFilter),
       billing_firm: toNumericIds(billingFirmFilter),
       party: toNumericIds(partyFilter),
+      broker: toBrokerIds(brokerFilter),
       loading_start_date: loadingDateFrom || undefined,
       loading_end_date: loadingDateTo || undefined,
       search: debouncedSearchTerm || undefined,
       page: currentPageNum,
       page_size: pageSize
-    }, { clients, commodities, orders, transporters })
+    })
       .then(result => {
         if (isCurrent) setServerPage(result);
       })
@@ -211,16 +203,13 @@ export const TransportListScreen: React.FC = () => {
     transporterFilter,
     billingFirmFilter,
     partyFilter,
+    brokerFilter,
     loadingDateFrom,
     loadingDateTo,
     debouncedSearchTerm,
     currentPageNum,
     pageSize,
-    reloadSequence,
-    clients,
-    commodities,
-    orders,
-    transporters
+    reloadSequence
   ]);
 
   const openTransport = async (transportId: string, destination: 'transport-detail' | 'transport-form') => {
@@ -275,6 +264,7 @@ export const TransportListScreen: React.FC = () => {
     setTransporterFilter([]);
     setBillingFirmFilter([]);
     setPartyFilter([]);
+    setBrokerFilter([]);
     setDatePreset('all');
     setLoadingDateFrom('');
     setLoadingDateTo('');
@@ -375,7 +365,21 @@ export const TransportListScreen: React.FC = () => {
               placeholder="All Billing Firms"
               onChange={values => { setBillingFirmFilter(values); setCurrentPageNum(1); }}
             />
-            {(searchTerm || commodityFilter.length > 0 || transporterFilter.length > 0 || billingFirmFilter.length > 0 || partyFilter.length > 0 || loadingDateFrom || loadingDateTo) && (
+            <MultiSearchableSelect
+              id="transport-broker-filter"
+              selectedIds={brokerFilter}
+              options={[
+                { id: DIRECT_DEAL_FILTER_ID, label: 'Direct Deal' },
+                ...brokerOptions.map(broker => ({
+                  id: broker.id,
+                  label: broker.city ? `${broker.name} (${broker.city})` : broker.name,
+                  searchText: broker.city
+                }))
+              ]}
+              placeholder="All Brokers"
+              onChange={values => { setBrokerFilter(values); setCurrentPageNum(1); }}
+            />
+            {(searchTerm || commodityFilter.length > 0 || transporterFilter.length > 0 || billingFirmFilter.length > 0 || partyFilter.length > 0 || brokerFilter.length > 0 || loadingDateFrom || loadingDateTo) && (
               <button
                 type="button"
                 onClick={handleResetFilters}
@@ -580,11 +584,11 @@ export const TransportListScreen: React.FC = () => {
                 </tr>
               ) : (
                 paginatedTransports.map((t) => {
-                  const comm = commodityMap.get(t.commodityId);
-                  const transp = transporterMap.get(t.transporterId) || '-';
-                  const billingFirm = t.billingFirmName || clientMap.get(t.billingFirmId) || '-';
-                  const fromClient = t.fromClientName || clientMap.get(t.fromClientId) || '-';
-                  const toClient = t.toClientName || clientMap.get(t.toClientId) || '-';
+                  const commodityName = t.commodityName || '-';
+                  const transp = t.transporterName || '-';
+                  const billingFirm = t.billingFirmName || '-';
+                  const fromClient = t.fromClientName || '-';
+                  const toClient = t.toClientName || '-';
                   const nextStatus = getNextStatus(t.status);
                   const grossWeightKg = t.grossWeightUnit === 'mt'
                     ? t.grossWeight * 1000
@@ -653,8 +657,8 @@ export const TransportListScreen: React.FC = () => {
 
                       {/* Commodity */}
                       <td className="px-4 py-3 text-slate-800 font-medium">
-                        {comm?.name || '-'}
-                        {comm?.type && <span className="text-slate-500 font-normal"> ({comm.type})</span>}
+                        {commodityName}
+                        {t.commodityType && <span className="text-slate-500 font-normal"> ({t.commodityType})</span>}
                         {t.bagNumbers && (
                           <span className="text-[10px] text-slate-400 block tabular-nums">
                             {t.bagNumbers} bags

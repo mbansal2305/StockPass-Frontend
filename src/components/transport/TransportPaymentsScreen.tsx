@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { zipSync } from 'fflate';
 import { useApp } from '../../context/AppContext';
-import { Transport, TransportRentType, QuantityUnit, TransportStatus, Transporter } from '../../types';
+import { Broker, Transport, TransportRentType, QuantityUnit, TransportStatus, Transporter } from '../../types';
 import { PaginatedTransportsResult, TransportClientOption, transportsApi } from '../../api';
 import { masterApi } from '../../api/master';
 import { ConfirmationModal } from '../common/ConfirmationModal';
@@ -16,6 +16,17 @@ const toNumericIds = (ids: string[]): number[] | undefined => {
     .map(id => Number(id))
     .filter(id => Number.isSafeInteger(id) && id > 0);
   return numericIds.length ? numericIds : undefined;
+};
+
+const DIRECT_DEAL_FILTER_ID = 'direct-deal';
+
+const toBrokerIds = (ids: string[]): (number | null)[] | undefined => {
+  const brokerIds = ids.flatMap(id => {
+    if (id === DIRECT_DEAL_FILTER_ID) return [null];
+    const numericId = Number(id);
+    return Number.isSafeInteger(numericId) && numericId > 0 ? [numericId] : [];
+  });
+  return brokerIds.length ? brokerIds : undefined;
 };
 
 type DatePreset = 'all' | 'month' | 'three-months' | 'six-months' | 'range';
@@ -222,6 +233,7 @@ export const TransportPaymentsScreen: React.FC = () => {
   const [transporterFilter, setTransporterFilter] = useState<string[]>([]);
   const [billingFirmFilter, setBillingFirmFilter] = useState<string[]>([]);
   const [partyFilter, setPartyFilter] = useState<string[]>([]);
+  const [brokerFilter, setBrokerFilter] = useState<string[]>([]);
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   const [loadingDateFrom, setLoadingDateFrom] = useState('');
   const [loadingDateTo, setLoadingDateTo] = useState('');
@@ -255,6 +267,7 @@ export const TransportPaymentsScreen: React.FC = () => {
     searchText: commodity.type
   })));
   const [transporterOptions, setTransporterOptions] = useState<Transporter[]>(transporters);
+  const [brokerOptions, setBrokerOptions] = useState<Broker[]>([]);
   const [billingFirmOptions, setBillingFirmOptions] = useState<TransportClientOption[]>(() => clients
     .filter(client => String(client.type).toUpperCase() === 'MY_FIRM')
     .map(client => ({ id: client.id, name: client.name, city: client.city })));
@@ -271,8 +284,9 @@ export const TransportPaymentsScreen: React.FC = () => {
       masterApi.selectAllClients(),
       masterApi.selectFirms(),
       masterApi.selectCommodities(),
+      masterApi.selectBrokers(),
       transportsApi.selectAgencyOptions()
-    ]).then(([clientsResult, firmsResult, commoditiesResult, transportersResult]) => {
+    ]).then(([clientsResult, firmsResult, commoditiesResult, brokersResult, transportersResult]) => {
       if (!isCurrent) return;
       if (clientsResult.status === 'fulfilled') {
         setPartyOptions(clientsResult.value.map(client => ({
@@ -297,6 +311,7 @@ export const TransportPaymentsScreen: React.FC = () => {
           searchText: commodity.type
         })));
       }
+      if (brokersResult.status === 'fulfilled') setBrokerOptions(brokersResult.value);
       if (transportersResult.status === 'fulfilled') setTransporterOptions(transportersResult.value);
     });
 
@@ -315,6 +330,7 @@ export const TransportPaymentsScreen: React.FC = () => {
       transporter: toNumericIds(transporterFilter),
       billing_firm: toNumericIds(billingFirmFilter),
       party: toNumericIds(partyFilter),
+      broker: toBrokerIds(brokerFilter),
       loading_start_date: loadingDateFrom || undefined,
       loading_end_date: loadingDateTo || undefined,
       search: debouncedSearchTerm || undefined,
@@ -340,6 +356,7 @@ export const TransportPaymentsScreen: React.FC = () => {
     transporterFilter,
     billingFirmFilter,
     partyFilter,
+    brokerFilter,
     loadingDateFrom,
     loadingDateTo,
     debouncedSearchTerm,
@@ -435,6 +452,7 @@ export const TransportPaymentsScreen: React.FC = () => {
     setTransporterFilter([]);
     setBillingFirmFilter([]);
     setPartyFilter([]);
+    setBrokerFilter([]);
     setDatePreset('all');
     setLoadingDateFrom('');
     setLoadingDateTo('');
@@ -585,7 +603,21 @@ export const TransportPaymentsScreen: React.FC = () => {
               placeholder="All Billing Firms"
               onChange={values => { setBillingFirmFilter(values); setCurrentPageNum(1); }}
             />
-            {(searchTerm || commodityFilter.length > 0 || transporterFilter.length > 0 || billingFirmFilter.length > 0 || partyFilter.length > 0 || loadingDateFrom || loadingDateTo || activeStatus !== 'PENDING') && (
+            <MultiSearchableSelect
+              id="transport-payments-broker-filter"
+              selectedIds={brokerFilter}
+              options={[
+                { id: DIRECT_DEAL_FILTER_ID, label: 'Direct Deal' },
+                ...brokerOptions.map(broker => ({
+                  id: broker.id,
+                  label: broker.city ? `${broker.name} (${broker.city})` : broker.name,
+                  searchText: broker.city
+                }))
+              ]}
+              placeholder="All Brokers"
+              onChange={values => { setBrokerFilter(values); setCurrentPageNum(1); }}
+            />
+            {(searchTerm || commodityFilter.length > 0 || transporterFilter.length > 0 || billingFirmFilter.length > 0 || partyFilter.length > 0 || brokerFilter.length > 0 || loadingDateFrom || loadingDateTo || activeStatus !== 'PENDING') && (
               <button
                 type="button"
                 onClick={resetFilters}
@@ -753,6 +785,7 @@ export const TransportPaymentsScreen: React.FC = () => {
                 : draft.status !== baselineDraft.status;
               const exportLocked = submittedRow?.exportLocked === true;
               const gross = Number(transport.grossWeight) || 0;
+              const commodityName = transport.commodityName || commodityMap.get(transport.commodityId)?.name || '-';
               const received = Number(draft.receivedWeight) || 0;
               const differenceQtl = quantityToQuintals(received - gross, transport.grossWeightUnit);
               const billableQuantity = received > 0 ? Math.min(gross, received) : gross;
@@ -897,8 +930,13 @@ export const TransportPaymentsScreen: React.FC = () => {
                     <div className="truncate text-slate-700" title={from}>{from}</div>
                     <div className="truncate text-[10px] text-slate-500" title={to}>→ {to}</div>
                   </td>
-                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[372px] z-20 whitespace-nowrap px-1 py-2 text-right font-semibold tabular-nums text-slate-800 ${stickyRowColor} ${stickyRowHoverColor}`}>
-                    {formatQuantityWithUnit(gross, transport.grossWeightUnit)}
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[372px] z-20 w-[50px] px-1 py-2 text-right ${stickyRowColor} ${stickyRowHoverColor}`}>
+                    <div className="whitespace-nowrap font-semibold tabular-nums text-slate-800">
+                      {formatQuantityWithUnit(gross, transport.grossWeightUnit)}
+                    </div>
+                    <div className="break-words text-[9px] font-medium leading-3 text-slate-500" title={commodityName}>
+                      {commodityName}
+                    </div>
                   </td>
                   <td className="px-2 py-2 text-right">
                     <div className="flex items-center justify-end gap-1">

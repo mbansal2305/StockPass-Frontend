@@ -39,6 +39,7 @@ export interface TransportListPayload {
   commodity?: number[];
   billing_firm?: number[];
   party?: number[];
+  broker?: (number | null)[];
   loading_start_date?: string;
   loading_end_date?: string;
   search?: string;
@@ -737,6 +738,7 @@ export const transportsApi = {
       ...(filters.commodity?.length ? { commodity: filters.commodity } : {}),
       ...(filters.billing_firm?.length ? { billing_firm: filters.billing_firm } : {}),
       ...(filters.party?.length ? { party: filters.party } : {}),
+      ...(filters.broker?.length ? { broker: filters.broker } : {}),
       ...(filters.loading_start_date ? { loading_start_date: filters.loading_start_date } : {}),
       ...(filters.loading_end_date ? { loading_end_date: filters.loading_end_date } : {}),
       ...(filters.search?.trim() ? { search: filters.search.trim() } : {})
@@ -758,6 +760,7 @@ export const transportsApi = {
       ...(filters.commodity?.length ? { commodity: filters.commodity } : {}),
       ...(filters.billing_firm?.length ? { billing_firm: filters.billing_firm } : {}),
       ...(filters.party?.length ? { party: filters.party } : {}),
+      ...(filters.broker?.length ? { broker: filters.broker } : {}),
       ...(filters.loading_start_date ? { loading_start_date: filters.loading_start_date } : {}),
       ...(filters.loading_end_date ? { loading_end_date: filters.loading_end_date } : {}),
       ...(filters.search?.trim() ? { search: filters.search.trim() } : {})

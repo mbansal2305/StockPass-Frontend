@@ -13,6 +13,7 @@ interface SearchableSelectProps {
   options: SearchableOption[];
   placeholder: string;
   onChange: (value: string) => void;
+  highlightFirstMatch?: boolean;
 }
 
 export const SearchableSelect: React.FC<SearchableSelectProps> = ({
@@ -20,7 +21,8 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   value,
   options,
   placeholder,
-  onChange
+  onChange,
+  highlightFirstMatch = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -61,7 +63,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         }}
         onChange={(event) => {
           setQuery(event.target.value);
-          setActiveIndex(-1);
+          setActiveIndex(highlightFirstMatch ? 0 : -1);
           setIsOpen(true);
         }}
         onBlur={() => setIsOpen(false)}

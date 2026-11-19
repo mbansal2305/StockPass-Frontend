@@ -29,6 +29,15 @@ const getWeightUnitLabel = (unit: QuantityUnit): string => {
   return 'Metric Ton (MT)';
 };
 
+const getRateUnitLabel = (unit?: QuantityUnit): string => {
+  if (unit === 'quintal') return 'Qtl';
+  if (unit === 'kg') return 'Kg';
+  return 'Mt';
+};
+
+const truncateClientName = (name: string): string =>
+  name.length > 24 ? `${name.slice(0, 21)}...` : name;
+
 const getTodayDate = (): string => {
   const today = new Date();
   const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -429,20 +438,26 @@ export const TransportFormScreen: React.FC = () => {
                       item.orderSizeUnit || 'mt',
                       formData.grossWeightUnit
                     );
+                  const getFullOrderLabel = (selectedOrder: typeof order) => selectedOrder
+                    ? `${selectedOrder.orderNumber}${selectedOrder.selectorClientName ? ` (${selectedOrder.selectorClientName})` : ''} · ${formatCurrency(selectedOrder.rate)} / ${getRateUnitLabel(selectedOrder.remQuantityUnit || selectedOrder.unit)} · ${selectedOrder.brokerName || 'Direct'}`
+                    : item.orderNumber || item.orderId;
                   return (
                   <tr key={item.id ?? `${orderType}-${index}`}>
                     <td className="px-3 py-2">
                       <select
                         value={item.orderId}
                         onChange={(event) => handleItemOrderChange(index, event.target.value)}
+                        title={getFullOrderLabel(order)}
                         className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white text-slate-900"
                       >
                         {!orderOptions.some(option => sameId(option.id, item.orderId)) && (
-                          <option value={item.orderId}>{item.orderNumber || item.orderId}</option>
+                          <option value={item.orderId} title={getFullOrderLabel(undefined)}>
+                            {item.orderNumber || item.orderId}
+                          </option>
                         )}
-                        {orderOptions.map(order => (
-                          <option key={order.id} value={order.id}>
-                            {order.orderNumber}{order.selectorClientName ? ` (${order.selectorClientName})` : ''}
+                        {orderOptions.map(option => (
+                          <option key={option.id} value={option.id} title={getFullOrderLabel(option)}>
+                            {option.orderNumber}{option.selectorClientName ? ` (${truncateClientName(option.selectorClientName)})` : ''} · {formatCurrency(option.rate)} / {getRateUnitLabel(option.remQuantityUnit || option.unit)} · {option.brokerName || 'Direct'}
                           </option>
                         ))}
                       </select>
@@ -656,9 +671,10 @@ export const TransportFormScreen: React.FC = () => {
                 value={formData.transporterId}
                 onChange={transporterId => setFormData({ ...formData, transporterId })}
                 placeholder="Select or search transporter agency"
+                highlightFirstMatch
                 options={agencyOptionsWithFallback.map(agency => ({
                   id: agency.id,
-                  label: `${agency.name} (${agency.city || 'Depot'})`,
+                  label: `${agency.name}${agency.city ? ` (${agency.city})` : ''}`,
                   searchText: `${agency.agency || ''} ${agency.city || ''} ${agency.phone || agency.phone_number || ''}`
                 }))}
               />
@@ -689,6 +705,7 @@ export const TransportFormScreen: React.FC = () => {
                 value={formData.billingFirmId}
                 onChange={(billingFirmId) => setFormData({ ...formData, billingFirmId })}
                 placeholder="Select or search billing firm"
+                highlightFirstMatch
                 options={billingFirmOptions.map(firm => ({
                   id: firm.id,
                   label: `${firm.name}${firm.city ? ` (${firm.city})` : ''}`,
@@ -704,6 +721,7 @@ export const TransportFormScreen: React.FC = () => {
                 value={formData.commodityId}
                 onChange={handleCommodityChange}
                 placeholder="Select or search commodity"
+                highlightFirstMatch
                 options={commodityOptions.map(commodity => ({
                   id: commodity.id,
                   label: `${commodity.name} (${commodity.type})`,
@@ -728,6 +746,7 @@ export const TransportFormScreen: React.FC = () => {
                 value={formData.fromClientId}
                 onChange={(fromClientId) => setFormData({ ...formData, fromClientId })}
                 placeholder="Select or search loading origin"
+                highlightFirstMatch
                 options={locationOptions.map(location => ({
                   id: location.id,
                   label: `${location.name}${location.city ? ` (${location.city})` : ''}`,
@@ -743,6 +762,7 @@ export const TransportFormScreen: React.FC = () => {
                 value={formData.toClientId}
                 onChange={(toClientId) => setFormData({ ...formData, toClientId })}
                 placeholder="Select or search unloading destination"
+                highlightFirstMatch
                 options={locationOptions.map(location => ({
                   id: location.id,
                   label: `${location.name}${location.city ? ` (${location.city})` : ''}`,

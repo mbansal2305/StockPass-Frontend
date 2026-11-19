@@ -608,6 +608,7 @@ export const OrderFormScreen: React.FC = () => {
                 value={formData.commodityId}
                 onChange={(commodityId) => setFormData({ ...formData, commodityId })}
                 placeholder="Select or search commodity"
+                highlightFirstMatch
                 options={commoditySelectionOptions.map(commodity => ({
                   id: commodity.id,
                   label: `${commodity.name} (${commodity.type})`,
@@ -645,6 +646,7 @@ export const OrderFormScreen: React.FC = () => {
                 value={formData.fromClientId}
                 onChange={(fromClientId) => setFormData({ ...formData, fromClientId })}
                 placeholder="Select or search origin"
+                highlightFirstMatch
                 options={fromClientSelectionOptions.map(client => ({
                   id: client.id,
                   label: `${client.name}${client.city ? ` (${client.city})` : ''}`,
@@ -668,6 +670,7 @@ export const OrderFormScreen: React.FC = () => {
                 value={formData.toClientId}
                 onChange={(toClientId) => setFormData({ ...formData, toClientId })}
                 placeholder="Select or search destination"
+                highlightFirstMatch
                 options={toClientSelectionOptions.map(client => ({
                   id: client.id,
                   label: `${client.name}${client.city ? ` (${client.city})` : ''}`,
@@ -805,6 +808,7 @@ export const OrderFormScreen: React.FC = () => {
                 value={formData.brokerId}
                 onChange={(brokerId) => setFormData({ ...formData, brokerId })}
                 placeholder="Select or search broker"
+                highlightFirstMatch
                 options={[
                   { id: '', label: 'Direct Deal (No Broker)' },
                   ...brokerSelectionOptions.map(broker => ({
