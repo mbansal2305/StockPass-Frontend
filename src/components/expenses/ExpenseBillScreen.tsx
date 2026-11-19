@@ -69,9 +69,6 @@ const numericValue = (value: string): number => value.trim() ? Number(value) || 
 const roundedInteger = (value: number): number => Math.round(value);
 const displayNumber = (value: number, fractionDigits = 2): string =>
   value.toLocaleString('en-IN', { maximumFractionDigits: fractionDigits });
-const formatClientType = (type: string): string =>
-  type.split('_').filter(Boolean).map(part => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`).join(' ');
-
 const calculateBillTotals = (items: ExpenseItem[], additions: ExpenseAddition[]) => {
   const totalBags = items.reduce((sum, item) => sum + numericValue(item.bags), 0);
   const totalNetWeight = items.reduce((sum, item) => sum + numericValue(item.netWeight), 0);
@@ -327,8 +324,7 @@ export const ExpenseBillScreen: React.FC = () => {
       label: [
         client.name,
         client.maanNo,
-        client.city,
-        client.type ? `(${formatClientType(client.type)})` : ''
+        client.city
       ].filter(Boolean).join(' · '),
       searchText: `${client.name} ${client.type} ${client.maanNo} ${client.city}`
     })),
@@ -337,7 +333,7 @@ export const ExpenseBillScreen: React.FC = () => {
   const transporterOptions: SearchableOption[] = useMemo(
     () => transporters.map(item => ({
       id: item.id,
-      label: [item.name, item.agency, item.city].filter(Boolean).join(' · '),
+      label: [...new Set([item.name, item.agency, item.city].filter(Boolean))].join(' · '),
       searchText: `${item.name} ${item.agency ?? ''} ${item.city ?? ''}`
     })),
     [transporters]
@@ -434,7 +430,7 @@ export const ExpenseBillScreen: React.FC = () => {
         <label className="block max-w-xl text-sm font-semibold text-slate-700">
           Select Firm
           <div className="mt-1.5">
-            <SearchableSelect id="expense-firm" value={bill.firmId} options={firmOptions} placeholder="Search and select a firm" onChange={value => setBill(current => ({ ...current, firmId: value }))} />
+            <SearchableSelect id="expense-firm" value={bill.firmId} options={firmOptions} placeholder="Search and select a firm" onChange={value => setBill(current => ({ ...current, firmId: value }))} highlightFirstMatch />
           </div>
         </label>
         {selectedFirm && (
@@ -472,7 +468,7 @@ export const ExpenseBillScreen: React.FC = () => {
               <input type="text" value={bill.billNumber} onChange={event => setBill(current => ({ ...current, billNumber: event.target.value }))} className={`${decimalFieldClass} mt-1.5`} />
             </label>
             <label className="block text-xs font-semibold text-slate-600">Party/Client
-              <div className="mt-1.5"><SearchableSelect id="expense-party" value={bill.clientId} options={clientOptions} placeholder="Search parties" onChange={value => setBill(current => ({ ...current, clientId: value }))} /></div>
+              <div className="mt-1.5"><SearchableSelect id="expense-party" value={bill.clientId} options={clientOptions} placeholder="Search parties" onChange={value => setBill(current => ({ ...current, clientId: value }))} highlightFirstMatch /></div>
             </label>
           </div>
           <div className="space-y-4">
@@ -480,7 +476,7 @@ export const ExpenseBillScreen: React.FC = () => {
               <input type="text" value={bill.vehicleNumber} onChange={event => setBill(current => ({ ...current, vehicleNumber: event.target.value }))} className={`${decimalFieldClass} mt-1.5`} />
             </label>
             <label className="block text-xs font-semibold text-slate-600">Transporter
-              <div className="mt-1.5"><SearchableSelect id="expense-transporter" value={bill.transporterId} options={transporterOptions} placeholder="Search transporters" onChange={value => setBill(current => ({ ...current, transporterId: value }))} /></div>
+              <div className="mt-1.5"><SearchableSelect id="expense-transporter" value={bill.transporterId} options={transporterOptions} placeholder="Search transporters" onChange={value => setBill(current => ({ ...current, transporterId: value }))} highlightFirstMatch /></div>
             </label>
             <label className="block text-xs font-semibold text-slate-600">Driver Contact
               <input type="text" inputMode="numeric" maxLength={13} value={bill.driverContact} onChange={event => {
@@ -551,7 +547,7 @@ export const ExpenseBillScreen: React.FC = () => {
           <table className="w-full min-w-[760px] border-collapse text-xs">
             <thead><tr className="bg-slate-50 text-left text-slate-600">
               <th className="border border-slate-200 px-2 py-2">Date</th>
-              <th className="border border-slate-200 px-2 py-2">Product</th>
+              <th className="min-w-[220px] border border-slate-200 px-2 py-2">Product</th>
               <th className="border border-slate-200 px-2 py-2">Bags</th>
               <th className="border border-slate-200 px-2 py-2">Net Wt ({bill.weightUnit})</th>
               <th className="border border-slate-200 px-2 py-2">Rate</th>
@@ -564,7 +560,7 @@ export const ExpenseBillScreen: React.FC = () => {
                 return (
                   <tr key={item.id}>
                     <td className="border border-slate-200 p-1.5"><input aria-label="Item date" type="date" value={item.date} onChange={event => updateItem(item.id, 'date', event.target.value)} className="w-full min-w-32 rounded border border-slate-300 px-2 py-2" /></td>
-                    <td className="border border-slate-200 p-1.5"><SearchableSelect id={`expense-product-${item.id}`} value={item.commodityId} options={commodityOptions} placeholder="Search products" onChange={value => updateItem(item.id, 'commodityId', value)} /></td>
+                    <td className="min-w-[220px] border border-slate-200 p-1.5"><SearchableSelect id={`expense-product-${item.id}`} value={item.commodityId} options={commodityOptions} placeholder="Search products" onChange={value => updateItem(item.id, 'commodityId', value)} highlightFirstMatch /></td>
                     <td className="border border-slate-200 p-1.5"><input aria-label="Bags" type="text" inputMode="numeric" value={item.bags} onChange={event => {
                       if (/^\d*$/.test(event.target.value)) updateItem(item.id, 'bags', event.target.value);
                     }} className="w-full min-w-20 rounded border border-slate-300 px-2 py-2 text-right" /></td>
