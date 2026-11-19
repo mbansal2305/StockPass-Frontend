@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { MultiSearchableSelect } from '../common/SearchableSelect';
-import { formatCurrency, formatWeight, formatQuantityWithUnit, getUnitLabel, formatShortDate, getDaysRemaining } from '../../utils/formatters';
+import { formatCurrency, formatWeight, formatQuantityWithUnit, formatShortDate, getDaysRemaining } from '../../utils/formatters';
 import { PaginatedOrdersResult } from '../../api/orders';
 import { masterApi, SelectionClient, SelectionFirm } from '../../api/master';
 
@@ -34,6 +34,12 @@ const toNumericIds = (ids: string[]): number[] | undefined => {
     .map(id => Number(id))
     .filter(id => Number.isSafeInteger(id) && id > 0);
   return numericIds.length ? numericIds : undefined;
+};
+
+const getRateUnitLabel = (unit?: string): string => {
+  if (unit === 'quintal') return 'Qtl';
+  if (unit === 'kg') return 'Kg';
+  return 'Mt';
 };
 
 const toDateInputValue = (date: Date): string => {
@@ -717,7 +723,7 @@ export const OrderListScreen: React.FC = () => {
                       {/* Rate */}
                       <td className="px-4 py-3 text-right tabular-nums font-mono text-slate-700">
                         {formatCurrency(order.rate)}
-                        <span className="text-[10px] text-slate-400 block">/{getUnitLabel(order.unit)}</span>
+                        <span className="text-[10px] text-slate-400 block">/{getRateUnitLabel(order.unit)}</span>
                       </td>
 
                       {/* Quantity */}
