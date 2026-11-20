@@ -538,7 +538,7 @@ export const TransportPaymentsScreen: React.FC = () => {
     setPendingEdit(null);
     try {
       await transportGet(transportId);
-      navigate('transport-form', { transportId });
+      navigate('transport-form', { transportId, returnTo: 'transport-payments' });
     } catch (error: any) {
       showToast(error.message || 'Failed to load transport details', 'error');
     }
@@ -793,7 +793,7 @@ export const TransportPaymentsScreen: React.FC = () => {
               const paymentAmounts = effectivePaymentAmounts(draft, exportPaymentDraft);
               const left = totalRent - draft.advanceByClient - paymentAmounts.advanceByFirm - draft.shortageAmount - paymentAmounts.finalPaid + draft.extraAmount;
               const party = transport.billingFirmName || clientMap.get(transport.billingFirmId) || '-';
-              const carrier = transport.transporterName || transporterMap.get(transport.transporterId) || '-';
+              const carrier = transport.transporterName || transporterMap.get(transport.transporterId) || 'Direct Transport';
               const formattedLoadingDate = formatDate(transport.loadingDate);
               const loadingYear = formattedLoadingDate.match(/\b\d{4}\b$/)?.[0];
               const loadingDateLabel = loadingYear

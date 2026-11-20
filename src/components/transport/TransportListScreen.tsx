@@ -215,7 +215,10 @@ export const TransportListScreen: React.FC = () => {
   const openTransport = async (transportId: string, destination: 'transport-detail' | 'transport-form') => {
     try {
       await transportGet(transportId);
-      navigate(destination, { transportId });
+      navigate(destination, {
+        transportId,
+        ...(destination === 'transport-form' ? { returnTo: 'transport' } : {})
+      });
     } catch (error: any) {
       showToast(error.message || 'Failed to load transport details', 'error');
     }
@@ -313,7 +316,7 @@ export const TransportListScreen: React.FC = () => {
           )}
           <button
             type="button"
-            onClick={() => navigate('transport-form')}
+            onClick={() => navigate('transport-form', { returnTo: 'transport' })}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -542,7 +545,7 @@ export const TransportListScreen: React.FC = () => {
                 <th className="px-4 py-3">Bill / Bilty</th>
                 <th className="w-[140px] max-w-[140px] px-4 py-3">Vehicle No</th>
                 <th className="px-4 py-3">Commodity</th>
-                <th className="px-4 py-3">Route (From → To)</th>
+                <th className="px-4 py-3">Route (To / From)</th>
                 <th className="px-4 py-3 text-right">Gross Weight</th>
                 <th className="px-4 py-3 text-right">Bharti (Kg)</th>
                 <th className="px-4 py-3 text-right">Received Weight</th>
@@ -574,7 +577,7 @@ export const TransportListScreen: React.FC = () => {
                     <p className="text-slate-500 font-medium">No transport entries found matching criteria</p>
                     <button
                       type="button"
-                      onClick={() => navigate('transport-form')}
+                      onClick={() => navigate('transport-form', { returnTo: 'transport' })}
                       className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -585,7 +588,9 @@ export const TransportListScreen: React.FC = () => {
               ) : (
                 paginatedTransports.map((t) => {
                   const commodityName = t.commodityName || '-';
-                  const transp = t.transporterName || '-';
+                  const transp = t.transporterId
+                    ? t.transporterName || '-'
+                    : 'Direct Transport';
                   const billingFirm = t.billingFirmName || '-';
                   const fromClient = t.fromClientName || '-';
                   const toClient = t.toClientName || '-';
@@ -617,7 +622,7 @@ export const TransportListScreen: React.FC = () => {
                       key={t.id}
                       onClick={(event) => {
                         if ((event.target as HTMLElement).closest('button, a, input, select')) return;
-                        void openTransport(t.id, 'transport-detail');
+                        void openTransport(t.id, 'transport-form');
                       }}
                       className={`${rowBgClass} transition-colors cursor-pointer`}
                     >
@@ -631,7 +636,7 @@ export const TransportListScreen: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => void openTransport(t.id, 'transport-detail')}
-                          className="hover:text-blue-600 text-left cursor-pointer"
+                          className="hover:text-blue-600 text-left font-bold cursor-pointer"
                         >
                           {t.billNumber}
                         </button>
@@ -643,13 +648,7 @@ export const TransportListScreen: React.FC = () => {
 
                       {/* Vehicle Number */}
                       <td className="w-[140px] max-w-[140px] px-4 py-3 font-mono font-bold text-slate-900">
-                        <button
-                          type="button"
-                          onClick={() => void openTransport(t.id, 'transport-detail')}
-                          className="hover:text-blue-600 cursor-pointer"
-                        >
-                          {t.vehicleNumber}
-                        </button>
+                        {t.vehicleNumber}
                         <div className="text-[10px] font-sans font-normal text-slate-500 whitespace-normal break-words" title={transp}>
                           {transp}
                         </div>
@@ -659,27 +658,34 @@ export const TransportListScreen: React.FC = () => {
                       <td className="px-4 py-3 text-slate-800 font-medium">
                         {commodityName}
                         {t.commodityType && <span className="text-slate-500 font-normal"> ({t.commodityType})</span>}
-                        {t.bagNumbers && (
-                          <span className="text-[10px] text-slate-400 block tabular-nums">
-                            {t.bagNumbers} bags
-                          </span>
-                        )}
                       </td>
 
                       {/* Route */}
                       <td className="px-4 py-3 max-w-[180px]">
-                        <div className="text-slate-800 font-medium truncate" title={fromClient}>
-                          {fromClient}
+                        <div className="flex items-center gap-1.5 min-w-0" title={toClient}>
+                          <ArrowRight className="h-3 w-3 shrink-0 text-emerald-700" aria-hidden="true" />
+                          <span className="truncate text-slate-900 font-semibold">
+                            {toClient}
+                          </span>
                         </div>
-                        <div className="text-slate-400 text-[10px] flex items-center gap-0.5 truncate" title={toClient}>
-                          <ArrowRight className="w-2.5 h-2.5 shrink-0" />
-                          {toClient}
+                        <div className="mt-0.5 flex items-center gap-1.5 min-w-0" title={fromClient}>
+                          <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+                            From
+                          </span>
+                          <span className="truncate text-[10px] text-slate-400">
+                            {fromClient}
+                          </span>
                         </div>
                       </td>
 
                       {/* Gross Weight */}
                       <td className="px-4 py-3 text-right font-semibold text-slate-900 tabular-nums">
                         {formatQuantityWithUnit(t.grossWeight, t.grossWeightUnit)}
+                        {t.bagNumbers && (
+                          <span className="block text-[10px] font-normal text-slate-400">
+                            {t.bagNumbers} bags
+                          </span>
+                        )}
                       </td>
 
                       {/* Bharti */}

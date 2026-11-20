@@ -187,13 +187,14 @@ export const DashboardScreen: React.FC = () => {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-mono font-bold ${
-                            order.type === 'sales_order'
-                              ? order.is_dummy
-                                ? 'bg-[#efebe9] text-[#5d4037]'
-                                : 'bg-blue-100 text-blue-800'
-                              : 'bg-emerald-100 text-emerald-800'
-                          }`}>
+                          <span className={order.type === 'sales_order' && order.is_dummy
+                            ? 'text-xs font-mono font-bold text-slate-400'
+                            : `inline-flex items-center px-2 py-1 rounded text-xs font-mono font-bold ${
+                              order.type === 'sales_order'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`
+                          }>
                             {order.order_no}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">{order.commodity}</span>
@@ -256,7 +257,10 @@ export const DashboardScreen: React.FC = () => {
                             <span className="inline-flex items-center rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-mono font-bold text-sky-800">
                               {transport.vehicle_no}
                             </span>
-                            <span className="text-[11px] text-slate-500">{transport.transporter || '-'}</span>
+                            <span className="inline-flex items-center gap-1 text-[11px] font-sans font-semibold text-blue-700">
+                              <Truck className="h-3 w-3 shrink-0" />
+                              <span>{transport.transporter || 'Direct Transport'}</span>
+                            </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-x-2 text-[11px] mt-1">
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">{transport.commodity || '-'}</span>

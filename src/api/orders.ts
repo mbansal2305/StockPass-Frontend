@@ -181,7 +181,8 @@ export function transformBackendOrderToFrontend(raw: any): Order {
   }
 
   const notes = raw.notes || '';
-  const createdAt = String(raw.created_at || raw.createdAt || raw.contract_date || startDate);
+  const createdBy = raw.c_by ?? raw.created_by ?? raw.createdBy;
+  const createdAt = String(raw.created_at || raw.createdAt || raw.c_at || raw.contract_date || startDate);
   const updatedAt = raw.updated_at || raw.updatedAt ? String(raw.updated_at || raw.updatedAt) : undefined;
 
   return {
@@ -208,6 +209,7 @@ export function transformBackendOrderToFrontend(raw: any): Order {
     brokerId,
     status,
     notes,
+    createdBy: createdBy == null ? undefined : String(createdBy),
     createdAt,
     updatedAt
   };

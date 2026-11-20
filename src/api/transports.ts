@@ -70,7 +70,9 @@ export interface TransportPaymentUpdate {
   notes: string;
 }
 
-type TransportWrite = Partial<Transport> & Pick<Transport, 'billingFirmId' | 'commodityId'>;
+type TransportWrite = Omit<Partial<Transport>, 'transporterId'>
+  & { transporterId?: string | null }
+  & Pick<Transport, 'billingFirmId' | 'commodityId'>;
 
 export type BulkTransportEntry = Partial<Transport> & { id?: string };
 
@@ -233,7 +235,14 @@ export function transformBackendTransport(raw: any, lookups: TransportLookups = 
     toClientId: relationId(raw?.to_client_id ?? raw?.toClientId ?? raw?.to_client, lookups.clients),
     toClientName: relationName(raw?.to_client) ?? raw?.to_client_name ?? raw?.toClientName ?? undefined,
     vehicleNumber: String(raw?.vehicle_no ?? raw?.vehicle_number ?? raw?.vehicleNumber ?? ''),
-    transporterId: relationId(raw?.transporter_id ?? raw?.transporterId ?? raw?.transporter, lookups.transporters),
+    transporterId: relationId(
+      raw?.transporter_id !== undefined
+        ? raw.transporter_id
+        : raw?.transporterId !== undefined
+          ? raw.transporterId
+          : raw?.transporter,
+      lookups.transporters
+    ),
     transporterName: relationName(raw?.transporter) ?? raw?.transporter_name ?? raw?.transporterName ?? undefined,
     transporterBank,
     grossWeight: Number(raw?.gross_wt ?? raw?.gross_weight ?? raw?.grossWeight ?? 0),
@@ -257,8 +266,8 @@ export function transformBackendTransport(raw: any, lookups: TransportLookups = 
     status: normalizeStatus(raw?.status),
     items,
     notes: raw?.notes || '',
-    createdBy: raw?.created_by ?? raw?.createdBy ?? undefined,
-    createdAt: String(raw?.created_at ?? raw?.createdAt ?? new Date().toISOString().slice(0, 10)),
+    createdBy: raw?.created_by ?? raw?.createdBy ?? raw?.c_by ?? undefined,
+    createdAt: String(raw?.created_at ?? raw?.createdAt ?? raw?.c_at ?? new Date().toISOString().slice(0, 10)),
     updatedAt: raw?.updated_at ?? raw?.updatedAt ?? undefined
   };
 }
@@ -280,8 +289,7 @@ function toTransportFormData(
     ['billingFirmId', 'billing_firm'],
     ['commodityId', 'commodity'],
     ['fromClientId', 'from_client'],
-    ['toClientId', 'to_client'],
-    ['transporterId', 'transporter']
+    ['toClientId', 'to_client']
   ];
   const scalarFields: Array<[keyof TransportWrite, string]> = [
     ['billNumber', 'bill_no'],
@@ -305,6 +313,12 @@ function toTransportFormData(
     const value = transport[property] as string | undefined;
     if (value !== undefined) appendValue(form, field, numericId(value));
   });
+  if (transport.transporterId === null || transport.transporterId === '') {
+    // Keep the nullable relation present so updates can clear an existing transporter.
+    form.append('transporter', '');
+  } else if (transport.transporterId !== undefined) {
+    appendValue(form, 'transporter', numericId(transport.transporterId));
+  }
   scalarFields.forEach(([property, field]) => {
     const value = transport[property];
     appendValue(form, field, typeof value === 'number' ? roundToTwoDecimals(value) : value);
@@ -546,7 +560,7 @@ function normalizeTransporterOptions(response: any): Transporter[] {
     return [{
       id: String(id),
       name: String(name),
-      agency: String(raw.agency ?? name),
+      agency: raw.agency ? String(raw.agency) : undefined,
       phone_number: String(raw.phone_number ?? raw.phone ?? ''),
       phone: String(raw.phone_number ?? raw.phone ?? ''),
       city: raw.city ? String(raw.city) : undefined,

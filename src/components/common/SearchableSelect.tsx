@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check } from 'lucide-react';
 
 export interface SearchableOption {
   id: string;
   label: string;
   searchText?: string;
+  highlightText?: string;
 }
 
 interface SearchableSelectProps {
@@ -14,6 +16,8 @@ interface SearchableSelectProps {
   placeholder: string;
   onChange: (value: string) => void;
   highlightFirstMatch?: boolean;
+  wrapOptions?: boolean;
+  portalOptions?: boolean;
 }
 
 export const SearchableSelect: React.FC<SearchableSelectProps> = ({
@@ -22,11 +26,15 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   options,
   placeholder,
   onChange,
-  highlightFirstMatch = false
+  highlightFirstMatch = false,
+  wrapOptions = false,
+  portalOptions = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>();
+  const containerRef = useRef<HTMLDivElement>(null);
   const selectedOption = options.find(option => option.id === value);
   const normalizedQuery = query.trim().toLowerCase();
   const filteredOptions = normalizedQuery
@@ -38,14 +46,89 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     ? Math.min(activeIndex, filteredOptions.length - 1)
     : -1;
 
+  useEffect(() => {
+    if (!isOpen || !portalOptions) return;
+
+    const updateDropdownPosition = () => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const spaceBelow = Math.max(80, window.innerHeight - rect.bottom - 8);
+      setDropdownStyle({
+        left: rect.left,
+        top: rect.bottom,
+        width: rect.width,
+        maxHeight: Math.min(208, spaceBelow)
+      });
+    };
+
+    const scrollableAncestors: HTMLElement[] = [];
+    let ancestor = containerRef.current?.parentElement;
+    while (ancestor && ancestor !== document.body) {
+      const { overflowX, overflowY } = window.getComputedStyle(ancestor);
+      if (/(auto|scroll)/.test(`${overflowX} ${overflowY}`)) {
+        ancestor.addEventListener('scroll', updateDropdownPosition);
+        scrollableAncestors.push(ancestor);
+      }
+      ancestor = ancestor.parentElement;
+    }
+
+    updateDropdownPosition();
+    window.addEventListener('resize', updateDropdownPosition);
+    window.addEventListener('scroll', updateDropdownPosition);
+    return () => {
+      scrollableAncestors.forEach(element => element.removeEventListener('scroll', updateDropdownPosition));
+      window.removeEventListener('resize', updateDropdownPosition);
+      window.removeEventListener('scroll', updateDropdownPosition);
+    };
+  }, [isOpen, portalOptions]);
+
   const selectOption = (option: SearchableOption) => {
     onChange(option.id);
     setQuery('');
     setIsOpen(false);
   };
 
+  const optionsList = (
+    <div
+      id={`${id}-options`}
+      role="listbox"
+      className={`${portalOptions ? 'fixed z-20' : 'absolute z-20 mt-1 max-h-52 w-full'} overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg`}
+      style={portalOptions ? dropdownStyle : undefined}
+    >
+      {filteredOptions.length ? filteredOptions.map((option, index) => (
+        <button
+          key={option.id}
+          id={`${id}-option-${index}`}
+          type="button"
+          role="option"
+          aria-selected={option.id === value}
+          onMouseDown={(event) => event.preventDefault()}
+          onMouseEnter={() => setActiveIndex(index)}
+          onClick={() => selectOption(option)}
+          className={`block w-full px-3 py-2 text-left text-xs hover:bg-blue-50 ${
+            wrapOptions ? 'whitespace-normal break-words' : ''
+          } ${
+            index === activeOptionIndex ? 'bg-blue-50' : ''
+          } ${
+            option.id === value ? 'bg-blue-50 text-blue-700' : 'text-slate-900'
+          }`}
+        >
+          {option.highlightText && option.label.startsWith(option.highlightText) ? (
+            <>
+              <span className="font-bold text-blue-700">{option.highlightText}</span>
+              {option.label.slice(option.highlightText.length)}
+            </>
+          ) : option.label}
+        </button>
+      )) : (
+        <p className="px-3 py-2 text-xs text-slate-500">No matching options</p>
+      )}
+    </div>
+  );
+
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <input
         id={id}
         type="text"
@@ -60,6 +143,13 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           setIsOpen(true);
           const selectedIndex = options.findIndex(option => option.id === value);
           setActiveIndex(selectedIndex);
+        }}
+        onClick={() => {
+          if (!isOpen) {
+            setQuery('');
+            setIsOpen(true);
+            setActiveIndex(options.findIndex(option => option.id === value));
+          }
         }}
         onChange={(event) => {
           setQuery(event.target.value);
@@ -97,35 +187,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         aria-activedescendant={isOpen && activeOptionIndex >= 0 ? `${id}-option-${activeOptionIndex}` : undefined}
         className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
       />
-      {isOpen && (
-        <div
-          id={`${id}-options`}
-          role="listbox"
-          className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
-        >
-          {filteredOptions.length ? filteredOptions.map((option, index) => (
-            <button
-              key={option.id}
-              id={`${id}-option-${index}`}
-              type="button"
-              role="option"
-              aria-selected={option.id === value}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => selectOption(option)}
-              className={`block w-full px-3 py-2 text-left text-xs hover:bg-blue-50 ${
-                index === activeOptionIndex ? 'bg-blue-50' : ''
-              } ${
-                option.id === value ? 'bg-blue-50 text-blue-700' : 'text-slate-900'
-              }`}
-            >
-              {option.label}
-            </button>
-          )) : (
-            <p className="px-3 py-2 text-xs text-slate-500">No matching options</p>
-          )}
-        </div>
-      )}
+      {isOpen && (portalOptions
+        ? dropdownStyle && createPortal(optionsList, document.body)
+        : optionsList)}
     </div>
   );
 };

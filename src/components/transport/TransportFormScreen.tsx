@@ -35,9 +35,6 @@ const getRateUnitLabel = (unit?: QuantityUnit): string => {
   return 'Mt';
 };
 
-const truncateClientName = (name: string): string =>
-  name.length > 24 ? `${name.slice(0, 21)}...` : name;
-
 const getTodayDate = (): string => {
   const today = new Date();
   const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -109,12 +106,16 @@ export const TransportFormScreen: React.FC = () => {
     pageParams,
     navigate,
     refreshData,
+    transportGet,
     showToast,
     currentUser
   } = useApp();
 
   const editingTransportId = pageParams.transportId;
   const existingTransport = editingTransportId ? transports.find(t => sameId(t.id, editingTransportId)) : null;
+  const returnPage = pageParams.returnTo === 'transport-detail' || pageParams.returnTo === 'transport-payments'
+    ? pageParams.returnTo
+    : 'transport';
 
   // Context prefill from order if navigated via "Create Transport" button
   const prefillCommodityId = pageParams.prefillCommodityId;
@@ -260,7 +261,7 @@ export const TransportFormScreen: React.FC = () => {
         fromClientId: existingTransport.fromClientId,
         toClientId: existingTransport.toClientId,
         vehicleNumber: existingTransport.vehicleNumber,
-        transporterId: existingTransport.transporterId,
+        transporterId: existingTransport.transporterId || '',
         grossWeight: existingTransport.grossWeight,
         grossWeightUnit: existingTransport.grossWeightUnit || 'quintal',
         bagNumbers: existingTransport.bagNumbers || 0,
@@ -419,7 +420,7 @@ export const TransportFormScreen: React.FC = () => {
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
                 <tr>
-                  <th className="px-3 py-2">Order</th>
+                  <th className="min-w-[360px] px-3 py-2">Order</th>
                   <th className="px-3 py-2 text-right">Remaining ({getWeightUnitLabel(formData.grossWeightUnit)})</th>
                   <th className="px-3 py-2 text-right">Allocated</th>
                   <th className="px-3 py-2 text-right min-w-[130px]">Order Entry ({getWeightUnitLabel(formData.grossWeightUnit)})</th>
@@ -443,24 +444,30 @@ export const TransportFormScreen: React.FC = () => {
                     : item.orderNumber || item.orderId;
                   return (
                   <tr key={item.id ?? `${orderType}-${index}`}>
-                    <td className="px-3 py-2">
-                      <select
+                    <td className="min-w-[360px] px-3 py-2">
+                      <SearchableSelect
+                        id={`transport-${orderType === 'SALES ORDER' ? 'sales' : 'purchase'}-order-${index}`}
                         value={item.orderId}
-                        onChange={(event) => handleItemOrderChange(index, event.target.value)}
-                        title={getFullOrderLabel(order)}
-                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white text-slate-900"
-                      >
-                        {!orderOptions.some(option => sameId(option.id, item.orderId)) && (
-                          <option value={item.orderId} title={getFullOrderLabel(undefined)}>
-                            {item.orderNumber || item.orderId}
-                          </option>
-                        )}
-                        {orderOptions.map(option => (
-                          <option key={option.id} value={option.id} title={getFullOrderLabel(option)}>
-                            {option.orderNumber}{option.selectorClientName ? ` (${truncateClientName(option.selectorClientName)})` : ''} · {formatCurrency(option.rate)} / {getRateUnitLabel(option.remQuantityUnit || option.unit)} · {option.brokerName || 'Direct'}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(orderId) => handleItemOrderChange(index, orderId)}
+                        placeholder="Select order"
+                        wrapOptions
+                        portalOptions
+                        options={[
+                          ...(!orderOptions.some(option => sameId(option.id, item.orderId))
+                            ? [{
+                              id: item.orderId,
+                              label: item.orderNumber || item.orderId,
+                              highlightText: item.orderNumber || item.orderId
+                            }]
+                            : []),
+                          ...orderOptions.map(option => ({
+                            id: option.id,
+                            label: getFullOrderLabel(option),
+                            highlightText: option.orderNumber,
+                            searchText: `${option.orderNumber} ${option.selectorClientName || ''} ${option.brokerName || 'Direct'}`
+                          }))
+                        ]}
+                      />
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">
                       {remaining === undefined ? '-' : formatQuantityWithUnit(remaining, formData.grossWeightUnit)}
@@ -509,7 +516,6 @@ export const TransportFormScreen: React.FC = () => {
     if (!formData.loadingDate) newErrors.loadingDate = 'Loading date is required';
     if (!formData.billingFirmId) newErrors.billingFirmId = 'Billing firm is required';
     if (!formData.commodityId) newErrors.commodityId = 'Commodity is required';
-    if (!formData.transporterId) newErrors.transporterId = 'Transporter is required';
     if (!formData.fromClientId) newErrors.fromClientId = 'Dispatch origin is required';
     if (!formData.toClientId) newErrors.toClientId = 'Consignee destination is required';
     if (formData.fromClientId === formData.toClientId) {
@@ -558,6 +564,7 @@ export const TransportFormScreen: React.FC = () => {
       orderEntryQuantity: Number(i.orderEntryQuantity) || 0
     }));
 
+    let saveCompleted = false;
     try {
       const transportData = {
         id: existingTransport?.id,
@@ -568,7 +575,7 @@ export const TransportFormScreen: React.FC = () => {
         fromClientId: formData.fromClientId,
         toClientId: formData.toClientId,
         vehicleNumber: formData.vehicleNumber.trim().toUpperCase(),
-        transporterId: formData.transporterId,
+        transporterId: formData.transporterId || null,
         grossWeight: Number(formData.grossWeight),
         grossWeightUnit: formData.grossWeightUnit,
         bagNumbers: Number(formData.bagNumbers),
@@ -598,13 +605,30 @@ export const TransportFormScreen: React.FC = () => {
         ? await transportsApi.update({ ...transportData, id: existingTransport.id }, files, lookups)
         : await transportsApi.add(transportData, files, lookups);
 
+      saveCompleted = true;
       await refreshData();
+      const savedTransport = await transportGet(saved.id);
       showToast(existingTransport ? 'Consignment updated' : 'Transport created successfully', 'success');
-      navigate('transport-detail', { transportId: saved.id });
+      navigate('transport-detail', { transportId: savedTransport.id });
     } catch (err: any) {
-      showToast(err.message || 'Failed to save transport', 'error');
+      showToast(
+        saveCompleted
+          ? `Transport saved, but failed to open its details: ${err.message || 'Please try again'}`
+          : err.message || 'Failed to save transport',
+        'error'
+      );
     }
   };
+
+  const bagCount = Number(formData.bagNumbers) || 0;
+  const grossWeightKg = convertQuantityUnit(
+    Number(formData.grossWeight) || 0,
+    formData.grossWeightUnit,
+    'kg'
+  );
+  const netWeightKg = grossWeightKg - (bagCount * (Number(formData.bagWeight) || 0)) / 1000;
+  const netWeight = convertQuantityUnit(netWeightKg, 'kg', formData.grossWeightUnit);
+  const bhartiKg = bagCount !== 0 ? netWeightKg / bagCount : null;
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
@@ -612,7 +636,7 @@ export const TransportFormScreen: React.FC = () => {
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate(existingTransport ? 'transport-detail' : 'transport', { transportId: editingTransportId })}
+          onClick={() => navigate(returnPage, { transportId: editingTransportId })}
           className="p-1.5 bg-white border border-slate-200 text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -665,22 +689,22 @@ export const TransportFormScreen: React.FC = () => {
             </div>
 
             <div>
-              <label htmlFor="transport-agency" className="block text-xs font-medium text-slate-700 mb-1">Transporter Agency *</label>
+              <label htmlFor="transport-agency" className="block text-xs font-medium text-slate-700 mb-1">Transporter Agency</label>
               <SearchableSelect
                 id="transport-agency"
                 value={formData.transporterId}
                 onChange={transporterId => setFormData({ ...formData, transporterId })}
                 placeholder="Select or search transporter agency"
                 highlightFirstMatch
-                options={agencyOptionsWithFallback.map(agency => ({
-                  id: agency.id,
-                  label: `${agency.name}${agency.city ? ` (${agency.city})` : ''}`,
-                  searchText: `${agency.agency || ''} ${agency.city || ''} ${agency.phone || agency.phone_number || ''}`
-                }))}
+                options={[
+                  { id: '', label: 'Direct Transport' },
+                  ...agencyOptionsWithFallback.map(agency => ({
+                    id: agency.id,
+                    label: `${agency.name}${agency.agency && agency.agency !== agency.name ? ` (${agency.agency})` : ''}`,
+                    searchText: `${agency.agency || ''} ${agency.city || ''} ${agency.phone || agency.phone_number || ''}`
+                  }))
+                ]}
               />
-              {errors.transporterId && (
-                <p className="text-[10px] text-red-600 mt-1">{errors.transporterId}</p>
-              )}
             </div>
 
             <div>
@@ -791,16 +815,6 @@ export const TransportFormScreen: React.FC = () => {
                 onChange={handleGrossWeightChange}
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-bold tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
-              <select
-                aria-label="Gross loading weight unit"
-                value={formData.grossWeightUnit}
-                onChange={(e) => handleGrossWeightUnitChange(e.target.value as QuantityUnit)}
-                className="mt-2 w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
-              >
-                <option value="mt">Metric Ton (MT)</option>
-                <option value="quintal">Quintal</option>
-                <option value="kg">Kilogram (KG)</option>
-              </select>
               {errors.grossWeight && (
                 <p className="text-[10px] text-red-600 mt-1">{errors.grossWeight}</p>
               )}
@@ -823,6 +837,45 @@ export const TransportFormScreen: React.FC = () => {
                 onChange={(bagWeight) => setFormData({ ...formData, bagWeight })}
                 placeholder="50000 grams"
                 className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 tabular-nums text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <select
+                aria-label="Gross loading weight unit"
+                value={formData.grossWeightUnit}
+                onChange={(e) => handleGrossWeightUnitChange(e.target.value as QuantityUnit)}
+                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
+              >
+                <option value="mt">Metric Ton (MT)</option>
+                <option value="quintal">Quintal</option>
+                <option value="kg">Kilogram (KG)</option>
+              </select>
+            </div>
+
+            <div>
+              <input
+                type="text"
+                readOnly
+                aria-label="Net Weight"
+                value={`Net Weight: ${formatQuantityWithUnit(netWeight, formData.grossWeightUnit)}`}
+                className={`w-full text-xs border border-slate-300 rounded-lg px-3 py-2 tabular-nums bg-slate-50 ${
+                  netWeight < 0 ? 'text-red-600' : 'text-slate-700'
+                }`}
+              />
+            </div>
+
+            <div>
+              <input
+                type="text"
+                readOnly
+                aria-label="Bharti"
+                value={`Bharti: ${bhartiKg !== null && Number.isFinite(bhartiKg)
+                  ? `${bhartiKg.toLocaleString('en-IN', { maximumFractionDigits: 2 })} Kg`
+                  : '-'}`}
+                className={`w-full text-xs border border-slate-300 rounded-lg px-3 py-2 tabular-nums bg-slate-50 ${
+                  bhartiKg !== null && bhartiKg < 0 ? 'text-red-600' : 'text-slate-700'
+                }`}
               />
             </div>
           </div>
@@ -1086,7 +1139,7 @@ export const TransportFormScreen: React.FC = () => {
         <div className="flex items-center justify-end gap-3 pt-2">
           <button
             type="button"
-            onClick={() => navigate(existingTransport ? 'transport-detail' : 'transport', { transportId: editingTransportId })}
+            onClick={() => navigate(returnPage, { transportId: editingTransportId })}
             className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/50 rounded-lg transition-colors cursor-pointer"
           >
             Cancel

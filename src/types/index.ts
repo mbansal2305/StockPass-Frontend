@@ -238,6 +238,7 @@ export interface Order {
   brokerId: string;
   status: OrderStatus;
   notes?: string;
+  createdBy?: string;
   createdAt: string;
   updatedAt?: string;
 }

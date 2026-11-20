@@ -213,7 +213,8 @@ export const OrderDetailScreen: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Contract Date: {formatDate(order.contractDate || order.startDate)} · Valid until: {formatDate(order.expiryDate)}
+              Created by <span className="font-medium text-slate-700">{order.createdBy || '-'}</span>
+              {' '}on {formatDate(order.createdAt.slice(0, 10))}
             </p>
           </div>
         </div>
@@ -318,7 +319,7 @@ export const OrderDetailScreen: React.FC = () => {
             </div>
           </div>
 
-          <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
             <div>
               <span className="text-slate-400 font-semibold text-[10px] uppercase block">Commodity Spec</span>
               <div className="font-medium text-slate-900 mt-0.5">{comm?.name || order.commodityName || 'Standard'}</div>
@@ -330,6 +331,14 @@ export const OrderDetailScreen: React.FC = () => {
               <div className="font-medium text-slate-900 mt-0.5 flex items-center gap-1">
                 <User className="w-3.5 h-3.5 text-slate-400" />
                 {brokerName}
+              </div>
+            </div>
+
+            <div>
+              <span className="text-slate-400 font-semibold text-[10px] uppercase block">Contract Date</span>
+              <div className="font-medium text-slate-900 mt-0.5 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                {formatDate(order.contractDate || order.startDate)}
               </div>
             </div>
 

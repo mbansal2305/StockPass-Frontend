@@ -5,7 +5,7 @@ import { transportsApi } from '../../api';
 import {
   ArrowLeft,
   Truck,
-  Building,
+  Building2,
   Calendar,
   FileText,
   Printer,
@@ -100,14 +100,30 @@ export const TransportDetailScreen: React.FC = () => {
 
   const isPaidTransport = transport.status === 'PAID';
   const comm = commodityMap.get(transport.commodityId);
-  const transpName = transporterMap.get(transport.transporterId) || '-';
+  const transpName = transport.transporterId
+    ? transport.transporterName || transporterMap.get(transport.transporterId) || '-'
+    : 'Direct Transport';
   const fromClient = clientMap.get(transport.fromClientId);
   const toClient = clientMap.get(transport.toClientId);
+  const fromClientName = fromClient?.name || transport.fromClientName || '-';
+  const toClientName = toClient?.name || transport.toClientName || '-';
   const billingFirm = clientMap.get(transport.billingFirmId);
   const badge = getTransportStatusBadge(transport.status);
 
   // Calculations
   const grossWeight = transport.grossWeight || 0;
+  const bagNumbers = transport.bagNumbers || 0;
+  const grossWeightKg = convertWeightUnit(
+    grossWeight,
+    transport.grossWeightUnit || 'mt',
+    'kg'
+  );
+  const netWeightKg = grossWeightKg - (bagNumbers * (transport.bagWeight || 0)) / 1000;
+  const netWeight = convertWeightUnit(
+    netWeightKg,
+    'kg',
+    transport.grossWeightUnit || 'mt'
+  );
   const receivedWeight = transport.receivedWeight || 0;
   const weightDifference = grossWeight - receivedWeight;
   const weightDifferenceInQuintals = convertWeightUnit(
@@ -152,7 +168,7 @@ export const TransportDetailScreen: React.FC = () => {
     if (transport.status === 'PAID' && !isOwner) return;
     try {
       await transportGet(transport.id);
-      navigate('transport-form', { transportId: transport.id });
+      navigate('transport-form', { transportId: transport.id, returnTo: 'transport-detail' });
     } catch (error: unknown) {
       showToast(error instanceof Error ? error.message : 'Failed to load transport details', 'error');
     }
@@ -174,7 +190,7 @@ export const TransportDetailScreen: React.FC = () => {
     <div className="space-y-5">
       {/* Header and Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <button
             type="button"
             onClick={() => navigate('transport')}
@@ -182,17 +198,29 @@ export const TransportDetailScreen: React.FC = () => {
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xl font-bold text-slate-900">{transport.vehicleNumber}</span>
-              <span className="font-mono text-sm text-slate-500 font-medium">({transport.billNumber})</span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-mono text-xl font-bold text-slate-900">{transport.billNumber}</span>
+              <span
+                className="inline-flex min-w-0 max-w-full items-center gap-1 truncate text-xs font-sans font-semibold text-violet-700"
+                title={`Billing firm: ${billingFirm?.name || '-'}`}
+              >
+                <Building2 className="h-3 w-3 shrink-0" />
+                <span className="truncate">{billingFirm?.name || '-'}</span>
+              </span>
               <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${badge.bg} ${badge.text} ${badge.border}`}>
                 {badge.label}
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Created on {formatDate(transport.createdAt)} · Carrier: {transpName}
-            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="inline-flex items-center rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-mono font-bold text-sky-800">
+                {transport.vehicleNumber}
+              </span>
+              <span className="text-xs text-slate-500">
+                Created by <span className="font-medium text-slate-700">{transport.createdBy || '-'}</span>
+                {' '}on {formatDate(transport.createdAt.slice(0, 10))}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -304,20 +332,34 @@ export const TransportDetailScreen: React.FC = () => {
 
           <div className="text-xs space-y-2.5">
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Origin (From)</span>
-              <div className="font-semibold text-slate-800 text-sm">{fromClient?.name || '-'}</div>
-              <div className="text-slate-500 text-[11px]">{fromClient?.city}</div>
+              <span className="text-emerald-700 block text-[10px] uppercase font-bold">Destination (To)</span>
+              <div className="font-bold text-slate-900 text-sm">{toClientName}</div>
+              <div className="text-slate-500 text-[11px]">{toClient?.city}</div>
             </div>
 
             <div className="pt-1">
-              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Destination (To)</span>
-              <div className="font-semibold text-slate-800 text-sm">{toClient?.name || '-'}</div>
-              <div className="text-slate-500 text-[11px]">{toClient?.city}</div>
+              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Origin (From)</span>
+              <div className="font-medium text-slate-700 text-sm">{fromClientName}</div>
+              <div className="text-slate-500 text-[11px]">{fromClient?.city}</div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100">
+              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Transporter</span>
+              <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-sans font-semibold text-blue-700">
+                <Truck className="h-3 w-3 shrink-0" />
+                <span>{transpName}</span>
+              </span>
             </div>
 
             <div className="pt-2 border-t border-slate-100">
               <span className="text-slate-400 block text-[10px] uppercase font-semibold">Billing Firm</span>
-              <div className="font-medium text-slate-800">{billingFirm?.name || '-'}</div>
+              <span
+                className="mt-0.5 inline-flex min-w-0 max-w-full items-center gap-1 truncate text-xs font-sans font-semibold text-violet-700"
+                title={`Billing firm: ${billingFirm?.name || '-'}`}
+              >
+                <Building2 className="h-3 w-3 shrink-0" />
+                <span className="truncate">{billingFirm?.name || '-'}</span>
+              </span>
             </div>
 
             <div>
@@ -351,6 +393,13 @@ export const TransportDetailScreen: React.FC = () => {
               <span className="font-medium text-slate-800 tabular-nums">
                 {transport.bagNumbers ? `${transport.bagNumbers} bags` : '-'}
                 {transport.bagWeight ? ` (@${transport.bagWeight} grams per bag)` : ''}
+              </span>
+            </div>
+
+            <div className="flex justify-between items-center py-1 border-b border-slate-50">
+              <span className="text-slate-500">Net Weight:</span>
+              <span className={`font-bold tabular-nums text-sm ${netWeight < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                {formatQuantityWithUnit(netWeight, transport.grossWeightUnit)}
               </span>
             </div>
 
@@ -531,7 +580,7 @@ export const TransportDetailScreen: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => navigate('transport-form', { transportId: transport.id, openItemAllocation: true })}
+            onClick={() => navigate('transport-form', { transportId: transport.id, openItemAllocation: true, returnTo: 'transport-detail' })}
             className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
           >
             <Plus className="w-3 h-3" />

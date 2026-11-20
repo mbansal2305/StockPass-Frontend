@@ -666,13 +666,14 @@ export const OrderListScreen: React.FC = () => {
                           onClick={() => navigate('order-detail', { orderId: order.id })}
                           className="text-left cursor-pointer"
                         >
-                          <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-mono font-bold ${
-                            order.type === 'SALES ORDER'
-                              ? order.isDummy
-                                ? 'bg-[#efebe9] text-[#5d4037]'
-                                : 'bg-blue-100 text-blue-800'
-                              : 'bg-emerald-100 text-emerald-800'
-                          }`}>
+                          <span className={order.type === 'SALES ORDER' && order.isDummy
+                            ? 'text-xs font-mono font-bold text-slate-400'
+                            : `inline-flex items-center px-2 py-1 rounded text-xs font-mono font-bold ${
+                              order.type === 'SALES ORDER'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`
+                          }>
                             {order.orderNumber}
                           </span>
                         </button>
