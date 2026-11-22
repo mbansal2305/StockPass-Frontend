@@ -112,6 +112,8 @@ export interface BulkTransportUpdatePayload {
 export interface BulkTransportDetail {
   id: string;
   title: string;
+  createdBy?: string;
+  createdAt?: string;
   loadingDate?: string;
   unloadingDate?: string;
   billNumber?: string;
@@ -130,12 +132,20 @@ export interface BulkTransportDetail {
 export interface BulkTransportListItem {
   id: string;
   loadingDate?: string;
+  unloadingDate?: string;
   title: string;
   commodity?: string;
+  commodityType?: string;
   billNumber?: string;
   order?: string;
   billingFirm?: string;
   destination?: string;
+  fromClientCount: number;
+  grossWeight: number;
+  grossWeightUnit?: string;
+  totalBagCount: number;
+  transporter?: string;
+  receivedWeight?: number;
   status: string;
   vehicleCount: number;
 }
@@ -230,6 +240,9 @@ export function transformBackendTransport(raw: any, lookups: TransportLookups = 
 
   return {
     id: String(raw?.id ?? raw?.pk ?? ''),
+    bulkTransport: toBooleanFlag(raw?.bulk_transport ?? raw?.bulkTransport),
+    vehicleCount: Number(raw?.vehicle_nos ?? raw?.vehicleNos ?? 0),
+    fromClientCount: Number(raw?.from_client_nos ?? raw?.fromClientNos ?? 0),
     billNumber: String(raw?.bill_no ?? raw?.bill_number ?? raw?.billNumber ?? ''),
     billingFirmId: relationId(raw?.billing_firm_id ?? raw?.billingFirmId ?? raw?.billing_firm, lookups.clients),
     billingFirmName: relationName(raw?.billing_firm) ?? raw?.billing_firm_name ?? raw?.billingFirmName ?? undefined,
@@ -461,6 +474,8 @@ function unwrapBulkTransport(value: any, lookups: TransportLookups): BulkTranspo
   return {
     id: String(bulkTransport?.id ?? ''),
     title: String(bulkTransport?.title ?? ''),
+    createdBy: bulkTransport?.c_by ?? bulkTransport?.created_by ?? bulkTransport?.createdBy ?? undefined,
+    createdAt: String(bulkTransport?.c_at ?? bulkTransport?.created_at ?? bulkTransport?.createdAt ?? ''),
     loadingDate: bulkTransport?.loading_date ?? bulkTransport?.loadingDate ?? undefined,
     unloadingDate: bulkTransport?.unloading_date ?? bulkTransport?.unloadingDate ?? undefined,
     billNumber: bulkTransport?.bill_no ?? bulkTransport?.billNumber ?? undefined,
@@ -644,14 +659,24 @@ export const transportsApi = {
       results: results.map((item: any) => ({
         id: String(item.id ?? ''),
         loadingDate: item.loading_date ?? item.loadingDate ?? undefined,
+        unloadingDate: item.unloading_date ?? item.unloadingDate ?? undefined,
         title: String(item.title ?? ''),
         commodity: item.commodity == null ? undefined : String(item.commodity),
+        commodityType: item.commodity_type ?? item.commodityType ?? undefined,
         billNumber: item.bill_no == null ? undefined : String(item.bill_no),
         order: item.order == null ? undefined : String(item.order),
         billingFirm: item.billing_firm == null ? undefined : String(item.billing_firm),
         destination: item.to_client == null ? undefined : String(item.to_client),
+        fromClientCount: Number(item.from_client_nos ?? item.fromClientNos) || 0,
+        grossWeight: Number(item.gross_wt ?? item.grossWeight) || 0,
+        grossWeightUnit: item.gross_wt_unit ?? item.grossWeightUnit ?? undefined,
+        totalBagCount: Number(item.total_bag_nos ?? item.totalBagNos) || 0,
+        transporter: item.transporter == null ? undefined : String(item.transporter),
+        receivedWeight: item.total_rcvd_wt == null && item.totalReceivedWeight == null
+          ? undefined
+          : Number(item.total_rcvd_wt ?? item.totalReceivedWeight),
         status: String(item.status ?? 'pending'),
-        vehicleCount: Number(item.num_vehicles) || 0
+        vehicleCount: Number(item.num_vehicles ?? item.vehicle_nos ?? item.numVehicles) || 0
       }))
     };
   },

@@ -78,7 +78,11 @@ export const TransportListScreen: React.FC = () => {
     showToast,
     transportGet,
     navigate,
-    pageParams
+    pageParams,
+    clients,
+    commodities,
+    orders,
+    transporters
   } = useApp();
 
   const isOwner = currentUser?.role === 'OWNER';
@@ -232,6 +236,18 @@ export const TransportListScreen: React.FC = () => {
       });
     } catch (error: any) {
       showToast(error.message || 'Failed to load transport details', 'error');
+    }
+  };
+
+  const openBulkTransport = async (bulkTransportId: string, destination: 'bulk-transport-detail' | 'bulk-transport') => {
+    try {
+      await transportsApi.getBulk(bulkTransportId, { clients, commodities, orders, transporters });
+      navigate(destination, {
+        bulkTransportId,
+        ...(destination === 'bulk-transport' ? { returnTo: 'transport' } : {})
+      });
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : 'Failed to load bulk transport details', 'error');
     }
   };
 
@@ -610,7 +626,9 @@ export const TransportListScreen: React.FC = () => {
                     ? t.transporterName || '-'
                     : 'Direct Transport';
                   const billingFirm = t.billingFirmName || '-';
-                  const fromClient = t.fromClientName || '-';
+                  const fromClient = t.bulkTransport
+                    ? `${t.fromClientCount ?? 0} Locations`
+                    : t.fromClientName || '-';
                   const toClient = t.toClientName || '-';
                   const nextStatus = getNextStatus(t.status);
                   const grossWeightKg = t.grossWeightUnit === 'mt'
@@ -640,7 +658,9 @@ export const TransportListScreen: React.FC = () => {
                       key={t.id}
                       onClick={(event) => {
                         if ((event.target as HTMLElement).closest('button, a, input, select')) return;
-                        void openTransport(t.id, 'transport-form');
+                        void (t.bulkTransport
+                          ? openBulkTransport(t.id, 'bulk-transport')
+                          : openTransport(t.id, 'transport-form'));
                       }}
                       className={`${rowBgClass} transition-colors cursor-pointer`}
                     >
@@ -651,13 +671,23 @@ export const TransportListScreen: React.FC = () => {
 
                       {/* Bill Number */}
                       <td className="px-4 py-3 font-mono font-medium text-slate-900">
-                        <button
-                          type="button"
-                          onClick={() => void openTransport(t.id, 'transport-detail')}
-                          className="hover:text-blue-600 text-left font-bold cursor-pointer"
-                        >
-                          {t.billNumber}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void (t.bulkTransport
+                              ? openBulkTransport(t.id, 'bulk-transport-detail')
+                              : openTransport(t.id, 'transport-detail'))}
+                            className="hover:text-blue-600 text-left font-bold cursor-pointer"
+                          >
+                            {t.billNumber}
+                          </button>
+                          {t.bulkTransport && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-1.5 py-0.5 font-sans text-[9px] font-semibold tracking-wide text-teal-800">
+                              <Layers className="h-2.5 w-2.5" aria-hidden="true" />
+                              Bulk
+                            </span>
+                          )}
+                        </div>
                         <div className="mt-1 flex items-center gap-1 truncate text-[10px] font-sans font-semibold text-violet-700" title={`Billing firm: ${billingFirm}`}>
                           <Building2 className="h-3 w-3 shrink-0" />
                           <span className="truncate">{billingFirm}</span>
@@ -666,7 +696,7 @@ export const TransportListScreen: React.FC = () => {
 
                       {/* Vehicle Number */}
                       <td className="w-[140px] max-w-[140px] px-4 py-3 font-mono font-bold text-slate-900">
-                        {t.vehicleNumber}
+                        {t.bulkTransport ? `${t.vehicleCount ?? 0} Vehicles` : t.vehicleNumber}
                         <div className="text-[10px] font-sans font-normal text-slate-500 whitespace-normal break-words" title={transp}>
                           {transp}
                         </div>
@@ -690,7 +720,7 @@ export const TransportListScreen: React.FC = () => {
                           <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
                             From
                           </span>
-                          <span className="truncate text-[10px] text-slate-400">
+                          <span className={`truncate text-[10px] text-slate-400 ${t.bulkTransport ? 'font-semibold' : ''}`}>
                             {fromClient}
                           </span>
                         </div>
@@ -753,7 +783,9 @@ export const TransportListScreen: React.FC = () => {
                                   type="button"
                                   onClick={() => {
                                     setOpenActionMenuId(null);
-                                    void openTransport(t.id, 'transport-detail');
+                                    void (t.bulkTransport
+                                      ? openBulkTransport(t.id, 'bulk-transport-detail')
+                                      : openTransport(t.id, 'transport-detail'));
                                   }}
                                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-600 cursor-pointer"
                                 >
@@ -780,7 +812,9 @@ export const TransportListScreen: React.FC = () => {
                                     type="button"
                                     onClick={() => {
                                       setOpenActionMenuId(null);
-                                      void openTransport(t.id, 'transport-form');
+                                      void (t.bulkTransport
+                                        ? openBulkTransport(t.id, 'bulk-transport')
+                                        : openTransport(t.id, 'transport-form'));
                                     }}
                                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
                                   >

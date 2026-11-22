@@ -19,11 +19,14 @@ export interface DashboardExpiringOrder {
 
 export interface DashboardInTransitTransport {
   id: string | number;
-  vehicle_no: string;
+  vehicle_no: string | null;
+  vehicle_nos: number | null;
+  bulk_transport: boolean;
   bill_no: string;
   status: string;
   transporter: string | null;
   from_client: string | null;
+  from_client_nos: number | null;
   to_client: string | null;
   billing_firm: string | null;
   commodity: string | null;
@@ -38,6 +41,7 @@ export interface DashboardData {
   draft_orders_count: number;
   expiring_orders: DashboardExpiringOrder[];
   in_transit_count: number;
+  pending_transport_count: number;
   transport_status_counts: Record<string, number>;
   in_transit_transports: DashboardInTransitTransport[];
 }

@@ -55,6 +55,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
       case 'transport-form': return 'Transport Entry';
       case 'bulk-transport-list': return 'Bulk Transport List';
       case 'bulk-transport': return 'Bulk Transport Dispatch';
+      case 'bulk-transport-detail': return 'Bulk Transport Details';
       case 'master-data': return 'Master Data Repository';
       case 'expenses': return 'Expense Bills';
       case 'bill-hisaab': return 'Bill Hisaab';
@@ -199,7 +200,8 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
                     const Icon = item.icon;
                     const isActive = currentPage === item.id || 
                       (item.id === 'orders' && (currentPage === 'order-detail' || currentPage === 'order-form')) ||
-                      (item.id === 'transport' && (currentPage === 'transport-detail' || currentPage === 'transport-form'));
+                      (item.id === 'transport' && (currentPage === 'transport-detail' || currentPage === 'transport-form')) ||
+                      (item.id === 'bulk-transport-list' && (currentPage === 'bulk-transport-detail' || currentPage === 'bulk-transport'));
 
                     return (
                       <button

@@ -39,6 +39,7 @@ export type NavigationPage =
   | 'transport-form'
   | 'bulk-transport-list'
   | 'bulk-transport'
+  | 'bulk-transport-detail'
   | 'master-data'
   | 'expenses'
   | 'bill-hisaab'

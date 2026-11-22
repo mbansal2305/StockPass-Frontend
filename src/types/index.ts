@@ -286,6 +286,9 @@ export interface TransportBankDetails {
 
 export interface Transport {
   id: string;
+  bulkTransport?: boolean;
+  vehicleCount?: number;
+  fromClientCount?: number;
   billNumber: string;
   billingFirmId: string;
   billingFirmName?: string;

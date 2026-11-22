@@ -118,7 +118,7 @@ export const DashboardScreen: React.FC = () => {
         </div>
       ) : dashboard && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" aria-busy={loading}>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" aria-busy={loading}>
             <div onClick={() => navigate('orders', { statusFilter: 'PENDING' })} className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs hover:border-slate-300 transition-all cursor-pointer group">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pending Orders</span>
@@ -137,31 +137,22 @@ export const DashboardScreen: React.FC = () => {
               <div className="text-[11px] text-slate-500 mt-0.5">Not yet confirmed</div>
             </div>
 
-            <div onClick={() => navigate('transport', { statusFilter: 'DELIVERY' })} className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs hover:border-slate-300 transition-all cursor-pointer group">
+            <div onClick={() => navigate('transport', { statusFilter: 'PENDING' })} className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs hover:border-slate-300 transition-all cursor-pointer group">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">In Transit</span>
-                <Truck className="w-4 h-4 text-sky-600 group-hover:scale-110 transition-transform" />
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pending Transports</span>
+                <Clock className="w-4 h-4 text-sky-600 group-hover:scale-110 transition-transform" />
               </div>
-              <div className="mt-2 text-2xl font-bold text-sky-800 tabular-nums">{dashboard.in_transit_count}</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Active consignments</div>
-            </div>
-
-            <div onClick={() => navigate('transport', { statusFilter: 'FINANCE' })} className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs hover:border-slate-300 transition-all cursor-pointer group">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Finance Auditing</span>
-                <Clock className="w-4 h-4 text-purple-600 group-hover:scale-110 transition-transform" />
-              </div>
-              <div className="mt-2 text-2xl font-bold text-purple-800 tabular-nums">{statusCount('FINANCE')}</div>
+              <div className="mt-2 text-2xl font-bold text-sky-800 tabular-nums">{dashboard.pending_transport_count}</div>
               <div className="text-[11px] text-slate-500 mt-0.5">Awaiting settlement</div>
             </div>
 
             <div onClick={() => navigate('transport')} className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs hover:border-slate-300 transition-all cursor-pointer group col-span-2 lg:col-span-1">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Transport Fleet</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vehicles in Transit</span>
                 <Truck className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
               </div>
-              <div className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{totalTransports}</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Across all statuses</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{dashboard.in_transit_count}</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">Across all transports</div>
             </div>
           </div>
 
@@ -228,7 +219,7 @@ export const DashboardScreen: React.FC = () => {
               <div className="p-4 border-b border-slate-200 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <Truck className="w-4 h-4 text-sky-600" />
-                  <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Vehicles In Transit ({dashboard.in_transit_count})</h2>
+                  <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Pending Transports ({dashboard.pending_transport_count})</h2>
                 </div>
                 <button onClick={() => navigate('transport')} className="text-[11px] text-blue-600 hover:text-blue-800 font-medium inline-flex items-center gap-1 cursor-pointer">
                   Transport Board <ArrowRight className="w-3 h-3" />
@@ -248,6 +239,12 @@ export const DashboardScreen: React.FC = () => {
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                             <span className="font-mono font-bold text-slate-900">{transport.bill_no}</span>
+                            {transport.bulk_transport && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-1.5 py-0.5 font-sans text-[9px] font-semibold tracking-wide text-teal-800">
+                                <Layers className="h-2.5 w-2.5" aria-hidden="true" />
+                                Bulk
+                              </span>
+                            )}
                             <span className="flex min-w-0 max-w-full items-center gap-1 truncate text-[10px] font-sans font-semibold text-violet-700" title={`Billing firm: ${transport.billing_firm || '-'}`}>
                               <Building2 className="h-3 w-3 shrink-0" />
                               <span className="truncate">{transport.billing_firm || '-'}</span>
@@ -255,11 +252,22 @@ export const DashboardScreen: React.FC = () => {
                           </div>
                           <div className="flex flex-wrap items-center gap-x-2 mt-1">
                             <span className="inline-flex items-center rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-mono font-bold text-sky-800">
-                              {transport.vehicle_no}
+                              {transport.bulk_transport
+                                ? `${transport.vehicle_nos ?? 0} Vehicles`
+                                : transport.vehicle_no || '-'}
                             </span>
                             <span className="inline-flex items-center gap-1 text-[11px] font-sans font-semibold text-blue-700">
                               <Truck className="h-3 w-3 shrink-0" />
                               <span>{transport.transporter || 'Direct Transport'}</span>
+                            </span>
+                          </div>
+                          <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px]">
+                            <span className="truncate font-semibold text-slate-800">{transport.to_client || '-'}</span>
+                            <span className="shrink-0 text-slate-400">From</span>
+                            <span className={`truncate text-slate-500 ${transport.bulk_transport ? 'font-semibold' : ''}`}>
+                              {transport.bulk_transport
+                                ? `${transport.from_client_nos ?? 0} Locations`
+                                : transport.from_client || '-'}
                             </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-x-2 text-[11px] mt-1">
