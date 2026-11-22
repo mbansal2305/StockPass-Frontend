@@ -278,7 +278,10 @@ export const DashboardScreen: React.FC = () => {
                             </span>
                             <span className="inline-flex items-center gap-1 text-[11px] font-sans font-semibold text-blue-700">
                               <Truck className="h-3 w-3 shrink-0" />
-                              <span>{transport.transporter || 'Direct Transport'}</span>
+                              <span>
+                                {transport.transporter || 'Direct Transport'}
+                                {transport.transporter_agency ? ` (${transport.transporter_agency})` : ''}
+                              </span>
                             </span>
                           </div>
                           <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px]">

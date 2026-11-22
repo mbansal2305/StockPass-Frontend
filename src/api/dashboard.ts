@@ -26,6 +26,7 @@ export interface DashboardInTransitTransport {
   bill_no: string;
   status: string;
   transporter: string | null;
+  transporter_agency: string | null;
   from_client: string | null;
   from_client_nos: number | null;
   to_client: string | null;
