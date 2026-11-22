@@ -34,7 +34,7 @@ export interface TransportListFilters {
 }
 
 export interface TransportListPayload {
-  transporter?: number[];
+  transporter?: (number | null)[];
   status?: Lowercase<TransportStatus>;
   commodity?: number[];
   billing_firm?: number[];
@@ -79,8 +79,10 @@ export type BulkTransportEntry = Partial<Transport> & { id?: string };
 export interface BulkTransportCreatePayload {
   title: string;
   loadingDate?: string;
+  unloadingDate?: string;
   billNumber?: string;
   totalReceivedWeight?: number;
+  orderEntry?: number;
   orderId?: string;
   billingFirmId?: string;
   transporterId?: string;
@@ -94,8 +96,10 @@ export interface BulkTransportUpdatePayload {
   id: string;
   title?: string;
   loadingDate?: string;
+  unloadingDate?: string;
   billNumber?: string;
   totalReceivedWeight?: number;
+  orderEntry?: number;
   orderId?: string;
   billingFirmId?: string;
   transporterId?: string;
@@ -109,8 +113,10 @@ export interface BulkTransportDetail {
   id: string;
   title: string;
   loadingDate?: string;
+  unloadingDate?: string;
   billNumber?: string;
   totalReceivedWeight?: number;
+  orderEntry?: number;
   orderId?: string;
   billingFirmId?: string;
   transporterId?: string;
@@ -367,8 +373,7 @@ function toBulkTransportSchema(transport: BulkTransportEntry, lookups: Transport
     return {
       ...(includeId && item.id !== undefined ? { id: item.id } : {}),
       order: Number(backendOrderId),
-      quantity: roundToTwoDecimals(item.allocatedQuantity),
-      order_entry: roundToTwoDecimals(item.orderEntryQuantity || 0)
+      quantity: roundToTwoDecimals(item.allocatedQuantity)
     };
   });
 
@@ -380,7 +385,11 @@ function toBulkTransportSchema(transport: BulkTransportEntry, lookups: Transport
     ...(transport.fromClientId ? { from_client: Number(numericId(transport.fromClientId)) } : {}),
     ...(transport.toClientId ? { to_client: Number(numericId(transport.toClientId)) } : {}),
     vehicle_no: transport.vehicleNumber,
-    ...(transport.transporterId ? { transporter: Number(numericId(transport.transporterId)) } : {}),
+    ...(transport.transporterId === 'none'
+      ? { transporter: 'none' }
+      : transport.transporterId
+        ? { transporter: Number(numericId(transport.transporterId)) }
+        : {}),
     gross_wt: transport.grossWeight === undefined ? undefined : roundToTwoDecimals(transport.grossWeight),
     gross_wt_unit: transport.grossWeightUnit,
     bag_nos: transport.bagNumbers,
@@ -408,8 +417,10 @@ function toBulkTransportFormData(
   payload: {
     title?: string;
     loadingDate?: string;
+    unloadingDate?: string;
     billNumber?: string;
     totalReceivedWeight?: number;
+    orderEntry?: number;
     orderId?: string;
     billingFirmId?: string;
     transporterId?: string;
@@ -425,11 +436,15 @@ function toBulkTransportFormData(
   if (id) appendValue(form, 'id', numericId(id));
   if (payload.title !== undefined) form.append('title', payload.title);
   appendValue(form, 'loading_date', payload.loadingDate);
+  appendValue(form, 'unloading_date', payload.unloadingDate);
   appendValue(form, 'bill_no', payload.billNumber);
   appendValue(form, 'total_rcvd_wt', payload.totalReceivedWeight === undefined ? undefined : roundToTwoDecimals(payload.totalReceivedWeight));
+  appendValue(form, 'order_entry', payload.orderEntry === undefined ? undefined : roundToTwoDecimals(payload.orderEntry));
   appendValue(form, 'order', payload.orderId ? numericId(payload.orderId) : undefined);
   appendValue(form, 'billing_firm', payload.billingFirmId ? numericId(payload.billingFirmId) : undefined);
-  appendValue(form, 'transporter', payload.transporterId ? numericId(payload.transporterId) : undefined);
+  appendValue(form, 'transporter', payload.transporterId === 'none'
+    ? 'none'
+    : payload.transporterId ? numericId(payload.transporterId) : undefined);
   appendValue(form, 'to_client', payload.toClientId ? numericId(payload.toClientId) : undefined);
   appendValue(form, 'commodity', payload.commodityId ? numericId(payload.commodityId) : undefined);
   appendValue(form, 'status', payload.status?.toLowerCase());
@@ -447,10 +462,14 @@ function unwrapBulkTransport(value: any, lookups: TransportLookups): BulkTranspo
     id: String(bulkTransport?.id ?? ''),
     title: String(bulkTransport?.title ?? ''),
     loadingDate: bulkTransport?.loading_date ?? bulkTransport?.loadingDate ?? undefined,
+    unloadingDate: bulkTransport?.unloading_date ?? bulkTransport?.unloadingDate ?? undefined,
     billNumber: bulkTransport?.bill_no ?? bulkTransport?.billNumber ?? undefined,
     totalReceivedWeight: bulkTransport?.total_rcvd_wt == null && bulkTransport?.totalReceivedWeight == null
       ? undefined
       : Number(bulkTransport.total_rcvd_wt ?? bulkTransport.totalReceivedWeight),
+    orderEntry: bulkTransport?.order_entry == null && bulkTransport?.orderEntry == null
+      ? undefined
+      : Number(bulkTransport.order_entry ?? bulkTransport.orderEntry),
     orderId: relationId(bulkTransport?.order, (lookups.orders || []).map(order => ({ id: order.id, name: order.orderNumber })),),
     billingFirmId: relationId(bulkTransport?.billing_firm, lookups.clients),
     transporterId: relationId(bulkTransport?.transporter, lookups.transporters),

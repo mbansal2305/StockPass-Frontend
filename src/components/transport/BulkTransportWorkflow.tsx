@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Order, QuantityUnit, Transport, TransportStatus } from '../../types';
 import { BulkTransportDetail, TransportClientOption, transportsApi } from '../../api';
-import { ArrowLeft, CheckCircle, ChevronDown, Layers, Plus, Search, Trash2, Truck, X } from 'lucide-react';
-import { formatQuantityWithUnit, getClientTypeLabel } from '../../utils/formatters';
+import { ArrowLeft, Calendar, CheckCircle, ChevronDown, Layers, Plus, Search, Trash2, Truck, X } from 'lucide-react';
+import { formatQuantityWithUnit, formatCurrency, getClientTypeLabel } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
 import { SearchableSelect } from '../common/SearchableSelect';
 
@@ -13,7 +13,6 @@ interface TruckRow {
   originalTransport?: Transport;
   vehicleNumber: string;
   grossWeight: number;
-  orderEntry: number;
   receivedWeight: number;
   bagNumbers: number;
   bagWeight: number;
@@ -21,13 +20,58 @@ interface TruckRow {
   gatepass: boolean;
 }
 
+const DIRECT_TRANSPORT = 'none';
+
 const today = (): string => {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
+const formatTransportDate = (value: string): string => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match ? `${match[3]} / ${match[2]} / ${match[1]}` : '';
+};
+
+interface TransportDateInputProps {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+}
+
+const TransportDateInput: React.FC<TransportDateInputProps> = ({ id, value, onChange, required }) => (
+  <div className="relative">
+    <button
+      id={id}
+      type="button"
+      aria-label={`Choose ${id.replace(/^transport-/, '').replace(/-/g, ' ')} date`}
+      aria-required={required}
+      onClick={event => {
+        const dateInput = event.currentTarget.parentElement?.querySelector<HTMLInputElement>('input[type="date"]');
+        if (dateInput?.showPicker) dateInput.showPicker();
+        else dateInput?.click();
+      }}
+      className="flex w-full items-center justify-between rounded-lg border border-slate-300 px-3 py-2 text-left text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+    >
+      <span>{formatTransportDate(value) || 'DD / MM / YYYY'}</span>
+      <Calendar className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+    </button>
+    <input
+      type="date"
+      aria-hidden="true"
+      tabIndex={-1}
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
+    />
+  </div>
+);
+
 const getShortUnitLabel = (unit: QuantityUnit): string =>
   unit === 'quintal' ? 'Qtl' : unit === 'kg' ? 'Kg' : 'MT';
+
+const getRateUnitLabel = (unit?: QuantityUnit): string =>
+  unit === 'quintal' ? 'Qtl' : unit === 'kg' ? 'Kg' : 'Mt';
 
 const convertQuantityUnit = (quantity: number, fromUnit: QuantityUnit, toUnit: QuantityUnit): number => {
   const metricTons = fromUnit === 'mt' ? quantity : fromUnit === 'quintal' ? quantity / 10 : quantity / 1000;
@@ -38,7 +82,7 @@ const convertQuantityUnit = (quantity: number, fromUnit: QuantityUnit, toUnit: Q
 
 const newTruck = (): TruckRow => ({
   id: `truck-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  vehicleNumber: '', grossWeight: 0, orderEntry: 0, receivedWeight: 0, bagNumbers: 0, bagWeight: 500, anugya: false, gatepass: false
+  vehicleNumber: '', grossWeight: 0, receivedWeight: 0, bagNumbers: 0, bagWeight: 500, anugya: false, gatepass: false
 });
 
 export const BulkTransportWorkflow: React.FC = () => {
@@ -46,13 +90,15 @@ export const BulkTransportWorkflow: React.FC = () => {
   const returnPage = pageParams.returnTo === 'bulk-transport-list' ? 'bulk-transport-list' : 'transport';
   const editingBulkId = pageParams.bulkTransportId ? String(pageParams.bulkTransportId) : '';
   const [loadingDate, setLoadingDate] = useState(today());
+  const [unloadingDate, setUnloadingDate] = useState('');
   const [billNumber, setBillNumber] = useState('');
   const [totalReceivedWeight, setTotalReceivedWeight] = useState(0);
+  const [totalOrderEntry, setTotalOrderEntry] = useState(0);
   const [title, setTitle] = useState('');
   const [titleEdited, setTitleEdited] = useState(false);
-  const [orderId, setOrderId] = useState(String(pageParams.preselectOrderId || ''));
+  const [orderId, setOrderId] = useState('');
   const [billingFirmId, setBillingFirmId] = useState('');
-  const [transporterId, setTransporterId] = useState('');
+  const [transporterId, setTransporterId] = useState(DIRECT_TRANSPORT);
   const [destinationId, setDestinationId] = useState('');
   const [status, setStatus] = useState<TransportStatus>('PENDING');
   const [orderOptions, setOrderOptions] = useState<Order[]>(orders);
@@ -101,13 +147,9 @@ export const BulkTransportWorkflow: React.FC = () => {
       setAgencyOptions(nextAgencies);
       setOrderOptions(nextOrders);
       setLookupsReady(true);
-      setBillingFirmId(value => value || nextFirms[0]?.id || '');
-      setDestinationId(value => value || nextLocations[0]?.id || '');
-      setTransporterId(value => value || nextAgencies[0]?.id || '');
-      setOrderId(value => value || pageParams.preselectOrderId || nextOrders[0]?.id || '');
     });
     return () => { cancelled = true; };
-  }, [clients, commodities, orders, transporters, pageParams.preselectOrderId]);
+  }, [clients, commodities, orders, transporters]);
 
   useEffect(() => {
     if (!editingBulkId || !lookupsReady) return;
@@ -128,7 +170,6 @@ export const BulkTransportWorkflow: React.FC = () => {
           const sourceId = transport.fromClientId || sources[0] || '';
           if (!sourceId) return;
           if (!nextTrucks[sourceId]) nextTrucks[sourceId] = [];
-          const orderItem = transport.items.find(item => item.orderId === bulk.orderId) || transport.items[0];
           const isEnabled = (value: boolean | string | undefined) => value === true || (typeof value === 'string' && !['', 'false', '0', 'no'].includes(value.trim().toLowerCase()));
           nextTrucks[sourceId].push({
             id: `transport-${transport.id}`,
@@ -136,7 +177,6 @@ export const BulkTransportWorkflow: React.FC = () => {
             originalTransport: transport,
             vehicleNumber: transport.vehicleNumber,
             grossWeight: convertQuantityUnit(transport.grossWeight, transport.grossWeightUnit || 'mt', bulkOrderUnit),
-            orderEntry: convertQuantityUnit(orderItem?.orderEntryQuantity || 0, transport.grossWeightUnit || 'mt', bulkOrderUnit),
             receivedWeight: convertQuantityUnit(transport.receivedWeight || 0, transport.grossWeightUnit || 'mt', bulkOrderUnit),
             bagNumbers: transport.bagNumbers || 0,
             bagWeight: transport.bagWeight ?? 500,
@@ -146,13 +186,15 @@ export const BulkTransportWorkflow: React.FC = () => {
         });
         const firstTransport = bulk.transports[0];
         setLoadingDate(bulk.loadingDate || firstTransport?.loadingDate || today());
+        setUnloadingDate(bulk.unloadingDate || firstTransport?.unloadDate || '');
         setBillNumber(bulk.billNumber || firstTransport?.billNumber || '');
         setTotalReceivedWeight(bulk.totalReceivedWeight || 0);
+        setTotalOrderEntry(bulk.orderEntry || 0);
         setTitle(bulk.title);
         setTitleEdited(true);
         setOrderId(bulk.orderId || firstTransport?.items[0]?.orderId || '');
         setBillingFirmId(bulk.billingFirmId || firstTransport?.billingFirmId || '');
-        setTransporterId(bulk.transporterId || firstTransport?.transporterId || '');
+        setTransporterId(bulk.transporterId || firstTransport?.transporterId || DIRECT_TRANSPORT);
         setDestinationId(bulk.toClientId || firstTransport?.toClientId || '');
         setStatus(bulk.status || firstTransport?.status || 'PENDING');
         setSourceIds(sources);
@@ -183,14 +225,25 @@ export const BulkTransportWorkflow: React.FC = () => {
   const selectedLocations = sourceIds.map(id => locations.find(location => location.id === id)).filter((item): item is TransportClientOption => Boolean(item));
   const allTrucks = sourceIds.flatMap(sourceId => (trucks[sourceId] || []).map(row => ({ ...row, sourceId })));
   const grossTotal = allTrucks.reduce((total, row) => total + row.grossWeight, 0);
-  const orderEntryTotal = allTrucks.reduce((total, row) => total + row.orderEntry, 0);
+  const totalBags = allTrucks.reduce((total, row) => total + (row.bagNumbers || 0), 0);
   const receivedWeightDiff = grossTotal - totalReceivedWeight;
   const formatSelectedQuantity = (value: number) =>
     formatQuantityWithUnit(value, selectedUnit).replace(/ KG$/, ' Kg');
+  const calculateBharti = (row: TruckRow): number | null => {
+    if (!row.bagNumbers) return null;
+    const grossInKg = convertQuantityUnit(row.grossWeight, selectedUnit, 'kg');
+    const bagWeightInKg = row.bagWeight / 1000;
+    return (grossInKg - row.bagNumbers * bagWeightInKg) / row.bagNumbers;
+  };
   const filteredLocations = locations.filter(location => `${location.name} ${location.clientType || ''} ${location.city || ''}`.toLowerCase().includes(locationSearch.toLowerCase().trim()));
   const locationSummary = selectedLocations.map(location => {
     const rows = trucks[location.id] || [];
-    return { location, rows, gross: rows.reduce((sum, row) => sum + row.grossWeight, 0), orderEntry: rows.reduce((sum, row) => sum + row.orderEntry, 0) };
+    return {
+      location,
+      rows,
+      gross: rows.reduce((sum, row) => sum + row.grossWeight, 0),
+      bags: rows.reduce((sum, row) => sum + (row.bagNumbers || 0), 0)
+    };
   });
 
   const updateTruck = (sourceId: string, rowId: string, field: keyof TruckRow, value: string | number | boolean) => {
@@ -202,13 +255,13 @@ export const BulkTransportWorkflow: React.FC = () => {
     const nextUnit = nextOrder?.unit || 'mt';
     if (nextUnit !== selectedUnit) {
       setTotalReceivedWeight(current => convertQuantityUnit(current, selectedUnit, nextUnit));
+      setTotalOrderEntry(current => convertQuantityUnit(current, selectedUnit, nextUnit));
       setTrucks(current => Object.fromEntries(
         Object.entries(current).map(([sourceId, rows]) => [
           sourceId,
           rows.map(row => ({
             ...row,
             grossWeight: convertQuantityUnit(row.grossWeight, selectedUnit, nextUnit),
-            orderEntry: convertQuantityUnit(row.orderEntry, selectedUnit, nextUnit),
             receivedWeight: convertQuantityUnit(row.receivedWeight, selectedUnit, nextUnit)
           }))
         ])
@@ -234,7 +287,7 @@ export const BulkTransportWorkflow: React.FC = () => {
 
   const handleSave = async () => {
     if (!selectedOrder) return showToast('Please select an order', 'error');
-    if (!billingFirmId || !transporterId || !destinationId) return showToast('Select a billing firm, transporter, and destination location', 'error');
+    if (!billingFirmId || !destinationId) return showToast('Select a billing firm and destination location', 'error');
     if (!title.trim()) return showToast('Please enter a bulk transport title', 'error');
     if (!allTrucks.length) return showToast('Add at least one truck before saving', 'error');
     if (allTrucks.some(row => !row.vehicleNumber.trim())) return showToast('Enter a vehicle number for every truck', 'error');
@@ -243,19 +296,19 @@ export const BulkTransportWorkflow: React.FC = () => {
       ...row.originalTransport,
       id: row.transportId || row.originalTransport?.id,
       billNumber: billNumber.trim(), billingFirmId, commodityId: selectedOrder.commodityId, fromClientId: row.sourceId,
-      toClientId: destinationId, vehicleNumber: row.vehicleNumber.trim().toUpperCase(), transporterId,
+      toClientId: destinationId, vehicleNumber: row.vehicleNumber.trim().toUpperCase(),
+      transporterId: transporterId === DIRECT_TRANSPORT ? DIRECT_TRANSPORT : transporterId,
       grossWeight: row.grossWeight, grossWeightUnit: selectedUnit, receivedWeight: row.receivedWeight, bagNumbers: row.bagNumbers,
       bagWeight: row.bagWeight, anugya: row.anugya, gatepass: row.gatepass, loadingDate, status,
       items: [{
         ...row.originalTransport?.items.find(item => item.orderId === selectedOrder.id) || row.originalTransport?.items[0],
         orderId: selectedOrder.id,
-        allocatedQuantity: row.grossWeight,
-        orderEntryQuantity: row.orderEntry
+        allocatedQuantity: row.grossWeight
       }]
     }));
     try {
       const payload = {
-        title: title.trim(), loadingDate, billNumber: billNumber.trim(), totalReceivedWeight, orderId: selectedOrder.id, billingFirmId,
+        title: title.trim(), loadingDate, unloadingDate, billNumber: billNumber.trim(), totalReceivedWeight, orderEntry: totalOrderEntry, orderId: selectedOrder.id, billingFirmId,
         transporterId, toClientId: destinationId, commodityId: selectedOrder.commodityId, status, transports
       };
       if (editingBulkId) {
@@ -286,18 +339,29 @@ export const BulkTransportWorkflow: React.FC = () => {
     <section className="bg-white p-5 rounded-lg border border-slate-200 space-y-4">
       <h2 className="text-xs font-bold text-slate-900 uppercase border-b border-slate-100 pb-2">Step 1 · Common transport details</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <label className="block text-xs font-medium text-slate-700">Loading date<input type="date" value={loadingDate} onChange={event => setLoadingDate(event.target.value)} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2" /></label>
+        <div><label htmlFor="bulk-loading-date" className="mb-1 block text-xs font-medium text-slate-700">Loading date</label><TransportDateInput id="bulk-loading-date" value={loadingDate} onChange={setLoadingDate} required /></div>
+        <div><label htmlFor="bulk-unloading-date" className="mb-1 block text-xs font-medium text-slate-700">Unload date</label><TransportDateInput id="bulk-unloading-date" value={unloadingDate} onChange={setUnloadingDate} /></div>
         <label className="block text-xs font-medium text-slate-700">Bill number<input value={billNumber} onChange={event => setBillNumber(event.target.value)} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2" /></label>
         <div><label htmlFor="bulk-order" className="mb-1 block text-xs font-medium text-slate-700">Order</label><SearchableSelect id="bulk-order" value={orderId} onChange={changeOrder} placeholder="Select or search order" options={orderOptions.map(order => {
           const commodityName = order.commodityName || commodities.find(item => item.id === order.commodityId)?.name || 'Commodity';
-          return { id: order.id, label: `${order.orderNumber} · ${order.type} · ${commodityName}`, searchText: `${order.orderNumber} ${order.type} ${commodityName}` };
-        })} /></div>
+          return {
+            id: order.id,
+            label: `${order.orderNumber}${order.selectorClientName ? ` (${order.selectorClientName})` : ''} · ${formatCurrency(order.rate)} / ${getRateUnitLabel(order.remQuantityUnit || order.unit)} · ${order.brokerName || 'Direct'}`,
+            highlightText: order.orderNumber,
+            searchText: `${order.orderNumber} ${order.type} ${commodityName} ${order.selectorClientName || ''} ${order.brokerName || 'Direct'}`
+          };
+        })} highlightFirstMatch wrapOptions portalOptions /></div>
         <label className="block text-xs font-medium text-slate-700">Title<input value={title} onChange={event => { setTitle(event.target.value); setTitleEdited(true); }} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2" /></label>
-        <div><label htmlFor="bulk-billing-firm" className="mb-1 block text-xs font-medium text-slate-700">Billing firm</label><SearchableSelect id="bulk-billing-firm" value={billingFirmId} onChange={setBillingFirmId} placeholder="Select or search billing firm" options={billingFirms.map(firm => ({ id: firm.id, label: `${firm.name}${firm.city ? ` (${firm.city})` : ''}`, searchText: firm.city }))} /></div>
-        <div><label htmlFor="bulk-transporter" className="mb-1 block text-xs font-medium text-slate-700">Transporter</label><SearchableSelect id="bulk-transporter" value={transporterId} onChange={setTransporterId} placeholder="Select or search transporter" options={agencyOptions.map(item => ({ id: item.id, label: item.name }))} /></div>
-        <div><label htmlFor="bulk-destination" className="mb-1 block text-xs font-medium text-slate-700">Destination location</label><SearchableSelect id="bulk-destination" value={destinationId} onChange={setDestinationId} placeholder="Select or search destination" options={locations.map(item => ({ id: item.id, label: `${item.name}${item.city ? ` (${item.city})` : ''}`, searchText: `${item.city || ''} ${item.clientType || ''}` }))} /></div>
+        <div><label htmlFor="bulk-billing-firm" className="mb-1 block text-xs font-medium text-slate-700">Billing firm</label><SearchableSelect id="bulk-billing-firm" value={billingFirmId} onChange={setBillingFirmId} placeholder="Select or search billing firm" highlightFirstMatch options={billingFirms.map(firm => ({ id: firm.id, label: `${firm.name}${firm.city ? ` (${firm.city})` : ''}`, searchText: firm.city }))} /></div>
+        <div><label htmlFor="bulk-transporter" className="mb-1 block text-xs font-medium text-slate-700">Transporter</label><SearchableSelect id="bulk-transporter" value={transporterId} onChange={setTransporterId} placeholder="Select or search transporter" highlightFirstMatch options={[{ id: DIRECT_TRANSPORT, label: 'Direct Transport' }, ...agencyOptions.map(item => ({
+          id: item.id,
+          label: `${item.name}${item.agency && item.agency !== item.name ? ` (${item.agency})` : ''}`,
+          searchText: `${item.agency || ''} ${item.city || ''} ${item.phone || item.phone_number || ''}`
+        }))]} /></div>
+        <div><label htmlFor="bulk-destination" className="mb-1 block text-xs font-medium text-slate-700">Destination location</label><SearchableSelect id="bulk-destination" value={destinationId} onChange={setDestinationId} placeholder="Select or search destination" highlightFirstMatch options={locations.map(item => ({ id: item.id, label: `${item.name}${item.city ? ` (${item.city})` : ''}`, searchText: `${item.city || ''} ${item.clientType || ''}` }))} /></div>
         <label className="block text-xs font-medium text-slate-700">Status<select value={status} onChange={event => setStatus(event.target.value as TransportStatus)} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white"><option value="PENDING">Loading / Pending</option><option value="DELIVERY">In Transit / Delivery</option><option value="FINANCE">Unloaded / Finance</option><option value="PAID">Settled / Paid</option></select></label>
         <label className="block text-xs font-medium text-slate-700">Total received weight ({getShortUnitLabel(selectedUnit)})<DecimalInput aria-label={`Total received weight in ${getShortUnitLabel(selectedUnit)}`} value={totalReceivedWeight} onChange={setTotalReceivedWeight} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none" /></label>
+        <label className="block text-xs font-medium text-slate-700">Total Order Entry ({getShortUnitLabel(selectedUnit)})<DecimalInput aria-label={`Total order entry in ${getShortUnitLabel(selectedUnit)}`} value={totalOrderEntry} onChange={setTotalOrderEntry} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none" /></label>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
@@ -320,14 +384,14 @@ export const BulkTransportWorkflow: React.FC = () => {
 
     <section className="bg-white p-5 rounded-lg border border-slate-200 space-y-4">
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2"><div><h2 className="text-xs font-bold text-slate-900 uppercase">Step 3 · Truck data</h2><p className="text-[11px] text-slate-500 mt-1">{selectedLocations.find(item => item.id === activeSourceId)?.name || 'Select a source location to add trucks'}</p></div><button type="button" disabled={!activeSourceId} onClick={() => setTrucks(current => ({ ...current, [activeSourceId]: [...(current[activeSourceId] || []), newTruck()] }))} className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg text-xs font-semibold cursor-pointer"><Plus className="w-3.5 h-3.5" />Add truck</button></div>
-      {!activeSourceId ? <p className="text-xs text-slate-500 py-4">Choose one or more source locations above.</p> : !(trucks[activeSourceId] || []).length ? <p className="text-xs text-slate-500 py-4">No trucks in this location yet.</p> : <div className="overflow-x-auto border border-slate-200 rounded-lg"><table className="w-full min-w-[1140px] table-fixed text-left text-xs"><colgroup><col className="w-[220px]" /><col className="w-[140px]" /><col className="w-[160px]" /><col className="w-[140px]" /><col className="w-[80px]" /><col className="w-[120px]" /><col className="w-[100px]" /><col className="w-[100px]" /><col className="w-[80px]" /></colgroup><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold"><tr><th className="px-3 py-2.5">Vehicle number</th><th className="px-3 py-2.5 text-right">Gross Wt ({getShortUnitLabel(selectedUnit)})</th><th className="px-3 py-2.5 text-right">Order Entry ({getShortUnitLabel(selectedUnit)})</th><th className="px-3 py-2.5 text-right">Rcvd Wt ({getShortUnitLabel(selectedUnit)})</th><th className="px-3 py-2.5 text-right">Bags</th><th className="px-3 py-2.5 text-right">Bag weight (g)</th><th className="px-3 py-2.5 text-center">Anugya</th><th className="px-3 py-2.5 text-center">Gate pass</th><th className="px-3 py-2.5 text-center">Delete</th></tr></thead><tbody className="divide-y divide-slate-100">{(trucks[activeSourceId] || []).map(row => <tr key={row.id} className="hover:bg-slate-50/50"><td className="px-3 py-2"><input value={row.vehicleNumber} onChange={event => updateTruck(activeSourceId, row.id, 'vehicleNumber', event.target.value.toUpperCase())} placeholder="Vehicle registration" className="w-full text-xs font-mono border border-slate-300 rounded px-2 py-1.5 uppercase" /></td><td className="px-3 py-2 text-right">{numericField(`Gross weight in ${getShortUnitLabel(selectedUnit)}`, row.grossWeight, value => updateTruck(activeSourceId, row.id, 'grossWeight', value))}</td><td className="px-3 py-2 text-right">{numericField(`Order entry in ${getShortUnitLabel(selectedUnit)}`, row.orderEntry, value => updateTruck(activeSourceId, row.id, 'orderEntry', value))}</td><td className="px-3 py-2 text-right">{numericField(`Received weight in ${getShortUnitLabel(selectedUnit)}`, row.receivedWeight, value => updateTruck(activeSourceId, row.id, 'receivedWeight', value))}</td><td className="px-3 py-2 text-right">{numericField('Bag count', row.bagNumbers, value => updateTruck(activeSourceId, row.id, 'bagNumbers', value))}</td><td className="px-3 py-2 text-right">{numericField('Bag weight in grams', row.bagWeight, value => updateTruck(activeSourceId, row.id, 'bagWeight', value))}</td><td className="px-3 py-2 text-center"><input type="checkbox" checked={row.anugya} onChange={event => updateTruck(activeSourceId, row.id, 'anugya', event.target.checked)} aria-label="Anugya" className="h-4 w-4 rounded border-slate-300 text-blue-600" /></td><td className="px-3 py-2 text-center"><input type="checkbox" checked={row.gatepass} onChange={event => updateTruck(activeSourceId, row.id, 'gatepass', event.target.checked)} aria-label="Gate pass" className="h-4 w-4 rounded border-slate-300 text-blue-600" /></td><td className="px-3 py-2 text-center"><button type="button" onClick={() => setTrucks(current => ({ ...current, [activeSourceId]: current[activeSourceId].filter(item => item.id !== row.id) }))} aria-label="Delete truck" className="p-1.5 text-red-600 hover:bg-red-50 rounded cursor-pointer"><Trash2 className="w-4 h-4" /></button></td></tr>)}</tbody></table></div>}
+      {!activeSourceId ? <p className="text-xs text-slate-500 py-4">Choose one or more source locations above.</p> : !(trucks[activeSourceId] || []).length ? <p className="text-xs text-slate-500 py-4">No trucks in this location yet.</p> : <div className="overflow-x-auto border border-slate-200 rounded-lg"><table className="w-full min-w-[1080px] table-fixed text-left text-xs"><colgroup><col className="w-[220px]" /><col className="w-[140px]" /><col className="w-[80px]" /><col className="w-[120px]" /><col className="w-[80px]" /><col className="w-[140px]" /><col className="w-[100px]" /><col className="w-[100px]" /><col className="w-[80px]" /></colgroup><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold"><tr><th className="px-3 py-2.5">Vehicle Number</th><th className="px-3 py-2.5 text-right">Gross Wt ({getShortUnitLabel(selectedUnit)})</th><th className="px-3 py-2.5 text-right">Bags</th><th className="px-3 py-2.5 text-right">Bag Wt (g)</th><th className="px-3 py-2.5 text-right">Bharti (Kg)</th><th className="px-3 py-2.5 text-right">Rcvd Wt ({getShortUnitLabel(selectedUnit)})</th><th className="px-3 py-2.5 text-center">Anugya</th><th className="px-3 py-2.5 text-center">Gate Pass</th><th className="px-3 py-2.5 text-center">Delete</th></tr></thead><tbody className="divide-y divide-slate-100">{(trucks[activeSourceId] || []).map(row => { const bharti = calculateBharti(row); return <tr key={row.id} className="hover:bg-slate-50/50"><td className="px-3 py-2"><input value={row.vehicleNumber} onChange={event => updateTruck(activeSourceId, row.id, 'vehicleNumber', event.target.value.toUpperCase())} placeholder="Vehicle registration" className="w-full text-xs font-mono border border-slate-300 rounded px-2 py-1.5 uppercase" /></td><td className="px-3 py-2 text-right">{numericField(`Gross weight in ${getShortUnitLabel(selectedUnit)}`, row.grossWeight, value => updateTruck(activeSourceId, row.id, 'grossWeight', value))}</td><td className="px-3 py-2 text-right">{numericField('Bag count', row.bagNumbers, value => updateTruck(activeSourceId, row.id, 'bagNumbers', value))}</td><td className="px-3 py-2 text-right">{numericField('Bag weight in grams', row.bagWeight, value => updateTruck(activeSourceId, row.id, 'bagWeight', value))}</td><td className={`px-2 py-2 text-right tabular-nums whitespace-nowrap ${bharti !== null && bharti < 0 ? 'text-red-600 font-semibold' : 'text-slate-900'}`}>{bharti === null ? '—' : bharti.toFixed(2)}</td><td className="px-3 py-2 text-right">{numericField(`Received weight in ${getShortUnitLabel(selectedUnit)}`, row.receivedWeight, value => updateTruck(activeSourceId, row.id, 'receivedWeight', value))}</td><td className="px-3 py-2 text-center"><input type="checkbox" checked={row.anugya} onChange={event => updateTruck(activeSourceId, row.id, 'anugya', event.target.checked)} aria-label="Anugya" className="h-4 w-4 rounded border-slate-300 text-blue-600" /></td><td className="px-3 py-2 text-center"><input type="checkbox" checked={row.gatepass} onChange={event => updateTruck(activeSourceId, row.id, 'gatepass', event.target.checked)} aria-label="Gate pass" className="h-4 w-4 rounded border-slate-300 text-blue-600" /></td><td className="px-3 py-2 text-center"><button type="button" onClick={() => setTrucks(current => ({ ...current, [activeSourceId]: current[activeSourceId].filter(item => item.id !== row.id) }))} aria-label="Delete truck" className="p-1.5 text-red-600 hover:bg-red-50 rounded cursor-pointer"><Trash2 className="w-4 h-4" /></button></td></tr>; })}</tbody></table></div>}
     </section>
 
     <section className="bg-slate-900 text-white p-5 rounded-lg space-y-4">
       <h2 className="flex items-center gap-2 text-xs font-bold uppercase text-slate-200"><Truck className="w-4 h-4 text-blue-300" />Dispatch summary</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4"><div><span className="block text-[10px] uppercase text-slate-400">Total trucks</span><strong className="text-lg tabular-nums">{allTrucks.length}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total gross allocation</span><strong className={`text-lg tabular-nums ${Math.abs(grossTotal - remainingQuantity) < 0.01 ? 'text-emerald-400' : 'text-amber-300'}`}>{formatSelectedQuantity(grossTotal)}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total order entry</span><strong className={`text-lg tabular-nums ${Math.abs(orderEntryTotal - remainingQuantity) < 0.01 ? 'text-emerald-400' : 'text-amber-300'}`}>{formatSelectedQuantity(orderEntryTotal)}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total received weight</span><strong className="text-lg tabular-nums">{formatSelectedQuantity(totalReceivedWeight)}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Diff (Gross - Received)</span><strong className="text-lg tabular-nums text-red-400">{formatSelectedQuantity(receivedWeightDiff)}</strong></div></div>
-      {orderEntryTotal > remainingQuantity + 0.01 && <p className="rounded-md bg-amber-400/10 border border-amber-400/30 px-3 py-2 text-xs text-amber-200">Order entry is above the remaining order quantity. You can still save this dispatch.</p>}
-      {locationSummary.length > 0 && <div className="overflow-x-auto border border-slate-700 rounded-lg"><table className="w-full min-w-[520px] text-left text-xs"><thead className="bg-slate-800 text-slate-300"><tr><th className="px-3 py-2">Source location</th><th className="px-3 py-2 text-right">Trucks</th><th className="px-3 py-2 text-right">Gross ({getShortUnitLabel(selectedUnit)})</th><th className="px-3 py-2 text-right">Order entry ({getShortUnitLabel(selectedUnit)})</th></tr></thead><tbody className="divide-y divide-slate-700">{locationSummary.map(item => <tr key={item.location.id}><td className="px-3 py-2">{item.location.name}</td><td className="px-3 py-2 text-right tabular-nums">{item.rows.length}</td><td className="px-3 py-2 text-right tabular-nums">{formatSelectedQuantity(item.gross)}</td><td className="px-3 py-2 text-right tabular-nums">{formatSelectedQuantity(item.orderEntry)}</td></tr>)}</tbody></table></div>}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4"><div><span className="block text-[10px] uppercase text-slate-400">Total trucks</span><strong className="text-lg tabular-nums">{allTrucks.length}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total gross allocation</span><strong className={`text-lg tabular-nums ${Math.abs(grossTotal - remainingQuantity) < 0.01 ? 'text-emerald-400' : 'text-amber-300'}`}>{formatSelectedQuantity(grossTotal)}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total bags</span><strong className="text-lg tabular-nums">{totalBags}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total received weight</span><strong className="text-lg tabular-nums">{formatSelectedQuantity(totalReceivedWeight)}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Diff (Gross - Received)</span><strong className="text-lg tabular-nums text-red-400">{formatSelectedQuantity(receivedWeightDiff)}</strong></div></div>
+      {totalOrderEntry > remainingQuantity + 0.01 && <p className="rounded-md bg-amber-400/10 border border-amber-400/30 px-3 py-2 text-xs text-amber-200">Order entry is above the remaining order quantity. You can still save this dispatch.</p>}
+      {locationSummary.length > 0 && <div className="overflow-x-auto border border-slate-700 rounded-lg"><table className="w-full min-w-[520px] text-left text-xs"><thead className="bg-slate-800 text-slate-300"><tr><th className="px-3 py-2">Source location</th><th className="px-3 py-2 text-right">Trucks</th><th className="px-3 py-2 text-right">Gross ({getShortUnitLabel(selectedUnit)})</th><th className="px-3 py-2 text-right">Bags</th></tr></thead><tbody className="divide-y divide-slate-700">{locationSummary.map(item => <tr key={item.location.id}><td className="px-3 py-2">{item.location.name}</td><td className="px-3 py-2 text-right tabular-nums">{item.rows.length}</td><td className="px-3 py-2 text-right tabular-nums">{formatSelectedQuantity(item.gross)}</td><td className="px-3 py-2 text-right tabular-nums">{item.bags}</td></tr>)}</tbody></table></div>}
       <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-700"><button type="button" onClick={() => navigate(returnPage)} className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white rounded-lg cursor-pointer">Cancel</button><button type="button" disabled={!allTrucks.length} onClick={handleSave} className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold cursor-pointer"><CheckCircle className="w-4 h-4" />Save {allTrucks.length} transport{allTrucks.length === 1 ? '' : 's'}</button></div>
     </section>
   </div>;

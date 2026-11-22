@@ -129,7 +129,9 @@ export function transformBackendOrderToFrontend(raw: any): Order {
     ? rawBroker.name ?? rawBroker.broker_name ?? rawBroker.label ?? raw.broker_name ?? raw.brokerName
     : typeof raw.broker === 'string' && !/^\d+$/.test(raw.broker)
     ? raw.broker
-    : raw.broker_name ?? raw.brokerName;
+    : typeof raw.broker_name === 'object'
+      ? raw.broker_name.name ?? raw.broker_name.broker_name ?? raw.broker_name.label
+      : raw.broker_name ?? raw.brokerName;
   const orderTransports: OrderTransport[] | undefined = Array.isArray(raw.order_transports)
     ? raw.order_transports.map((transport: any) => {
       const rawGrossWeightUnit = String(transport.gross_wt_unit || 'mt').toLowerCase();

@@ -36,6 +36,17 @@ const toNumericIds = (ids: string[]): number[] | undefined => {
   return numericIds.length ? numericIds : undefined;
 };
 
+const DIRECT_BROKER_FILTER_ID = 'direct';
+
+const toBrokerIds = (ids: string[]): (number | null)[] | undefined => {
+  const brokerIds = ids.flatMap(id => {
+    if (id === DIRECT_BROKER_FILTER_ID) return [null];
+    const numericId = Number(id);
+    return Number.isSafeInteger(numericId) && numericId > 0 ? [numericId] : [];
+  });
+  return brokerIds.length ? brokerIds : undefined;
+};
+
 const getRateUnitLabel = (unit?: string): string => {
   if (unit === 'quintal') return 'Qtl';
   if (unit === 'kg') return 'Kg';
@@ -170,7 +181,7 @@ export const OrderListScreen: React.FC = () => {
       contract_date_to: contractDateTo || undefined,
       from_client: isSalesOrder ? firmIds : partyIds,
       to_client: isSalesOrder ? partyIds : firmIds,
-      broker: toNumericIds(brokerFilter),
+      broker: toBrokerIds(brokerFilter),
       commodity: toNumericIds(commodityFilter),
       search: debouncedSearchTerm || undefined
     };
@@ -457,7 +468,14 @@ export const OrderListScreen: React.FC = () => {
             <MultiSearchableSelect
               id="orders-broker-filter"
               selectedIds={brokerFilter}
-              options={filterOptions.brokers.map(broker => ({ id: broker.id, label: broker.city ? `${broker.name} (${broker.city})` : broker.name, searchText: broker.city }))}
+              options={[
+                { id: DIRECT_BROKER_FILTER_ID, label: 'Direct' },
+                ...filterOptions.brokers.map(broker => ({
+                  id: broker.id,
+                  label: broker.city ? `${broker.name} (${broker.city})` : broker.name,
+                  searchText: broker.city
+                }))
+              ]}
               placeholder="All Brokers"
               onChange={(values: string[]) => { setBrokerFilter(values); setCurrentPageNum(1); }}
             />
@@ -621,8 +639,10 @@ export const OrderListScreen: React.FC = () => {
               ) : (
                 paginatedOrders.map(order => {
                   const comm = commodityMap.get(order.commodityId);
-                  const fromClient = clientMap.get(order.fromClientId) || order.fromClientName || '-';
-                  const toClient = clientMap.get(order.toClientId) || order.toClientName || '-';
+                  const commodityName = order.commodityName || comm?.name || 'Unknown';
+                  const commodityType = order.commodityType || comm?.type;
+                  const fromClient = order.fromClientName || clientMap.get(order.fromClientId) || '-';
+                  const toClient = order.toClientName || clientMap.get(order.toClientId) || '-';
                   const billingFirm = order.type === 'SALES ORDER' ? fromClient : toClient;
                   const remaining = Math.max(0, order.quantity - order.quantityFulfilled);
                   const daysMeta = getDaysRemaining(order.expiryDate);
@@ -681,8 +701,10 @@ export const OrderListScreen: React.FC = () => {
 
                       {/* Commodity */}
                       <td className="px-4 py-3 font-medium text-slate-800">
-                        {comm?.name || 'Unknown'}
-                        <div className="text-[10px] text-slate-400">{comm?.type}</div>
+                        {commodityName}
+                        {commodityType && (
+                          <div className="text-[10px] text-slate-400">{commodityType}</div>
+                        )}
                       </td>
 
                       {/* Route based on order type: Purchase -> From only, Sales -> To only */}
@@ -718,7 +740,7 @@ export const OrderListScreen: React.FC = () => {
 
                       {/* Broker */}
                       <td className="px-4 py-3 text-slate-700">
-                        {brokerMap.get(order.brokerId) || 'Direct'}
+                        {order.brokerName || brokerMap.get(order.brokerId) || 'Direct'}
                       </td>
 
                       {/* Rate */}

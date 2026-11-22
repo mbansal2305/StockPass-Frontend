@@ -30,6 +30,17 @@ const toNumericIds = (ids: string[]): number[] | undefined => {
   return numericIds.length ? numericIds : undefined;
 };
 
+const DIRECT_TRANSPORT_FILTER_ID = 'direct-transport';
+
+const toTransporterIds = (ids: string[]): (number | null)[] | undefined => {
+  const transporterIds = ids.flatMap(id => {
+    if (id === DIRECT_TRANSPORT_FILTER_ID) return [null];
+    const numericId = Number(id);
+    return Number.isSafeInteger(numericId) && numericId > 0 ? [numericId] : [];
+  });
+  return transporterIds.length ? transporterIds : undefined;
+};
+
 const DIRECT_DEAL_FILTER_ID = 'direct-deal';
 
 const toBrokerIds = (ids: string[]): (number | null)[] | undefined => {
@@ -174,7 +185,7 @@ export const TransportListScreen: React.FC = () => {
     transportsApi.listPaginated({
       status: activeTab === 'ALL' ? undefined : activeTab.toLowerCase() as Lowercase<TransportStatus>,
       commodity: toNumericIds(commodityFilter),
-      transporter: toNumericIds(transporterFilter),
+      transporter: toTransporterIds(transporterFilter),
       billing_firm: toNumericIds(billingFirmFilter),
       party: toNumericIds(partyFilter),
       broker: toBrokerIds(brokerFilter),
@@ -357,7 +368,14 @@ export const TransportListScreen: React.FC = () => {
             <MultiSearchableSelect
               id="transport-transporter-filter"
               selectedIds={transporterFilter}
-              options={transporterOptions.map(transporter => ({ id: transporter.id, label: transporter.city ? `${transporter.name} (${transporter.city})` : transporter.name, searchText: transporter.city }))}
+              options={[
+                { id: DIRECT_TRANSPORT_FILTER_ID, label: 'Direct Transport' },
+                ...transporterOptions.map(transporter => ({
+                  id: transporter.id,
+                  label: transporter.city ? `${transporter.name} (${transporter.city})` : transporter.name,
+                  searchText: transporter.city
+                }))
+              ]}
               placeholder="All Transporters"
               onChange={values => { setTransporterFilter(values); setCurrentPageNum(1); }}
             />

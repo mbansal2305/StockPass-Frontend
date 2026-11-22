@@ -197,7 +197,7 @@ export interface OrderListSchema {
   from_client?: number[] | null;
   to_client?: number[] | null;
   type?: BackendOrderType | null;
-  broker?: number[] | null;
+  broker?: (number | null)[] | null;
   commodity?: number[] | null;
   search?: string | null;
   page?: number;
