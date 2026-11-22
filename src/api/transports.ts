@@ -158,6 +158,8 @@ export interface BulkTransportListPage {
   results: BulkTransportListItem[];
 }
 
+const inFlightBulkRequests = new Map<string, Promise<BulkTransportDetail>>();
+
 const numericId = (value: string | number | undefined): string => {
   if (value === undefined || value === '') return '';
   const id = String(value).match(/\d+/)?.[0];
@@ -697,9 +699,19 @@ export const transportsApi = {
     return unwrapBulkTransport(response, lookups);
   },
 
-  async getBulk(id: string, lookups: TransportLookups = {}): Promise<BulkTransportDetail> {
-    const response = await apiClient.get<any>(`/bulk-transports/get?id=${encodeURIComponent(numericId(id))}`);
-    return unwrapBulkTransport(response, lookups);
+  getBulk(id: string, lookups: TransportLookups = {}): Promise<BulkTransportDetail> {
+    const requestId = numericId(id);
+    const existingRequest = inFlightBulkRequests.get(requestId);
+    if (existingRequest) return existingRequest;
+
+    const request = apiClient.get<any>(`/bulk-transports/get?id=${encodeURIComponent(requestId)}`)
+      .then(response => unwrapBulkTransport(response, lookups));
+    inFlightBulkRequests.set(requestId, request);
+    const clearRequest = () => {
+      if (inFlightBulkRequests.get(requestId) === request) inFlightBulkRequests.delete(requestId);
+    };
+    request.then(clearRequest, clearRequest);
+    return request;
   },
 
   async selectBillingFirms(): Promise<TransportClientOption[]> {

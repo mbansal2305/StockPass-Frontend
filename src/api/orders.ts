@@ -134,6 +134,7 @@ export function transformBackendOrderToFrontend(raw: any): Order {
       : raw.broker_name ?? raw.brokerName;
   const orderTransports: OrderTransport[] | undefined = Array.isArray(raw.order_transports)
     ? raw.order_transports.map((transport: any) => {
+      const rawIsBulk = transport.is_bulk ?? transport.isBulk;
       const rawGrossWeightUnit = String(transport.gross_wt_unit || 'mt').toLowerCase();
       const grossWeightUnit: QuantityUnit = rawGrossWeightUnit === 'kg' || rawGrossWeightUnit === 'kilogram'
         ? 'kg'
@@ -142,6 +143,10 @@ export function transformBackendOrderToFrontend(raw: any): Order {
         : 'mt';
       return {
         id: String(transport.id),
+        isBulk: rawIsBulk === true || rawIsBulk === 1 ||
+          (typeof rawIsBulk === 'string' && ['true', '1'].includes(rawIsBulk.trim().toLowerCase())),
+        vehicleCount: Number(transport.vehicle_nos ?? transport.vehicleNos) || 0,
+        fromClientCount: Number(transport.from_client_nos ?? transport.fromClientNos) || 0,
         billNumber: String(transport.bill_no || ''),
         billingFirmName: transport.billing_firm ? String(transport.billing_firm) : undefined,
         loadingDate: transport.loading_date ?? null,

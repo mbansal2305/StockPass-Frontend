@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowRight, Building2, CheckCircle2, ClipboardList, Clock, Layers, Loader2, Plus, RefreshCw, Truck } from 'lucide-react';
 import { dashboardApi, DashboardData, DashboardTimeRange } from '../../api/dashboard';
 import { useApp } from '../../context/AppContext';
-import { formatDate, formatQuantityWithUnit, getTransportStatusBadge } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatQuantityWithUnit, getTransportStatusBadge } from '../../utils/formatters';
 
 const dateRanges: { value: DashboardTimeRange; label: string }[] = [
   { value: 'all_time', label: 'All Time' },
@@ -188,16 +188,30 @@ export const DashboardScreen: React.FC = () => {
                           }>
                             {order.order_no}
                           </span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">{order.commodity}</span>
+                          <span className="flex min-w-0 max-w-full items-center gap-1 truncate text-[10px] font-sans font-semibold text-violet-700" title={`Billing firm: ${order.type === 'sales_order' ? order.from_client || '-' : order.to_client || '-'}`}>
+                            <Building2 className="h-3 w-3 shrink-0" />
+                            <span className="truncate">
+                              {order.type === 'sales_order'
+                                ? order.from_client || '-'
+                                : order.to_client || '-'}
+                            </span>
+                          </span>
                         </div>
                         <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
                           <span>{order.from_client || '-'}</span><ArrowRight className="w-2.5 h-2.5" /><span>{order.to_client || '-'}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                          <span className="inline-flex px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">{order.commodity}</span>
+                          <span className="font-semibold text-blue-700">{formatQuantityWithUnit(Number(order.quantity), order.quantity_unit)}</span>
+                          <span className="text-slate-700 font-medium">
+                            {formatCurrency(Number(order.rate))} / {order.quantity_unit === 'kg' ? 'Kg' : order.quantity_unit === 'quintal' ? 'Qtl' : 'MT'}
+                          </span>
                         </div>
                         <div className="text-[10px] text-slate-400 mt-1">Expires {formatDate(order.expiry_date)}</div>
                       </div>
                       <div className="text-right shrink-0">
                         <div className="font-bold text-amber-700 tabular-nums">
-                          {formatQuantityWithUnit(Math.max(0, order.quantity - order.quantity_fulfilled), order.quantity_unit)}
+                          {formatQuantityWithUnit(Math.max(0, Number(order.quantity) - Number(order.quantity_fulfilled)), order.quantity_unit)}
                         </div>
                         <div className="text-[10px] mt-0.5">
                           {order.days_until_expiry < 0 ? (
@@ -234,7 +248,13 @@ export const DashboardScreen: React.FC = () => {
                 ) : dashboard.in_transit_transports.map(transport => {
                   const badge = getTransportStatusBadge(transport.status.toUpperCase());
                   return (
-                    <div key={transport.id} onClick={() => void openTransport(String(transport.id))} className="p-3.5 hover:bg-slate-50 transition-colors cursor-pointer text-xs">
+                    <div key={transport.id} onClick={() => {
+                      if (transport.bulk_transport) {
+                        navigate('bulk-transport-detail', { bulkTransportId: String(transport.id) });
+                      } else {
+                        void openTransport(String(transport.id));
+                      }
+                    }} className="p-3.5 hover:bg-slate-50 transition-colors cursor-pointer text-xs">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -262,6 +282,7 @@ export const DashboardScreen: React.FC = () => {
                             </span>
                           </div>
                           <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px]">
+                            <ArrowRight className="h-2.5 w-2.5 shrink-0 text-emerald-600" aria-hidden="true" />
                             <span className="truncate font-semibold text-slate-800">{transport.to_client || '-'}</span>
                             <span className="shrink-0 text-slate-400">From</span>
                             <span className={`truncate text-slate-500 ${transport.bulk_transport ? 'font-semibold' : ''}`}>

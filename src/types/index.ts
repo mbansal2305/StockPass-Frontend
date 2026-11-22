@@ -245,6 +245,9 @@ export interface Order {
 
 export interface OrderTransport {
   id: string;
+  isBulk?: boolean;
+  vehicleCount?: number;
+  fromClientCount?: number;
   billNumber: string;
   billingFirmName?: string;
   loadingDate?: string | null;

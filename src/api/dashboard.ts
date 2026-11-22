@@ -9,9 +9,10 @@ export interface DashboardExpiringOrder {
   is_dummy: boolean;
   expiry_date: string;
   days_until_expiry: number;
-  quantity: number;
+  quantity: number | string;
+  rate: number | string;
   quantity_unit: string;
-  quantity_fulfilled: number;
+  quantity_fulfilled: number | string;
   from_client: string | null;
   to_client: string | null;
   commodity: string;

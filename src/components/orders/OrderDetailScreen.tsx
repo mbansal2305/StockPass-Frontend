@@ -13,7 +13,9 @@ import {
   Clock,
   ShieldCheck,
   Loader2,
-  Printer
+  Printer,
+  Building2,
+  Layers
 } from 'lucide-react';
 import { OrderProgressBar } from '../common/OrderProgressBar';
 import { formatCurrency, formatQuantityWithUnit, getUnitLabel, formatDate, getDaysRemaining, getTransportStatusBadge } from '../../utils/formatters';
@@ -128,11 +130,15 @@ export const OrderDetailScreen: React.FC = () => {
     .filter(t => t.items.some(item => item.orderId === order.id))
     .map(t => ({
       id: t.id,
+      isBulk: t.bulkTransport,
+      vehicleCount: t.vehicleCount,
+      fromClientCount: t.fromClientCount,
       billNumber: t.billNumber,
+      billingFirmName: t.billingFirmName,
       loadingDate: t.loadingDate,
       unloadDate: t.unloadDate,
       vehicleNumber: t.vehicleNumber,
-      transporterName: transporterMap.get(t.transporterId) || '-',
+      transporterName: transporterMap.get(t.transporterId) || 'Direct Transport',
       grossWeightUnit: t.grossWeightUnit || 'mt',
       grossWeight: t.grossWeight,
       orderEntryQuantity: t.items.find(item => item.orderId === order.id)?.orderEntryQuantity
@@ -164,7 +170,12 @@ export const OrderDetailScreen: React.FC = () => {
     }
   };
 
-  const handleViewTransport = async (transportId: string) => {
+  const handleViewTransport = async (transportId: string, isBulk = false) => {
+    if (isBulk) {
+      navigate('bulk-transport-detail', { bulkTransportId: transportId });
+      return;
+    }
+
     setLoadingTransportId(transportId);
     try {
       await transportGet(transportId);
@@ -401,7 +412,7 @@ export const OrderDetailScreen: React.FC = () => {
               Transports Dispatched For This Order ({relatedTransports.length})
             </h2>
             <p className="text-[11px] text-slate-500">
-              Individual truck consignments fulfilling this contract allocation.
+              Transport consignments and bulk dispatches fulfilling this contract allocation.
             </p>
           </div>
 
@@ -413,7 +424,7 @@ export const OrderDetailScreen: React.FC = () => {
               <tr>
                 <th className="px-2 py-2">Loading Date</th>
                 <th className="px-2 py-2">Bill No</th>
-                <th className="px-2 py-2">Vehicle Number</th>
+                <th className="px-2 py-2">Vehicle Number / Count</th>
                 <th className="px-2 py-2 pr-0">Transporter</th>
                 <th className="px-2 py-2 pl-0 text-right">Gross Wt ({order.unit === 'quintal' ? 'QTL' : order.unit === 'kg' ? 'KG' : 'MT'})</th>
                 <th className="px-2 py-2 pr-4 text-right">Order Entry ({order.unit === 'quintal' ? 'QTL' : order.unit === 'kg' ? 'KG' : 'MT'})</th>
@@ -432,7 +443,7 @@ export const OrderDetailScreen: React.FC = () => {
               ) : (
                 relatedTransports.map((t) => {
                   const badge = getTransportStatusBadge(t.status.toUpperCase());
-                  const transporterName = t.transporterName || '-';
+                  const transporterName = t.transporterName || 'Direct Transport';
 
                   return (
                     <tr key={t.id} className="hover:bg-slate-50/70 transition-colors">
@@ -440,10 +451,29 @@ export const OrderDetailScreen: React.FC = () => {
                         {formatDate(t.loadingDate)}
                       </td>
                       <td className="px-2 py-2 font-mono font-medium text-slate-900">
-                        {t.billNumber}
+                        <div className="flex items-center gap-1.5">
+                          <span>{t.billNumber || '-'}</span>
+                          {t.isBulk && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-1.5 py-0.5 font-sans text-[9px] font-semibold tracking-wide text-teal-800">
+                              <Layers className="h-2.5 w-2.5" aria-hidden="true" />
+                              Bulk
+                            </span>
+                          )}
+                        </div>
+                        {t.billingFirmName && (
+                          <div className="mt-1 flex items-center gap-1 font-sans text-[10px] font-semibold text-violet-700" title={`Billing firm: ${t.billingFirmName}`}>
+                            <Building2 className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{t.billingFirmName}</span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-2 py-2">
-                        <div className="font-mono font-bold text-slate-900">{t.vehicleNumber}</div>
+                        <div className="font-mono font-bold text-slate-900">
+                          {t.isBulk ? `${t.vehicleCount ?? 0} Vehicles` : t.vehicleNumber || '-'}
+                        </div>
+                        {t.isBulk && (
+                          <div className="text-[10px] text-slate-500">From {t.fromClientCount ?? 0} Locations</div>
+                        )}
                       </td>
                       <td className="px-2 py-2 pr-0 text-slate-700" title={transporterName}>
                         {transporterName.length > 16 ? `${transporterName.slice(0, 16)}...` : transporterName}
@@ -465,7 +495,7 @@ export const OrderDetailScreen: React.FC = () => {
                       <td className="px-2 py-2 text-right">
                         <button
                           type="button"
-                          onClick={() => void handleViewTransport(t.id)}
+                          onClick={() => void handleViewTransport(t.id, t.isBulk)}
                           disabled={loadingTransportId === t.id}
                           className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-wait"
                           title="View Consignment"

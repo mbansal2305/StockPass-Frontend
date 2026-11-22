@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Building2, Calendar, Edit2, Layers, Loader2, Trash2, Truck } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { BulkTransportDetail, transportsApi } from '../../api';
@@ -8,6 +8,8 @@ import { ConfirmationModal } from '../common/ConfirmationModal';
 
 export const BulkTransportDetailScreen: React.FC = () => {
   const { pageParams, navigate, clients, commodities, orders, transporters, refreshData, showToast } = useApp();
+  const lookupsRef = useRef({ clients, commodities, orders, transporters });
+  lookupsRef.current = { clients, commodities, orders, transporters };
   const bulkTransportId = pageParams.bulkTransportId ? String(pageParams.bulkTransportId) : '';
   const [bulk, setBulk] = useState<BulkTransportDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -25,7 +27,7 @@ export const BulkTransportDetailScreen: React.FC = () => {
     let cancelled = false;
     setLoading(true);
     setError('');
-    transportsApi.getBulk(bulkTransportId, { clients, commodities, orders, transporters })
+    transportsApi.getBulk(bulkTransportId, lookupsRef.current)
       .then(result => {
         if (!cancelled) {
           setBulk(result);
@@ -43,7 +45,7 @@ export const BulkTransportDetailScreen: React.FC = () => {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [bulkTransportId, clients, commodities, orders, transporters]);
+  }, [bulkTransportId]);
 
   const clientMap = useMemo(() => new Map(clients.map(client => [client.id, client])), [clients]);
   const commodityMap = useMemo(() => new Map(commodities.map(commodity => [commodity.id, commodity])), [commodities]);
