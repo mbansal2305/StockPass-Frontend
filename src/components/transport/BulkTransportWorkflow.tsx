@@ -102,6 +102,7 @@ export const BulkTransportWorkflow: React.FC = () => {
   const [destinationId, setDestinationId] = useState('');
   const [status, setStatus] = useState<TransportStatus>('PENDING');
   const [orderOptions, setOrderOptions] = useState<Order[]>(orders);
+  const [detailOrder, setDetailOrder] = useState<Order | null>(null);
   const [billingFirms, setBillingFirms] = useState<TransportClientOption[]>([]);
   const [locations, setLocations] = useState<TransportClientOption[]>([]);
   const [agencyOptions, setAgencyOptions] = useState(transporters);
@@ -162,7 +163,18 @@ export const BulkTransportWorkflow: React.FC = () => {
           ...bulk.selectedSources,
           ...bulk.transports.map(transport => transport.fromClientId).filter(Boolean)
         ])];
-        const bulkOrder = orderOptions.find(order => order.id === bulk.orderId);
+        const bulkOrder = bulk.order
+          || orderOptions.find(order => order.id === bulk.orderId)
+          || orders.find(order => order.id === bulk.orderId);
+        if (bulkOrder) {
+          setDetailOrder(bulkOrder);
+          setOrderOptions(current => [
+            bulkOrder,
+            ...current.filter(order => order.id !== bulkOrder.id)
+          ]);
+        } else {
+          setDetailOrder(null);
+        }
         const bulkOrderUnit = bulkOrder?.unit || 'mt';
         const nextTrucks: Record<string, TruckRow[]> = {};
         sources.forEach(sourceId => { nextTrucks[sourceId] = []; });
@@ -212,7 +224,12 @@ export const BulkTransportWorkflow: React.FC = () => {
     return () => { cancelled = true; };
   }, [editingBulkId, lookupsReady]);
 
-  const selectedOrder = useMemo(() => orderOptions.find(order => order.id === orderId) || orders.find(order => order.id === orderId), [orderOptions, orders, orderId]);
+  const selectedOrder = useMemo(
+    () => orderOptions.find(order => order.id === orderId)
+      || (detailOrder?.id === orderId ? detailOrder : undefined)
+      || orders.find(order => order.id === orderId),
+    [orderOptions, detailOrder, orders, orderId]
+  );
   const commodity = commodities.find(item => item.id === selectedOrder?.commodityId);
   const selectedUnit = selectedOrder?.unit || 'mt';
   const contractQuantity = selectedOrder?.quantity || 0;
@@ -253,6 +270,7 @@ export const BulkTransportWorkflow: React.FC = () => {
   const changeOrder = (nextOrderId: string) => {
     const nextOrder = orderOptions.find(order => order.id === nextOrderId) || orders.find(order => order.id === nextOrderId);
     const nextUnit = nextOrder?.unit || 'mt';
+    setDetailOrder(nextOrder || null);
     if (nextUnit !== selectedUnit) {
       setTotalReceivedWeight(current => convertQuantityUnit(current, selectedUnit, nextUnit));
       setTotalOrderEntry(current => convertQuantityUnit(current, selectedUnit, nextUnit));
@@ -346,7 +364,7 @@ export const BulkTransportWorkflow: React.FC = () => {
           const commodityName = order.commodityName || commodities.find(item => item.id === order.commodityId)?.name || 'Commodity';
           return {
             id: order.id,
-            label: `${order.orderNumber}${order.selectorClientName ? ` (${order.selectorClientName})` : ''} · ${formatCurrency(order.rate)} / ${getRateUnitLabel(order.remQuantityUnit || order.unit)} · ${order.brokerName || 'Direct'}`,
+            label: `${order.orderNumber}${order.selectorClientName ? ` (${order.selectorClientName})` : ''} · ${formatQuantityWithUnit(order.quantity, order.unit || 'mt')} · ${formatCurrency(order.rate)} / ${getRateUnitLabel(order.remQuantityUnit || order.unit)} · ${order.brokerName || 'Direct'}`,
             highlightText: order.orderNumber,
             searchText: `${order.orderNumber} ${order.type} ${commodityName} ${order.selectorClientName || ''} ${order.brokerName || 'Direct'}`
           };

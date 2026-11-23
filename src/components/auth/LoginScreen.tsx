@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Eye, EyeOff, Lock, User, Truck, ArrowRight, Server } from 'lucide-react';
+import stockpassLogo from '../../StockPassLogo.png';
+import { Eye, EyeOff, Lock, User, ArrowRight, Server } from 'lucide-react';
 
 export const LoginScreen: React.FC = () => {
   const { login } = useApp();
@@ -31,22 +32,20 @@ export const LoginScreen: React.FC = () => {
     <div className="min-h-screen flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 bg-slate-100">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
-          <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-md">
-            <Truck className="w-6 h-6 text-amber-400" />
-          </div>
+          <img
+            src={stockpassLogo}
+            alt="StockPass logo"
+            className="w-16 h-16 object-contain"
+          />
         </div>
         <h2 className="mt-4 text-center text-2xl font-bold tracking-tight text-slate-900">
-          Vistar Logistics & Mandi ERP
+          StockPass Logistics & Mandi ERP
         </h2>
         <p className="mt-1 text-center text-xs text-slate-500">
           Commodity Trading · Multi-Truck Logistics · Settlement Management
         </p>
 
-        {/* API Endpoint indicator */}
-        <div className="mt-2.5 flex items-center justify-center gap-1.5 text-[11px] text-slate-500 font-mono">
-          <Server className="w-3.5 h-3.5 text-blue-600" />
-          <span>API: sharply-wriggly-curvy.ngrok-free.dev</span>
-        </div>
+
       </div>
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
@@ -115,6 +114,9 @@ export const LoginScreen: React.FC = () => {
 
         </div>
       </div>
+      <p className="mt-4 text-center text-xs text-slate-500">
+        Designed &amp; Developed by Milan Bansal
+      </p>
     </div>
   );
 };

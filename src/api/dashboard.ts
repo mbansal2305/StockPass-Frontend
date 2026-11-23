@@ -33,6 +33,7 @@ export interface DashboardInTransitTransport {
   billing_firm: string | null;
   commodity: string | null;
   gross_wt: number;
+  bag_nos: number;
   quantity_unit: string;
   unload_date: string | null;
 }
@@ -40,6 +41,8 @@ export interface DashboardInTransitTransport {
 export interface DashboardData {
   time_range: DashboardTimeRange;
   pending_orders_count: number;
+  pending_purchase_orders_count: number;
+  pending_sales_orders_count: number;
   draft_orders_count: number;
   expiring_orders: DashboardExpiringOrder[];
   in_transit_count: number;

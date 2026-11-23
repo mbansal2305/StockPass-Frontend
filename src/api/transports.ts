@@ -120,6 +120,7 @@ export interface BulkTransportDetail {
   totalReceivedWeight?: number;
   orderEntry?: number;
   orderId?: string;
+  order?: Order;
   billingFirmId?: string;
   transporterId?: string;
   toClientId?: string;
@@ -473,6 +474,12 @@ function toBulkTransportFormData(
 
 function unwrapBulkTransport(value: any, lookups: TransportLookups): BulkTransportDetail {
   const bulkTransport = value?.data ?? value;
+  const rawOrder = bulkTransport?.order && typeof bulkTransport.order === 'object'
+    ? bulkTransport.order
+    : null;
+  const selectedOrder = rawOrder
+    ? normalizeOrderOptions([rawOrder], lookups)[0]
+    : undefined;
   return {
     id: String(bulkTransport?.id ?? ''),
     title: String(bulkTransport?.title ?? ''),
@@ -488,6 +495,7 @@ function unwrapBulkTransport(value: any, lookups: TransportLookups): BulkTranspo
       ? undefined
       : Number(bulkTransport.order_entry ?? bulkTransport.orderEntry),
     orderId: relationId(bulkTransport?.order, (lookups.orders || []).map(order => ({ id: order.id, name: order.orderNumber })),),
+    order: selectedOrder,
     billingFirmId: relationId(bulkTransport?.billing_firm, lookups.clients),
     transporterId: relationId(bulkTransport?.transporter, lookups.transporters),
     toClientId: relationId(bulkTransport?.to_client, lookups.clients),

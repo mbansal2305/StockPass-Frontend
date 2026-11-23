@@ -250,10 +250,8 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
             <div className="relative flex-1 flex flex-col max-w-xs w-full bg-white shadow-xl z-50">
               <div className="p-4 border-b border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-xs">
-                    V
-                  </div>
-                  <span className="font-bold text-sm text-slate-900">Vistar ERP</span>
+                  <img src={stockpassLogo} alt="StockPass logo" className="w-8 h-8 object-contain" />
+                  <span className="font-bold text-sm text-slate-900">StockPass</span>
                 </div>
                 <button
                   type="button"

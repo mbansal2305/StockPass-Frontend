@@ -124,7 +124,16 @@ export const DashboardScreen: React.FC = () => {
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pending Orders</span>
                 <ClipboardList className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
               </div>
-              <div className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{dashboard.pending_orders_count}</div>
+              <div className="mt-2 flex items-baseline gap-2 tabular-nums">
+                <span className="text-2xl font-bold text-slate-900">{dashboard.pending_orders_count}</span>
+                <span className="text-sm font-bold">
+                  (
+                  <span className="text-blue-700">{dashboard.pending_sales_orders_count}</span>
+                  <span className="text-slate-500"> + </span>
+                  <span className="text-emerald-700">{dashboard.pending_purchase_orders_count}</span>
+                  )
+                </span>
+              </div>
               <div className="text-[11px] text-slate-500 mt-0.5">Awaiting fulfillment</div>
             </div>
 
@@ -296,7 +305,9 @@ export const DashboardScreen: React.FC = () => {
                           </div>
                           <div className="flex flex-wrap items-center gap-x-2 text-[11px] mt-1">
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">{transport.commodity || '-'}</span>
-                            <span className="text-slate-500">Gross weight: {formatQuantityWithUnit(transport.gross_wt, transport.quantity_unit)}</span>
+                            <span className="text-slate-500"><span className="font-semibold text-blue-700">{formatQuantityWithUnit(Number(transport.gross_wt), transport.quantity_unit)}</span></span>
+                            <span className="h-3 w-px bg-slate-300" aria-hidden="true" />
+                            <span className="text-[10px] font-normal text-slate-400">{transport.bag_nos} bags</span>
                           </div>
                           <div className="text-[10px] text-slate-400 mt-1">Unload: {transport.unload_date ? formatDate(transport.unload_date) : '-'}</div>
                         </div>

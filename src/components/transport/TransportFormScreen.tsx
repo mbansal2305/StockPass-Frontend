@@ -440,7 +440,7 @@ export const TransportFormScreen: React.FC = () => {
                       formData.grossWeightUnit
                     );
                   const getFullOrderLabel = (selectedOrder: typeof order) => selectedOrder
-                    ? `${selectedOrder.orderNumber}${selectedOrder.selectorClientName ? ` (${selectedOrder.selectorClientName})` : ''} · ${formatCurrency(selectedOrder.rate)} / ${getRateUnitLabel(selectedOrder.remQuantityUnit || selectedOrder.unit)} · ${selectedOrder.brokerName || 'Direct'}`
+                    ? `${selectedOrder.orderNumber}${selectedOrder.selectorClientName ? ` (${selectedOrder.selectorClientName})` : ''} · ${formatQuantityWithUnit(selectedOrder.quantity, selectedOrder.unit || 'mt')} · ${formatCurrency(selectedOrder.rate)} / ${getRateUnitLabel(selectedOrder.remQuantityUnit || selectedOrder.unit)} · ${selectedOrder.brokerName || 'Direct'}`
                     : item.orderNumber || item.orderId;
                   return (
                   <tr key={item.id ?? `${orderType}-${index}`}>
