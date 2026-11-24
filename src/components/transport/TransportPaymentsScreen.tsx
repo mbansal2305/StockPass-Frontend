@@ -803,7 +803,7 @@ export const TransportPaymentsScreen: React.FC = () => {
               const received = Number(draft.receivedWeight) || 0;
               const differenceQtl = quantityToQuintals(received - gross, transport.grossWeightUnit);
               const billableQuantity = received > 0 ? Math.min(gross, received) : gross;
-              const totalRent = Math.trunc(draft.rentType === 'per_unit' ? billableQuantity * draft.rent : draft.rent);
+              const totalRent = Math.trunc(draft.rentType === 'per_unit' ? Math.floor(billableQuantity) * draft.rent : draft.rent);
               const paymentAmounts = effectivePaymentAmounts(draft, exportPaymentDraft);
               const left = totalRent - draft.advanceByClient - paymentAmounts.advanceByFirm - draft.shortageAmount - paymentAmounts.finalPaid + draft.extraAmount;
               const party = transport.billingFirmName || clientMap.get(transport.billingFirmId) || '-';

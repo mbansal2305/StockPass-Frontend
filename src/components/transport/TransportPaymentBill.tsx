@@ -110,10 +110,12 @@ export const TransportPaymentBill: React.FC<TransportPaymentBillProps> = ({
   const received = Number(draft.receivedWeight) || 0;
   const difference = quantityToQuintals(received - gross, transport.grossWeightUnit);
   const billableQuantity = received > 0 ? Math.min(gross, received) : gross;
-  const totalRent = Math.trunc(draft.rentType === 'per_unit' ? billableQuantity * draft.rent : draft.rent);
+  const totalRent = Math.trunc(draft.rentType === 'per_unit' ? Math.floor(billableQuantity) * draft.rent : draft.rent);
   const balance = totalRent - draft.advanceByClient - draft.advanceByFirm - draft.shortageAmount - draft.finalPaid + draft.extraAmount;
   const firm = firmDetails?.name || 'Billing Firm';
-  const transporter = transporters.find(item => item.id === transport.transporterId)?.name || '-';
+  const transporter = transport.transporterId
+    ? transport.transporterName || transporters.find(item => item.id === transport.transporterId)?.name || '-'
+    : 'Direct Transport';
   const initials = firm.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
   const today = new Date();
   const billDate = formatDate(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
