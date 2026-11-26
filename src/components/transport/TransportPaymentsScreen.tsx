@@ -7,6 +7,8 @@ import { masterApi } from '../../api/master';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
+import { DateInput } from '../common/DateInput';
+import { parseDateInputValue } from '../../utils/dateInput';
 import { Building2, ChevronDown, Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, SlidersHorizontal, Wallet, X, Calendar } from 'lucide-react';
 import { TransportPaymentBill } from './TransportPaymentBill';
 import { MultiSearchableSelect, SearchableOption } from '../common/SearchableSelect';
@@ -54,11 +56,6 @@ const shiftDateByMonths = (date: Date, months: number): Date => {
   const lastDay = new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0).getDate();
   shifted.setDate(Math.min(date.getDate(), lastDay));
   return shifted;
-};
-
-const formatDateInputDisplay = (date: string): string => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
 };
 
 interface PaymentDraft {
@@ -262,6 +259,7 @@ export const TransportPaymentsScreen: React.FC = () => {
     totalPages: 1
   });
   const [drafts, setDrafts] = useState<Record<string, PaymentDraft>>({});
+  const [unloadDateDrafts, setUnloadDateDrafts] = useState<Record<string, string>>({});
   const [exportPaymentDrafts, setExportPaymentDrafts] = useState<Record<string, ExportPaymentDraft>>({});
   const [submittedRows, setSubmittedRows] = useState<Record<string, SubmittedPaymentRow>>({});
   const [pendingEdit, setPendingEdit] = useState<Transport | null>(null);
@@ -498,11 +496,22 @@ export const TransportPaymentsScreen: React.FC = () => {
     { value: 'PAID' as const, label: 'Paid', active: 'bg-emerald-100 text-emerald-900 border-emerald-300 ring-2 ring-emerald-400/30', idle: 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/60', dot: 'bg-emerald-500 border-emerald-600' }
   ];
 
+  const validateUnloadDate = (transport: Transport) => {
+    if (!isPendingTab) return true;
+    const input = document.getElementById(`payment-unload-date-${transport.id}`);
+    if (!(input instanceof HTMLInputElement)) {
+      showToast('Unable to validate the unload date.', 'error');
+      return false;
+    }
+    return input.reportValidity();
+  };
+
   const savePayment = async (transport: Transport) => {
     if (isPaidTab && !canManagePaidTransports) {
       showToast('Only owners and admins can update paid transports.', 'error');
       return;
     }
+    if (!validateUnloadDate(transport)) return;
 
     const currentDraft = getDraft(transport);
     const draft = isPendingTab
@@ -785,7 +794,7 @@ export const TransportPaymentsScreen: React.FC = () => {
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
       <div className="min-h-0 min-w-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[2160px] table-fixed text-left text-[11px]">
+        <table className="w-full min-w-[2176px] table-fixed text-left text-[11px]">
           <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-semibold uppercase text-slate-500">
             <tr>
               <th className="sticky left-0 top-0 z-40 w-[62px] bg-slate-50 px-1 py-2"></th>
@@ -795,7 +804,7 @@ export const TransportPaymentsScreen: React.FC = () => {
               <th className="sticky left-[282px] top-0 z-40 w-[90px] bg-slate-50 px-1 py-2">Route</th>
               <th className="sticky left-[372px] top-0 z-40 w-[50px] bg-slate-50 pl-1 pr-2 py-2 text-right">Gross Wt</th>
               <th className="sticky top-0 z-30 w-[90px] bg-slate-50 px-2 py-2 text-right">Rcvd Wt</th>
-              <th className="sticky top-0 z-30 w-[100px] bg-slate-50 px-2 py-2">Unload Date</th>
+              <th className="sticky top-0 z-30 w-[116px] bg-slate-50 px-2 py-2">Unload Date</th>
               <th className="sticky top-0 z-30 w-[120px] bg-slate-50 px-2 py-2">Agreed Rent</th>
               <th className="sticky top-0 z-30 w-[80px] bg-slate-50 px-2 py-2 text-right">Total Rent</th>
               <th className="sticky top-0 z-30 w-[80px] bg-slate-50 px-2 py-2 text-right">Adv. by Party / Hammali</th>
@@ -826,6 +835,7 @@ export const TransportPaymentsScreen: React.FC = () => {
               const hasChanges = isPendingTab
                 ? !paymentDraftsEqual(draft, baselineDraft)
                   || !exportPaymentDraftsEqual(exportPaymentDraft, baselineExportPaymentDraft)
+                  || Boolean(unloadDateDrafts[transport.id] && !parseDateInputValue(unloadDateDrafts[transport.id]))
                 : draft.status !== baselineDraft.status;
               const exportLocked = submittedRow?.exportLocked === true;
               const gross = Number(transport.grossWeight) || 0;
@@ -951,7 +961,7 @@ export const TransportPaymentsScreen: React.FC = () => {
                         <Edit2 className="h-3.5 w-3.5" />
                       </button>
                     )}
-                    <button type="button" title="Print payment bill" aria-label={`Print payment bill ${transport.billNumber}`} onClick={() => setPrintTransport(transport)} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
+                    <button type="button" title="Print payment bill" aria-label={`Print payment bill ${transport.billNumber}`} onClick={() => { if (validateUnloadDate(transport)) setPrintTransport(transport); }} className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900">
                       <Printer className="h-3.5 w-3.5" />
                     </button>
                     </div>
@@ -997,27 +1007,17 @@ export const TransportPaymentsScreen: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-2 py-2">
-                    <div
-                      onClick={event => {
-                        if (!isPendingTab) return;
-                        const dateInput = event.currentTarget.querySelector<HTMLInputElement>('input[type="date"]');
-                        if (dateInput?.showPicker) dateInput.showPicker();
-                        else dateInput?.click();
-                      }}
-                      className={`relative w-full min-w-[115px] cursor-pointer rounded border border-slate-300 px-1.5 py-1 pr-6 text-[11px] focus-within:ring-2 focus-within:ring-blue-500 ${!isPendingTab ? 'cursor-not-allowed opacity-70' : ''}`}
-                    >
-                      <span className={`pointer-events-none ${draft.unloadDate ? 'text-slate-900' : 'text-slate-400'}`}>
-                        {formatDateInputDisplay(draft.unloadDate) || 'DD/MM/YYYY'}
-                      </span>
-                      <input
-                        type="date"
-                        aria-label={`Unload date for bill ${transport.billNumber}`}
+                    <div className="w-[100px]">
+                      <DateInput
+                        id={`payment-unload-date-${transport.id}`}
+                        ariaLabel={`Unload date for bill ${transport.billNumber}`}
                         value={draft.unloadDate}
-                        onChange={event => updateDraft(transport, { unloadDate: event.target.value })}
+                        initialDraft={unloadDateDrafts[transport.id]}
+                        onDraftChange={value => setUnloadDateDrafts(previous => previous[transport.id] === value ? previous : { ...previous, [transport.id]: value })}
+                        onChange={unloadDate => updateDraft(transport, { unloadDate })}
                         disabled={!isPendingTab}
-                        className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
+                        compact
                       />
-                      <Calendar className="pointer-events-none absolute right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden="true" />
                     </div>
                   </td>
                   <td className="px-2 py-2">

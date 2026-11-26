@@ -8,22 +8,36 @@ interface DateInputProps {
   onChange: (value: string) => void;
   required?: boolean;
   hasError?: boolean;
+  disabled?: boolean;
+  compact?: boolean;
+  ariaLabel?: string;
+  initialDraft?: string;
+  onDraftChange?: (draft: string) => void;
 }
 
-export const DateInput: React.FC<DateInputProps> = ({ id, value, onChange, required, hasError }) => {
-  const [draft, setDraft] = useState(() => formatDateInputValue(value));
-  const [invalid, setInvalid] = useState(false);
-  const [showError, setShowError] = useState(false);
+export const DateInput: React.FC<DateInputProps> = ({ id, value, onChange, required, hasError, disabled, compact, ariaLabel, initialDraft, onDraftChange }) => {
+  const [draft, setDraft] = useState(() => initialDraft ?? formatDateInputValue(value));
+  const [invalid, setInvalid] = useState(() => Boolean(initialDraft && !parseDateInputValue(initialDraft)));
+  const [showError, setShowError] = useState(() => Boolean(initialDraft && !parseDateInputValue(initialDraft)));
+  const previousValueRef = useRef(value);
   const textInputRef = useRef<HTMLInputElement>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef<number | null>(null);
 
   useEffect(() => {
-    setDraft(formatDateInputValue(value));
+    if (previousValueRef.current === value) return;
+    previousValueRef.current = value;
+    const formatted = formatDateInputValue(value);
+    setDraft(formatted);
+    onDraftChange?.(formatted);
     setInvalid(false);
     setShowError(false);
     textInputRef.current?.setCustomValidity('');
   }, [value]);
+
+  useLayoutEffect(() => {
+    textInputRef.current?.setCustomValidity(invalid ? 'Enter a valid date in DD/MM/YYYY format.' : '');
+  }, [invalid]);
 
   useLayoutEffect(() => {
     const input = textInputRef.current;
@@ -44,6 +58,7 @@ export const DateInput: React.FC<DateInputProps> = ({ id, value, onChange, requi
       caretRef.current = null;
     }
     setDraft(nextDraft);
+    onDraftChange?.(nextDraft);
     setInvalid(isInvalid);
     if (!isInvalid) setShowError(false);
     input.setCustomValidity(isInvalid ? 'Enter a valid date in DD/MM/YYYY format.' : '');
@@ -60,9 +75,11 @@ export const DateInput: React.FC<DateInputProps> = ({ id, value, onChange, requi
           ref={textInputRef}
           id={id}
           type="text"
+          aria-label={ariaLabel}
           inputMode="numeric"
           autoComplete="off"
           required={required}
+          disabled={disabled}
           value={draft}
           placeholder="DD/MM/YYYY"
           aria-invalid={displayError || hasError || undefined}
@@ -102,29 +119,33 @@ export const DateInput: React.FC<DateInputProps> = ({ id, value, onChange, requi
             if (invalid) setShowError(true);
           }}
           onInvalid={() => setShowError(true)}
-          className={`w-full rounded-lg border px-3 py-2 pr-10 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 ${
+          className={`${compact ? 'w-full rounded border px-1.5 py-1 pr-5 text-[11px]' : 'w-full rounded-lg border px-3 py-2 pr-10 text-xs'} text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:cursor-not-allowed disabled:opacity-70 ${
             hasError ? 'border-red-400 bg-red-50/30' : 'border-slate-300'
           }`}
         />
         <button
           type="button"
-          aria-label={`Choose ${dateLabel}`}
+          aria-label={`Choose ${ariaLabel || dateLabel}`}
+          disabled={disabled}
           onClick={() => {
             if (dateInputRef.current?.showPicker) dateInputRef.current.showPicker();
             else dateInputRef.current?.click();
           }}
-          className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500"
+          className={`absolute inset-y-0 right-0 flex items-center ${compact ? 'px-1' : 'px-3'} text-slate-500 disabled:cursor-not-allowed disabled:opacity-70`}
         >
-          <Calendar className="h-4 w-4" aria-hidden="true" />
+          <Calendar className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} aria-hidden="true" />
         </button>
         <input
           ref={dateInputRef}
           type="date"
           aria-hidden="true"
           tabIndex={-1}
+          disabled={disabled}
           value={value}
           onChange={event => {
-            setDraft(formatDateInputValue(event.target.value));
+            const formatted = formatDateInputValue(event.target.value);
+            setDraft(formatted);
+            onDraftChange?.(formatted);
             setInvalid(false);
             setShowError(false);
             textInputRef.current?.setCustomValidity('');

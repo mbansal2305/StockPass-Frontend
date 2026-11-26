@@ -345,7 +345,7 @@ export const TransportListScreen: React.FC = () => {
           <p className="text-xs text-slate-500 mt-0.5">
             Monitor truck consignments.
           </p>
-          <p className="text-xs text-slate-500 mt-0.5">Shortcut: N new transport</p>
+          {/* <p className="text-xs text-slate-500 mt-0.5">Shortcut: N new transport</p> */}
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">

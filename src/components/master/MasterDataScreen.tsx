@@ -26,6 +26,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
+import { shouldIgnoreShortcut } from '../common/keyboardShortcuts';
 import { getClientFlagBadge, getClientTypeBadge, getClientTypeLabel } from '../../utils/formatters';
 import { getImageSource } from '../../utils/images';
 import { masterApi, MasterEntityCounts } from '../../api/master';
@@ -56,6 +57,7 @@ export const MasterDataScreen: React.FC = () => {
     masterUpdate,
     masterDelete,
     syncMasterCache,
+    mobileMenuOpen,
   } = useApp();
 
   const isOwner = currentUser?.role === 'OWNER';
@@ -71,6 +73,7 @@ export const MasterDataScreen: React.FC = () => {
   const [serverPage, setServerPage] = useState({ total: 0, totalPages: 1 });
   const [masterCounts, setMasterCounts] = useState<MasterEntityCounts | null>(null);
   const [visibleTransporterAccounts, setVisibleTransporterAccounts] = useState<Set<string>>(() => new Set());
+  const addButtonRef = useRef<HTMLButtonElement>(null);
 
   const localMasterDataRef = useRef({ commodities, clients, brokers, transporters });
   localMasterDataRef.current = { commodities, clients, brokers, transporters };
@@ -173,6 +176,21 @@ export const MasterDataScreen: React.FC = () => {
     id: string;
     name: string;
   } | null>(null);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      const addButton = addButtonRef.current;
+      if (shouldIgnoreShortcut(event) || event.key.toLowerCase() !== 'n' || isLabour || !addButton
+        || mobileMenuOpen || openActionMenuId || selectedClientForDetails || deleteConfirmation
+        || commodityModalOpen || clientModalOpen || brokerModalOpen || transporterModalOpen || isSubmitting) return;
+      event.preventDefault();
+      addButton.click();
+    };
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [isLabour, mobileMenuOpen, openActionMenuId, selectedClientForDetails, deleteConfirmation,
+    commodityModalOpen, clientModalOpen, brokerModalOpen, transporterModalOpen, isSubmitting]);
 
   // Fetch one page from /master/lst/. Search is performed only against this page.
   const fetchCurrentEntityData = useCallback(async () => {
@@ -738,7 +756,10 @@ export const MasterDataScreen: React.FC = () => {
             <div className="shrink-0">
               {masterDataTab === 'commodities' && (
                 <button
+                  ref={addButtonRef}
                   type="button"
+                  aria-keyshortcuts="N"
+                  title="Add commodity (N)"
                   onClick={() => handleOpenCommodityModal()}
                   className="w-full md:w-auto inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
                 >
@@ -748,7 +769,10 @@ export const MasterDataScreen: React.FC = () => {
               )}
               {masterDataTab === 'clients' && (
                 <button
+                  ref={addButtonRef}
                   type="button"
+                  aria-keyshortcuts="N"
+                  title="Add client or godown (N)"
                   onClick={() => handleOpenClientModal()}
                   className="w-full md:w-auto inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
                 >
@@ -758,7 +782,10 @@ export const MasterDataScreen: React.FC = () => {
               )}
               {masterDataTab === 'brokers' && (
                 <button
+                  ref={addButtonRef}
                   type="button"
+                  aria-keyshortcuts="N"
+                  title="Add broker (N)"
                   onClick={() => handleOpenBrokerModal()}
                   className="w-full md:w-auto inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
                 >
@@ -768,7 +795,10 @@ export const MasterDataScreen: React.FC = () => {
               )}
               {masterDataTab === 'transporters' && (
                 <button
+                  ref={addButtonRef}
                   type="button"
+                  aria-keyshortcuts="N"
+                  title="Add transporter (N)"
                   onClick={() => handleOpenTransporterModal()}
                   className="w-full md:w-auto inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
                 >

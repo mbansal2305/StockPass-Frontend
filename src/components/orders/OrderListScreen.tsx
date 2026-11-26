@@ -380,9 +380,9 @@ export const OrderListScreen: React.FC = () => {
           <p className="text-xs text-slate-500 mt-0.5">
             Manage sales and purchase orders.
           </p>
-          <p className="text-xs text-slate-500 mt-0.5">
+          {/* <p className="text-xs text-slate-500 mt-0.5">
             Shortcuts: P purchase · S sales{!isLabour && ' · N new order'}
-          </p>
+          </p> */}
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
