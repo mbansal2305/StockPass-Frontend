@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Broker, Commodity, Order, OrderType, OrderStatus, OrderListSchema } from '../../types';
 import {
@@ -80,6 +80,7 @@ export const OrderListScreen: React.FC = () => {
     currentUser,
     showToast,
     navigate,
+    mobileMenuOpen,
     pageParams,
     orderDelete,
     orderGet,
@@ -137,6 +138,8 @@ export const OrderListScreen: React.FC = () => {
   const [actionMenuMaxHeight, setActionMenuMaxHeight] = useState<number>();
   const actionMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
+  const purchaseOptionRef = useRef<HTMLButtonElement>(null);
+  const salesOptionRef = useRef<HTMLButtonElement>(null);
 
   // Client and Commodity lookups
   const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c.name])), [clients]);
@@ -332,6 +335,39 @@ export const OrderListScreen: React.FC = () => {
     }
   };
 
+  const openOrderForm = useCallback((type: OrderType) => {
+    setShowTypeSelectModal(false);
+    navigate('order-form', { initialType: type });
+  }, [navigate]);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing || event.ctrlKey || event.altKey || event.metaKey
+        || deleteOrderTarget || openActionMenuId || mobileMenuOpen) return;
+      const target = event.target;
+      if (target instanceof HTMLElement
+        && (target.isContentEditable || target.closest('input, textarea, select, [role="textbox"], [role="combobox"]'))) return;
+
+      const key = event.key.toLowerCase();
+      if (showTypeSelectModal) {
+        if (key === 'p' || key === 's') {
+          event.preventDefault();
+          openOrderForm(key === 'p' ? 'PURCHASE ORDER' : 'SALES ORDER');
+        }
+      } else if (key === 'p' || key === 's') {
+        event.preventDefault();
+        setTypeFilter(key === 'p' ? 'PURCHASE ORDER' : 'SALES ORDER');
+        setCurrentPageNum(1);
+      } else if (key === 'n' && !isLabour) {
+        event.preventDefault();
+        setShowTypeSelectModal(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [showTypeSelectModal, deleteOrderTarget, openActionMenuId, mobileMenuOpen, isLabour, openOrderForm]);
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       {/* Top Header & Actions */}
@@ -347,6 +383,9 @@ export const OrderListScreen: React.FC = () => {
           <p className="text-xs text-slate-500 mt-0.5">
             Manage sales and purchase orders.
           </p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Shortcuts: P purchase · S sales{!isLabour && ' · N new order'}
+          </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -357,6 +396,7 @@ export const OrderListScreen: React.FC = () => {
                 type="button"
                 role="tab"
                 aria-selected={typeFilter === type}
+                aria-keyshortcuts={!showTypeSelectModal ? (type === 'PURCHASE ORDER' ? 'P' : 'S') : undefined}
                 onClick={() => { setTypeFilter(type); setCurrentPageNum(1); }}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
                   typeFilter === type
@@ -385,6 +425,7 @@ export const OrderListScreen: React.FC = () => {
           {!isLabour && (
             <button
               type="button"
+              aria-keyshortcuts={!showTypeSelectModal ? 'N' : undefined}
               onClick={() => setShowTypeSelectModal(true)}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
             >
@@ -406,8 +447,65 @@ export const OrderListScreen: React.FC = () => {
               options={filterOptions.clients.map(client => ({ id: client.id, label: client.city ? `${client.name} (${client.city})` : client.name, searchText: `${client.city} ${client.type} ${client.maanNo}` }))}
               placeholder="All Parties"
               fullWidth
+              keyboardNavigation
               onChange={(values: string[]) => { setPartyFilter(values); setCurrentPageNum(1); }}
             />
+          </div>
+
+          <div className="flex min-w-0 flex-wrap items-center gap-2 pb-1 sm:pb-0 col-span-full row-start-2">
+            <MultiSearchableSelect
+              id="orders-firm-filter"
+              selectedIds={firmFilter}
+              options={filterOptions.firms.map(firm => ({ id: firm.id, label: firm.name, searchText: `${firm.city} ${firm.address}` }))}
+              placeholder="All Firms"
+              keyboardNavigation
+              onChange={(values: string[]) => { setFirmFilter(values); setCurrentPageNum(1); }}
+            />
+            <MultiSearchableSelect
+              id="orders-commodity-filter"
+              selectedIds={commodityFilter}
+              options={filterOptions.commodities.map(commodity => ({ id: commodity.id, label: commodity.type ? `${commodity.name} (${commodity.type})` : commodity.name, searchText: commodity.type }))}
+              placeholder="All Commodities"
+              keyboardNavigation
+              onChange={(values: string[]) => { setCommodityFilter(values); setCurrentPageNum(1); }}
+            />
+            <MultiSearchableSelect
+              id="orders-broker-filter"
+              selectedIds={brokerFilter}
+              options={[
+                { id: DIRECT_BROKER_FILTER_ID, label: 'Direct' },
+                ...filterOptions.brokers.map(broker => ({
+                  id: broker.id,
+                  label: broker.city ? `${broker.name} (${broker.city})` : broker.name,
+                  searchText: broker.city
+                }))
+              ]}
+              placeholder="All Brokers"
+              keyboardNavigation
+              onChange={(values: string[]) => { setBrokerFilter(values); setCurrentPageNum(1); }}
+            />
+            <div className="relative shrink-0">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPageNum(1); }}
+                placeholder="Search orders by order #"
+                className="w-40 max-w-48 pl-9 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
+              />
+            </div>
+
+            {(searchTerm || statusFilter !== 'ALL' || contractDateFrom || contractDateTo || commodityFilter.length > 0 || firmFilter.length > 0 || partyFilter.length > 0 || brokerFilter.length > 0) && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg shrink-0"
+                title="Clear all filters"
+              >
+                <FilterX className="w-3.5 h-3.5" />
+                Clear
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 border-y border-slate-100 py-2 col-span-full row-start-3" aria-label="Contract date filter">
@@ -457,59 +555,6 @@ export const OrderListScreen: React.FC = () => {
                   className="w-36 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
               </>
-            )}
-          </div>
-
-          <div className="flex min-w-0 flex-wrap items-center gap-2 pb-1 sm:pb-0 col-span-full row-start-2">
-            <MultiSearchableSelect
-              id="orders-firm-filter"
-              selectedIds={firmFilter}
-              options={filterOptions.firms.map(firm => ({ id: firm.id, label: firm.name, searchText: `${firm.city} ${firm.address}` }))}
-              placeholder="All Firms"
-              onChange={(values: string[]) => { setFirmFilter(values); setCurrentPageNum(1); }}
-            />
-            <MultiSearchableSelect
-              id="orders-commodity-filter"
-              selectedIds={commodityFilter}
-              options={filterOptions.commodities.map(commodity => ({ id: commodity.id, label: commodity.type ? `${commodity.name} (${commodity.type})` : commodity.name, searchText: commodity.type }))}
-              placeholder="All Commodities"
-              onChange={(values: string[]) => { setCommodityFilter(values); setCurrentPageNum(1); }}
-            />
-            <MultiSearchableSelect
-              id="orders-broker-filter"
-              selectedIds={brokerFilter}
-              options={[
-                { id: DIRECT_BROKER_FILTER_ID, label: 'Direct' },
-                ...filterOptions.brokers.map(broker => ({
-                  id: broker.id,
-                  label: broker.city ? `${broker.name} (${broker.city})` : broker.name,
-                  searchText: broker.city
-                }))
-              ]}
-              placeholder="All Brokers"
-              onChange={(values: string[]) => { setBrokerFilter(values); setCurrentPageNum(1); }}
-            />
-            <div className="relative shrink-0">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPageNum(1); }}
-                placeholder="Search orders by order #"
-                className="w-40 max-w-48 pl-9 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
-              />
-            </div>
-
-            {(searchTerm || statusFilter !== 'ALL' || contractDateFrom || contractDateTo || commodityFilter.length > 0 || firmFilter.length > 0 || partyFilter.length > 0 || brokerFilter.length > 0) && (
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg shrink-0"
-                title="Clear all filters"
-              >
-                <FilterX className="w-3.5 h-3.5" />
-                Clear
-              </button>
             )}
           </div>
         </div>
@@ -981,11 +1026,22 @@ export const OrderListScreen: React.FC = () => {
       {/* Select Order Type Modal (Purchase vs Sales) */}
       {showTypeSelectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
+          <div
+            role="dialog"
+            aria-labelledby="order-type-modal-title"
+            onKeyDown={event => {
+              if (event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing) return;
+              if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                event.preventDefault();
+                (event.key === 'ArrowUp' ? purchaseOptionRef : salesOptionRef).current?.focus();
+              }
+            }}
+            className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200"
+          >
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Select Order Type</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Which type of commodity contract would you like to create?</p>
+                <h3 id="order-type-modal-title" className="text-base font-bold text-slate-900">Select Order Type</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Use Up/Down and Enter, or press P for purchase or S for sales.</p>
               </div>
               <button
                 type="button"
@@ -999,12 +1055,12 @@ export const OrderListScreen: React.FC = () => {
             <div className="p-5 space-y-3">
               {/* Purchase Order Option */}
               <button
+                ref={purchaseOptionRef}
                 type="button"
-                onClick={() => {
-                  setShowTypeSelectModal(false);
-                  navigate('order-form', { initialType: 'PURCHASE ORDER' });
-                }}
-                className="w-full text-left p-4 rounded-xl border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/40 transition-all group flex items-start gap-3.5 cursor-pointer"
+                autoFocus
+                aria-keyshortcuts="P"
+                onClick={() => openOrderForm('PURCHASE ORDER')}
+                className="w-full text-left p-4 rounded-xl border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/40 focus-visible:border-emerald-500 focus-visible:bg-emerald-50/40 focus-visible:outline-2 focus-visible:outline-emerald-600 transition-all group flex items-start gap-3.5 cursor-pointer"
               >
                 <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                   <ArrowDownLeft className="w-5 h-5" />
@@ -1022,12 +1078,11 @@ export const OrderListScreen: React.FC = () => {
 
               {/* Sales Order Option */}
               <button
+                ref={salesOptionRef}
                 type="button"
-                onClick={() => {
-                  setShowTypeSelectModal(false);
-                  navigate('order-form', { initialType: 'SALES ORDER' });
-                }}
-                className="w-full text-left p-4 rounded-xl border-2 border-slate-200 hover:border-blue-500 hover:bg-blue-50/40 transition-all group flex items-start gap-3.5 cursor-pointer"
+                aria-keyshortcuts="S"
+                onClick={() => openOrderForm('SALES ORDER')}
+                className="w-full text-left p-4 rounded-xl border-2 border-slate-200 hover:border-blue-500 hover:bg-blue-50/40 focus-visible:border-blue-500 focus-visible:bg-blue-50/40 focus-visible:outline-2 focus-visible:outline-blue-600 transition-all group flex items-start gap-3.5 cursor-pointer"
               >
                 <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                   <ArrowUpRight className="w-5 h-5" />

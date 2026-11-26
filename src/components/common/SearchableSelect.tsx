@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check } from 'lucide-react';
 
@@ -9,6 +9,20 @@ export interface SearchableOption {
   highlightText?: string;
 }
 
+const scrollActiveOptionIntoView = (list: HTMLDivElement | null, activeIndex: number) => {
+  const option = list?.children.item(activeIndex);
+  if (!list || !option) return;
+
+  const listTop = list.getBoundingClientRect().top + list.clientTop;
+  const listBottom = listTop + list.clientHeight;
+  const optionRect = option.getBoundingClientRect();
+  if (optionRect.top < listTop) {
+    list.scrollTop += optionRect.top - listTop;
+  } else if (optionRect.bottom > listBottom) {
+    list.scrollTop += optionRect.bottom - listBottom;
+  }
+};
+
 interface SearchableSelectProps {
   id: string;
   value: string;
@@ -16,6 +30,7 @@ interface SearchableSelectProps {
   placeholder: string;
   onChange: (value: string) => void;
   highlightFirstMatch?: boolean;
+  selectOnTab?: boolean;
   wrapOptions?: boolean;
   portalOptions?: boolean;
 }
@@ -27,6 +42,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   placeholder,
   onChange,
   highlightFirstMatch = false,
+  selectOnTab = false,
   wrapOptions = false,
   portalOptions = false
 }) => {
@@ -35,6 +51,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const [activeIndex, setActiveIndex] = useState(-1);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>();
   const containerRef = useRef<HTMLDivElement>(null);
+  const optionsRef = useRef<HTMLDivElement>(null);
   const selectedOption = options.find(option => option.id === value);
   const normalizedQuery = query.trim().toLowerCase();
   const filteredOptions = normalizedQuery
@@ -83,6 +100,11 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     };
   }, [isOpen, portalOptions]);
 
+  useLayoutEffect(() => {
+    if (!isOpen || activeOptionIndex < 0) return;
+    scrollActiveOptionIntoView(optionsRef.current, activeOptionIndex);
+  }, [isOpen, activeOptionIndex, normalizedQuery, filteredOptions.length, dropdownStyle]);
+
   const selectOption = (option: SearchableOption) => {
     onChange(option.id);
     setQuery('');
@@ -91,6 +113,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 
   const optionsList = (
     <div
+      ref={optionsRef}
       id={`${id}-options`}
       role="listbox"
       className={`${portalOptions ? 'fixed z-20' : 'absolute z-20 mt-1 max-h-52 w-full'} overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg`}
@@ -102,6 +125,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           id={`${id}-option-${index}`}
           type="button"
           role="option"
+          tabIndex={selectOnTab ? -1 : undefined}
           aria-selected={option.id === value}
           onMouseDown={(event) => event.preventDefault()}
           onMouseEnter={() => setActiveIndex(index)}
@@ -142,18 +166,19 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           setQuery('');
           setIsOpen(true);
           const selectedIndex = options.findIndex(option => option.id === value);
-          setActiveIndex(selectedIndex);
+          setActiveIndex(selectedIndex < 0 && selectOnTab ? 0 : selectedIndex);
         }}
         onClick={() => {
           if (!isOpen) {
             setQuery('');
             setIsOpen(true);
-            setActiveIndex(options.findIndex(option => option.id === value));
+            const selectedIndex = options.findIndex(option => option.id === value);
+            setActiveIndex(selectedIndex < 0 && selectOnTab ? 0 : selectedIndex);
           }
         }}
         onChange={(event) => {
           setQuery(event.target.value);
-          setActiveIndex(highlightFirstMatch ? 0 : -1);
+          setActiveIndex(highlightFirstMatch || selectOnTab ? 0 : -1);
           setIsOpen(true);
         }}
         onBlur={() => setIsOpen(false)}
@@ -166,7 +191,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
               setQuery('');
               setIsOpen(true);
               const selectedIndex = options.findIndex(option => option.id === value);
-              setActiveIndex(selectedIndex);
+              setActiveIndex(selectedIndex < 0 && selectOnTab ? 0 : selectedIndex);
             } else if (filteredOptions.length) {
               setActiveIndex(index => {
                 if (event.key === 'ArrowDown') {
@@ -175,6 +200,8 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 return index < 0 ? filteredOptions.length - 1 : Math.max(index - 1, 0);
               });
             }
+          } else if (event.key === 'Tab' && !event.shiftKey && selectOnTab && isOpen && activeOptionIndex >= 0) {
+            selectOption(filteredOptions[activeOptionIndex]);
           } else if (event.key === 'Enter' && isOpen && activeOptionIndex >= 0) {
             event.preventDefault();
             selectOption(filteredOptions[activeOptionIndex]);
@@ -201,6 +228,7 @@ interface MultiSearchableSelectProps {
   placeholder: string;
   onChange: (values: string[]) => void;
   fullWidth?: boolean;
+  keyboardNavigation?: boolean;
 }
 
 export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
@@ -209,20 +237,30 @@ export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
   options,
   placeholder,
   onChange,
-  fullWidth = false
+  fullWidth = false,
+  keyboardNavigation = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
+  const optionsRef = useRef<HTMLDivElement>(null);
   const normalizedQuery = query.trim().toLowerCase();
   const filteredOptions = normalizedQuery
     ? options.filter(option =>
         `${option.label} ${option.searchText || ''}`.toLowerCase().includes(normalizedQuery)
       )
     : options;
+  const activeOptionIndex = filteredOptions.length ? Math.min(activeIndex, filteredOptions.length - 1) : -1;
   const selectedOptions = options.filter(option => selectedIds.includes(option.id));
   const searchPlaceholder = selectedOptions.length > 0
     ? `${selectedOptions.length} selected · Search ${placeholder.replace(/^All /, '').toLowerCase()}`
     : `Search ${placeholder.replace(/^All /, '').toLowerCase()}...`;
+
+  useLayoutEffect(() => {
+    if (keyboardNavigation && isOpen && activeOptionIndex >= 0) {
+      scrollActiveOptionIntoView(optionsRef.current, activeOptionIndex);
+    }
+  }, [keyboardNavigation, isOpen, activeOptionIndex, normalizedQuery, filteredOptions.length]);
 
   const toggleOption = (optionId: string) => {
     onChange(selectedIds.includes(optionId)
@@ -244,33 +282,76 @@ export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
         aria-autocomplete="list"
         aria-expanded={isOpen}
         aria-controls={`${id}-options`}
+        aria-activedescendant={keyboardNavigation && isOpen && activeOptionIndex >= 0 ? `${id}-option-${activeOptionIndex}` : undefined}
         autoComplete="off"
         value={query}
-        onFocus={() => setIsOpen(true)}
+        onFocus={() => {
+          setIsOpen(true);
+          if (keyboardNavigation) setActiveIndex(0);
+        }}
+        onClick={() => {
+          if (keyboardNavigation && !isOpen) {
+            setActiveIndex(0);
+            setIsOpen(true);
+          }
+        }}
         onChange={event => {
           setQuery(event.target.value);
           setIsOpen(true);
+          if (keyboardNavigation) setActiveIndex(0);
         }}
         onKeyDown={event => {
-          if (event.key === 'Escape') setIsOpen(false);
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === 'Escape') {
+            setIsOpen(false);
+          } else if (keyboardNavigation && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+            event.preventDefault();
+            if (!isOpen) {
+              setActiveIndex(0);
+              setIsOpen(true);
+            } else if (activeOptionIndex >= 0) {
+              setActiveIndex(event.key === 'ArrowDown'
+                ? Math.min(activeOptionIndex + 1, filteredOptions.length - 1)
+                : Math.max(activeOptionIndex - 1, 0));
+            }
+          } else if (keyboardNavigation && event.key === 'Enter' && isOpen && activeOptionIndex >= 0) {
+            event.preventDefault();
+            toggleOption(filteredOptions[activeOptionIndex].id);
+            setActiveIndex(Math.min(activeOptionIndex + 1, filteredOptions.length - 1));
+          }
         }}
         placeholder={searchPlaceholder}
         className={`${fullWidth ? 'w-full' : 'w-40 max-w-48'} rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-600`}
       />
       {isOpen && (
         <div className={`absolute left-0 z-30 mt-1 ${fullWidth ? 'w-full' : 'w-64'} rounded-lg border border-slate-200 bg-white p-2 shadow-lg`}>
-          <div id={`${id}-options`} role="listbox" aria-multiselectable="true" className="max-h-52 overflow-y-auto">
-            {filteredOptions.length ? filteredOptions.map(option => {
+          <div
+            ref={optionsRef}
+            id={`${id}-options`}
+            role="listbox"
+            aria-multiselectable="true"
+            tabIndex={keyboardNavigation ? -1 : undefined}
+            className="max-h-52 overflow-y-auto"
+          >
+            {filteredOptions.length ? filteredOptions.map((option, index) => {
               const isSelected = selectedIds.includes(option.id);
               return (
                 <button
                   key={option.id}
+                  id={keyboardNavigation ? `${id}-option-${index}` : undefined}
                   type="button"
                   role="option"
+                  tabIndex={keyboardNavigation ? -1 : undefined}
                   aria-selected={isSelected}
+                  onMouseDown={event => { if (keyboardNavigation) event.preventDefault(); }}
+                  onMouseMove={() => { if (keyboardNavigation) setActiveIndex(index); }}
                   onClick={() => toggleOption(option.id)}
                   className={`flex w-full items-center justify-between gap-2 rounded px-2.5 py-2 text-left text-xs hover:bg-blue-50 ${
-                    isSelected ? 'bg-blue-50 text-blue-800' : 'text-slate-700'
+                    keyboardNavigation && index === activeOptionIndex
+                      ? 'bg-blue-100 ring-1 ring-inset ring-blue-400'
+                      : isSelected ? 'bg-blue-50' : ''
+                  } ${
+                    isSelected ? 'text-blue-800' : 'text-slate-700'
                   }`}
                 >
                   <span className="truncate">{option.label}</span>
@@ -284,6 +365,8 @@ export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
           {selectedIds.length > 0 && (
             <button
               type="button"
+              tabIndex={keyboardNavigation ? -1 : undefined}
+              onMouseDown={event => { if (keyboardNavigation) event.preventDefault(); }}
               onClick={() => onChange([])}
               className="mt-1.5 w-full border-t border-slate-100 px-2.5 pt-2 text-left text-xs font-medium text-blue-700 hover:text-blue-900"
             >

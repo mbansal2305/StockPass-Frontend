@@ -10,10 +10,11 @@ import {
   Truck,
   Building,
   CheckCircle2,
-  Calendar,
 } from 'lucide-react';
 import { formatQuantityWithUnit, formatCurrency } from '../../utils/formatters';
+import { DateInput } from '../common/DateInput';
 import { DecimalInput } from '../common/DecimalInput';
+import { handleFormEnterKeyDown } from '../common/formKeyboard';
 import { SearchableSelect } from '../common/SearchableSelect';
 
 const isFlagEnabled = (value: boolean | string | undefined): boolean => {
@@ -54,46 +55,6 @@ const sameId = (left: string, right: string): boolean => {
   if (leftId === rightId) return true;
   return /^\d+$/.test(leftId) && /^\d+$/.test(rightId) && Number(leftId) === Number(rightId);
 };
-
-interface TransportDateInputProps {
-  id: string;
-  value: string;
-  onChange: (value: string) => void;
-  required?: boolean;
-}
-
-const formatTransportDate = (value: string): string => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  return match ? `${match[3]} / ${match[2]} / ${match[1]}` : '';
-};
-
-const TransportDateInput: React.FC<TransportDateInputProps> = ({ id, value, onChange, required }) => (
-  <div className="relative">
-    <button
-      id={id}
-      type="button"
-      aria-label={`Choose ${id.replace(/^transport-/, '').replace(/-/g, ' ')} date`}
-      aria-required={required}
-      onClick={event => {
-        const dateInput = event.currentTarget.parentElement?.querySelector<HTMLInputElement>('input[type="date"]');
-        if (dateInput?.showPicker) dateInput.showPicker();
-        else dateInput?.click();
-      }}
-      className="flex w-full items-center justify-between rounded-lg border border-slate-300 px-3 py-2 text-left text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-    >
-      <span>{formatTransportDate(value) || 'DD / MM / YYYY'}</span>
-      <Calendar className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
-    </button>
-    <input
-      type="date"
-      aria-hidden="true"
-      tabIndex={-1}
-      value={value}
-      onChange={event => onChange(event.target.value)}
-      className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
-    />
-  </div>
-);
 
 export const TransportFormScreen: React.FC = () => {
   const {
@@ -479,6 +440,7 @@ export const TransportFormScreen: React.FC = () => {
                         value={item.orderId}
                         onChange={(orderId) => handleItemOrderChange(index, orderId)}
                         placeholder="Select order"
+                        selectOnTab
                         wrapOptions
                         portalOptions
                         options={[
@@ -687,7 +649,11 @@ export const TransportFormScreen: React.FC = () => {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form
+        onSubmit={handleSubmit}
+        onKeyDown={handleFormEnterKeyDown}
+        className="space-y-4"
+      >
         {/* SECTION 1: BASIC & VEHICLE INFORMATION */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
           <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-2">
@@ -700,6 +666,7 @@ export const TransportFormScreen: React.FC = () => {
               <input
                 type="text"
                 required
+                autoFocus={!editingTransportId}
                 value={formData.vehicleNumber}
                 onChange={(e) => setFormData({ ...formData, vehicleNumber: e.target.value })}
                 placeholder="Enter vehicle number"
@@ -732,6 +699,7 @@ export const TransportFormScreen: React.FC = () => {
                 onChange={transporterId => setFormData({ ...formData, transporterId })}
                 placeholder="Select or search transporter agency"
                 highlightFirstMatch
+                selectOnTab
                 options={[
                   { id: '', label: 'Direct Transport' },
                   ...agencyOptionsWithFallback.map(agency => ({
@@ -745,7 +713,7 @@ export const TransportFormScreen: React.FC = () => {
 
             <div>
               <label htmlFor="transport-loading-date" className="block text-xs font-medium text-slate-700 mb-1">Loading Date *</label>
-              <TransportDateInput
+              <DateInput
                 id="transport-loading-date"
                 value={formData.loadingDate}
                 onChange={loadingDate => setFormData({ ...formData, loadingDate })}
@@ -766,6 +734,7 @@ export const TransportFormScreen: React.FC = () => {
                 onChange={(billingFirmId) => setFormData({ ...formData, billingFirmId })}
                 placeholder="Select or search billing firm"
                 highlightFirstMatch
+                selectOnTab
                 options={billingFirmOptions.map(firm => ({
                   id: firm.id,
                   label: `${firm.name}${firm.city ? ` (${firm.city})` : ''}`,
@@ -782,6 +751,7 @@ export const TransportFormScreen: React.FC = () => {
                 onChange={handleCommodityChange}
                 placeholder="Select or search commodity"
                 highlightFirstMatch
+                selectOnTab
                 options={commodityOptions.map(commodity => ({
                   id: commodity.id,
                   label: `${commodity.name} (${commodity.type})`,
@@ -807,6 +777,7 @@ export const TransportFormScreen: React.FC = () => {
                 onChange={(fromClientId) => setFormData({ ...formData, fromClientId })}
                 placeholder="Select or search loading origin"
                 highlightFirstMatch
+                selectOnTab
                 options={locationOptions.map(location => ({
                   id: location.id,
                   label: `${location.name}${location.city ? ` (${location.city})` : ''}`,
@@ -823,6 +794,7 @@ export const TransportFormScreen: React.FC = () => {
                 onChange={(toClientId) => setFormData({ ...formData, toClientId })}
                 placeholder="Select or search unloading destination"
                 highlightFirstMatch
+                selectOnTab
                 options={locationOptions.map(location => ({
                   id: location.id,
                   label: `${location.name}${location.city ? ` (${location.city})` : ''}`,
@@ -1113,7 +1085,7 @@ export const TransportFormScreen: React.FC = () => {
 
             <div>
               <label htmlFor="transport-unload-date" className="block text-xs font-medium text-slate-700 mb-1">Unload Date</label>
-              <TransportDateInput
+              <DateInput
                 id="transport-unload-date"
                 value={formData.unloadDate}
                 onChange={unloadDate => setFormData({ ...formData, unloadDate })}

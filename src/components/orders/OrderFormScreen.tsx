@@ -5,59 +5,12 @@ import { ordersApi, OrderClientOption } from '../../api/orders';
 import { masterApi } from '../../api';
 import { storage } from '../../services/storage';
 import { getUnitLabel } from '../../utils/formatters';
+import { DateInput } from '../common/DateInput';
 import { DecimalInput } from '../common/DecimalInput';
+import { handleFormEnterKeyDown } from '../common/formKeyboard';
 import { SearchableSelect } from '../common/SearchableSelect';
-import { ArrowLeft, Save, AlertCircle, ArrowDownLeft, ArrowUpRight, CheckCircle2, Loader2, Printer, Calendar } from 'lucide-react';
+import { ArrowLeft, Save, AlertCircle, ArrowDownLeft, ArrowUpRight, CheckCircle2, Loader2, Printer } from 'lucide-react';
 import { OrderPrintDocument } from './OrderPrintDocument';
-
-interface FormattedDateInputProps {
-  id: string;
-  value: string;
-  onChange: (value: string) => void;
-  className: string;
-  required?: boolean;
-}
-
-const formatDateInputValue = (value: string): string => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  return match ? `${match[3]} / ${match[2]} / ${match[1]}` : value;
-};
-
-const FormattedDateInput: React.FC<FormattedDateInputProps> = ({
-  id,
-  value,
-  onChange,
-  className,
-  required
-}) => {
-  return (
-    <div className="relative">
-      <button
-        id={id}
-        type="button"
-        aria-label={`Choose ${id.replace(/^order-/, '').replace(/-/g, ' ')} date`}
-        aria-required={required}
-        onClick={event => {
-          const dateInput = event.currentTarget.parentElement?.querySelector<HTMLInputElement>('input[type="date"]');
-          if (dateInput?.showPicker) dateInput.showPicker();
-          else dateInput?.click();
-        }}
-        className={`${className} flex items-center justify-between text-left`}
-      >
-        <span>{formatDateInputValue(value) || 'DD / MM / YYYY'}</span>
-        <Calendar className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
-      </button>
-      <input
-        type="date"
-        aria-hidden="true"
-        tabIndex={-1}
-        value={value}
-        onChange={event => onChange(event.target.value)}
-        className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
-      />
-    </div>
-  );
-};
 
 export const OrderFormScreen: React.FC = () => {
   const {
@@ -537,7 +490,7 @@ export const OrderFormScreen: React.FC = () => {
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} onKeyDown={handleFormEnterKeyDown} className="space-y-4">
         {/* SECTION 1: ORDER INFORMATION */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
           <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-2">
@@ -576,6 +529,7 @@ export const OrderFormScreen: React.FC = () => {
               <input
                 type="text"
                 required
+                autoFocus={!editingOrderId}
                 readOnly={formData.type === 'PURCHASE ORDER' || useDummySalesOrderNumber}
                 value={formData.orderNumber}
                 onChange={(e) => setFormData({ ...formData, orderNumber: e.target.value })}
@@ -609,6 +563,7 @@ export const OrderFormScreen: React.FC = () => {
                 onChange={(commodityId) => setFormData({ ...formData, commodityId })}
                 placeholder="Select or search commodity"
                 highlightFirstMatch
+                selectOnTab
                 options={commoditySelectionOptions.map(commodity => ({
                   id: commodity.id,
                   label: `${commodity.name} (${commodity.type})`,
@@ -647,6 +602,7 @@ export const OrderFormScreen: React.FC = () => {
                 onChange={(fromClientId) => setFormData({ ...formData, fromClientId })}
                 placeholder="Select or search origin"
                 highlightFirstMatch
+                selectOnTab
                 options={fromClientSelectionOptions.map(client => ({
                   id: client.id,
                   label: `${client.name}${client.city ? ` (${client.city})` : ''}`,
@@ -671,6 +627,7 @@ export const OrderFormScreen: React.FC = () => {
                 onChange={(toClientId) => setFormData({ ...formData, toClientId })}
                 placeholder="Select or search destination"
                 highlightFirstMatch
+                selectOnTab
                 options={toClientSelectionOptions.map(client => ({
                   id: client.id,
                   label: `${client.name}${client.city ? ` (${client.city})` : ''}`,
@@ -755,15 +712,13 @@ export const OrderFormScreen: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             {/* Contract Date - default today date */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Contract Date *</label>
-              <FormattedDateInput
+              <label htmlFor="order-contract-date" className="block text-xs font-medium text-slate-700 mb-1">Contract Date *</label>
+              <DateInput
                 id="order-contract-date"
                 required
                 value={formData.contractDate}
                 onChange={contractDate => setFormData({ ...formData, contractDate })}
-                className={`w-full text-xs border rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none ${
-                  errors.contractDate ? 'border-red-400 bg-red-50/30' : 'border-slate-300'
-                }`}
+                hasError={Boolean(errors.contractDate)}
               />
               {errors.contractDate && (
                 <p className="text-[10px] text-red-600 mt-1">{errors.contractDate}</p>
@@ -772,13 +727,12 @@ export const OrderFormScreen: React.FC = () => {
 
             {/* Contract Start Date */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Start Date *</label>
-              <FormattedDateInput
+              <label htmlFor="order-start-date" className="block text-xs font-medium text-slate-700 mb-1">Start Date *</label>
+              <DateInput
                 id="order-start-date"
                 required
                 value={formData.startDate}
                 onChange={startDate => setFormData({ ...formData, startDate })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
               {errors.startDate && (
                 <p className="text-[10px] text-red-600 mt-1">{errors.startDate}</p>
@@ -787,13 +741,12 @@ export const OrderFormScreen: React.FC = () => {
 
             {/* Contract Expiry Date */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Expiry Date *</label>
-              <FormattedDateInput
+              <label htmlFor="order-expiry-date" className="block text-xs font-medium text-slate-700 mb-1">Expiry Date *</label>
+              <DateInput
                 id="order-expiry-date"
                 required
                 value={formData.expiryDate}
                 onChange={expiryDate => setFormData({ ...formData, expiryDate })}
-                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
               {errors.expiryDate && (
                 <p className="text-[10px] text-red-600 mt-1">{errors.expiryDate}</p>
@@ -802,13 +755,14 @@ export const OrderFormScreen: React.FC = () => {
 
             {/* Broker */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Broker / Dalal</label>
+              <label htmlFor="order-broker" className="block text-xs font-medium text-slate-700 mb-1">Broker / Dalal</label>
               <SearchableSelect
                 id="order-broker"
                 value={formData.brokerId}
                 onChange={(brokerId) => setFormData({ ...formData, brokerId })}
                 placeholder="Select or search broker"
                 highlightFirstMatch
+                selectOnTab
                 options={[
                   { id: '', label: 'Direct Deal (No Broker)' },
                   ...brokerSelectionOptions.map(broker => ({
