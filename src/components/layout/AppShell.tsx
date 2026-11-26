@@ -42,6 +42,10 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const hasPinnedTableLayout = currentPage === 'orders'
+    || currentPage === 'transport'
+    || currentPage === 'transport-payments'
+    || currentPage === 'bulk-transport-list';
 
   const getPageTitle = () => {
     switch (currentPage) {
@@ -99,7 +103,9 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col antialiased">
+    <div className={`bg-slate-100 flex flex-col antialiased ${
+      hasPinnedTableLayout ? 'h-screen' : 'min-h-screen'
+    }`}>
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-200 h-14 flex items-center justify-between px-4 sm:px-6 shadow-2xs">
         <div className="flex items-center gap-3">
@@ -180,7 +186,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
       </header>
 
       {/* Main App Body */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Desktop Collapsible Sidebar */}
         <aside
           className={`hidden md:flex flex-col bg-white border-r border-slate-200 transition-all duration-200 shrink-0 ${
@@ -321,7 +327,11 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
         )}
 
         {/* Content Viewport */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+        <main className={`flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full ${
+          hasPinnedTableLayout
+            ? 'flex min-h-0 flex-col overflow-hidden'
+            : 'overflow-y-auto'
+        }`}>
           {children}
         </main>
       </div>

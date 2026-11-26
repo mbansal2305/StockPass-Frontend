@@ -989,7 +989,7 @@ export const TransportFormScreen: React.FC = () => {
             </div>
 
             <div>
-              <label className="block min-h-8 text-xs font-medium text-slate-700 mb-1">Advance Paid by Consignee (₹)</label>
+              <label className="block min-h-8 text-xs font-medium text-slate-700 mb-1">Advance Paid by Party / Hammali (₹)</label>
               <DecimalInput
                 value={formData.advanceByClient}
                 onChange={(advanceByClient) => setFormData({ ...formData, advanceByClient })}

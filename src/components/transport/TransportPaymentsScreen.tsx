@@ -7,7 +7,7 @@ import { masterApi } from '../../api/master';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/formatters';
 import { DecimalInput } from '../common/DecimalInput';
-import { Building2, Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, Wallet, X, Calendar } from 'lucide-react';
+import { Building2, ChevronDown, Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, SlidersHorizontal, Wallet, X, Calendar } from 'lucide-react';
 import { TransportPaymentBill } from './TransportPaymentBill';
 import { MultiSearchableSelect, SearchableOption } from '../common/SearchableSelect';
 
@@ -239,6 +239,7 @@ export const TransportPaymentsScreen: React.FC = () => {
 
   const [activeStatus, setActiveStatus] = useState<TransportStatus | 'ALL'>('PENDING');
   const [searchTerm, setSearchTerm] = useState('');
+  const [filtersCollapsed, setFiltersCollapsed] = useState(true);
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [commodityFilter, setCommodityFilter] = useState<string[]>([]);
   const [transporterFilter, setTransporterFilter] = useState<string[]>([]);
@@ -556,12 +557,48 @@ export const TransportPaymentsScreen: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4">
-      <div>
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
         <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight"><Wallet className="h-5 w-5 text-blue-600" />Transport Payments</h1>
         <p className="mt-0.5 text-xs text-slate-500">Review receipts, settle freight, and close consignments.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            aria-expanded={!filtersCollapsed}
+            aria-controls="transport-payments-filter-panel"
+            aria-label={filtersCollapsed ? 'Show transport payment filters' : 'Hide transport payment filters'}
+            onClick={() => setFiltersCollapsed(collapsed => !collapsed)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Filters
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${filtersCollapsed ? '' : 'rotate-180'}`} />
+          </button>
+          <button
+            type="button"
+            disabled={exportableTransports.length === 0}
+            onClick={exportPaymentsToExcel}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            Export to Excel
+          </button>
+          <button
+            type="button"
+            aria-label={`Refresh ${activeStatus.toLowerCase()} transport payments`}
+            title={`Refresh ${activeStatus.toLowerCase()} transport payments`}
+            disabled={isLoading}
+            onClick={() => setRefreshSequence(sequence => sequence + 1)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
+      <div id="transport-payments-filter-panel" className={`space-y-4 ${filtersCollapsed ? 'hidden' : ''}`}>
       <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
         <div className="grid grid-cols-1 gap-2.5">
           <div className="relative col-span-full row-start-1 min-w-0">
@@ -640,27 +677,6 @@ export const TransportPaymentsScreen: React.FC = () => {
                 <FilterX className="h-3.5 w-3.5" /> Reset
               </button>
             )}
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                type="button"
-                disabled={exportableTransports.length === 0}
-                onClick={exportPaymentsToExcel}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5" />
-                Export to Excel
-              </button>
-              <button
-                type="button"
-                aria-label={`Refresh ${activeStatus.toLowerCase()} transport payments`}
-                title={`Refresh ${activeStatus.toLowerCase()} transport payments`}
-                disabled={isLoading}
-                onClick={() => setRefreshSequence(sequence => sequence + 1)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 border-y border-slate-100 py-2 col-span-full row-start-3" aria-label="Loading date filter">
@@ -712,10 +728,11 @@ export const TransportPaymentsScreen: React.FC = () => {
           </div>
         </div>
       </div>
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs">
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-slate-700">Status Color Legend:</span>
+          {/* <span className="font-semibold text-slate-700">Status Color Legend:</span> */}
           <span className="text-[11px] text-slate-400">Rows are color-coded by shipment lifecycle</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -754,30 +771,31 @@ export const TransportPaymentsScreen: React.FC = () => {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-t-lg border-x border-t border-slate-200 bg-white">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto">
         <table className="w-full min-w-[2160px] table-fixed text-left text-[11px]">
           <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-semibold uppercase text-slate-500">
             <tr>
-              <th className="sticky left-0 z-20 w-[62px] bg-slate-50 px-1 py-2"></th>
-              <th className="sticky left-[62px] z-20 w-[45px] bg-slate-50 px-2 py-2">Date</th>
-              <th className="sticky left-[107px] z-20 w-[95px] bg-slate-50 px-1 py-2">Bill</th>
-              <th className="sticky left-[202px] z-20 w-[80px] bg-slate-50 px-1 py-2">Vehicle</th>
-              <th className="sticky left-[282px] z-20 w-[90px] bg-slate-50 px-1 py-2">Route</th>
-              <th className="sticky left-[372px] z-20 w-[50px] bg-slate-50 px-1 py-2 text-right">Gross Wt</th>
-              <th className="w-[90px] px-2 py-2 text-right">Rcvd Wt</th>
-              <th className="w-[100px] px-2 py-2">Unload Date</th>
-              <th className="w-[120px] px-2 py-2">Agreed Rent</th>
-              <th className="w-[80px] px-2 py-2 text-right">Total Rent</th>
-              <th className="w-[80px] px-2 py-2 text-right">Adv. by Party</th>
-              <th className="w-[80px] px-2 py-2 text-right">Adv. Paid</th>
-              <th className="w-[80px] px-2 py-2 text-right">Shortage</th>
-              <th className="w-[80px] px-2 py-2 text-right">Extra</th>
-              <th className="w-[80px] px-2 py-2 text-right">Paid</th>
-              <th className="w-[75px] px-2 py-2 text-right">Left</th>
-              {isPendingTab && <th className="w-[120px] px-1 py-2">Export Amtount</th>}
-              <th className="w-[145px] px-2 py-2">Notes</th>
-              <th className="w-[72px] px-0 py-2">Status</th>
-              <th className="w-[60px] px-0 py-2 text-center">Submit</th>
+              <th className="sticky left-0 top-0 z-40 w-[62px] bg-slate-50 px-1 py-2"></th>
+              <th className="sticky left-[62px] top-0 z-40 w-[45px] bg-slate-50 px-2 py-2">Date</th>
+              <th className="sticky left-[107px] top-0 z-40 w-[95px] bg-slate-50 px-1 py-2">Bill</th>
+              <th className="sticky left-[202px] top-0 z-40 w-[80px] bg-slate-50 px-1 py-2">Vehicle</th>
+              <th className="sticky left-[282px] top-0 z-40 w-[90px] bg-slate-50 px-1 py-2">Route</th>
+              <th className="sticky left-[372px] top-0 z-40 w-[50px] bg-slate-50 pl-1 pr-2 py-2 text-right">Gross Wt</th>
+              <th className="sticky top-0 z-30 w-[90px] bg-slate-50 px-2 py-2 text-right">Rcvd Wt</th>
+              <th className="sticky top-0 z-30 w-[100px] bg-slate-50 px-2 py-2">Unload Date</th>
+              <th className="sticky top-0 z-30 w-[120px] bg-slate-50 px-2 py-2">Agreed Rent</th>
+              <th className="sticky top-0 z-30 w-[80px] bg-slate-50 px-2 py-2 text-right">Total Rent</th>
+              <th className="sticky top-0 z-30 w-[80px] bg-slate-50 px-2 py-2 text-right">Adv. by Party / Hammali</th>
+              <th className="sticky top-0 z-30 w-[80px] bg-slate-50 px-2 py-2 text-right">Adv. by Firm</th>
+              <th className="sticky top-0 z-30 w-[80px] bg-slate-50 px-2 py-2 text-right">Shortage</th>
+              <th className="sticky top-0 z-30 w-[80px] bg-slate-50 px-2 py-2 text-right">Extra</th>
+              <th className="sticky top-0 z-30 w-[80px] bg-slate-50 px-2 py-2 text-right">Paid</th>
+              <th className="sticky top-0 z-30 w-[75px] bg-slate-50 px-2 py-2 text-right">Left</th>
+              {isPendingTab && <th className="sticky top-0 z-30 w-[120px] bg-slate-50 px-1 py-2">Export Amtount</th>}
+              <th className="sticky top-0 z-30 w-[145px] bg-slate-50 px-2 py-2">Notes</th>
+              <th className="sticky top-0 z-30 w-[72px] bg-slate-50 px-0 py-2">Status</th>
+              <th className="sticky top-0 z-30 w-[60px] bg-slate-50 px-0 py-2 text-center">Submit</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -799,6 +817,7 @@ export const TransportPaymentsScreen: React.FC = () => {
                 : draft.status !== baselineDraft.status;
               const exportLocked = submittedRow?.exportLocked === true;
               const gross = Number(transport.grossWeight) || 0;
+              const [grossValue, grossUnit] = formatQuantityWithUnit(gross, transport.grossWeightUnit).split(' ');
               const commodityName = transport.commodityName || commodityMap.get(transport.commodityId)?.name || '-';
               const received = Number(draft.receivedWeight) || 0;
               const differenceQtl = quantityToQuintals(received - gross, transport.grossWeightUnit);
@@ -944,10 +963,9 @@ export const TransportPaymentsScreen: React.FC = () => {
                     <div className="truncate text-slate-700" title={from}>{from}</div>
                     <div className="truncate text-[10px] text-slate-500" title={to}>→ {to}</div>
                   </td>
-                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[372px] z-20 w-[50px] px-1 py-2 text-right ${stickyRowColor} ${stickyRowHoverColor}`}>
-                    <div className="whitespace-nowrap font-semibold tabular-nums text-slate-800">
-                      {formatQuantityWithUnit(gross, transport.grossWeightUnit)}
-                    </div>
+                  <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[372px] z-20 w-[50px] pl-1 pr-2 py-2 text-right ${stickyRowColor} ${stickyRowHoverColor}`}>
+                    <div className="whitespace-nowrap font-semibold tabular-nums text-slate-800">{grossValue}</div>
+                    <div className="text-[9px] font-medium leading-3 text-slate-500">{grossUnit}</div>
                     <div className="break-words text-[9px] font-medium leading-3 text-slate-500" title={commodityName}>
                       {commodityName}
                     </div>
@@ -1038,7 +1056,7 @@ export const TransportPaymentsScreen: React.FC = () => {
       </div>
 
       {(serverPage.total > 0 || totalPages > 1) && (
-        <div className="flex items-center justify-between rounded-b-lg border-x border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+        <div className="shrink-0 flex items-center justify-between rounded-b-lg border-t border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
           <span>
             Showing {serverPage.total === 0 ? 0 : (currentPageNum - 1) * pageSize + 1} to {Math.min(currentPageNum * pageSize, serverPage.total)} of {serverPage.total} transports
           </span>
@@ -1063,6 +1081,7 @@ export const TransportPaymentsScreen: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
 
       {printTransport && (
         <TransportPaymentBill

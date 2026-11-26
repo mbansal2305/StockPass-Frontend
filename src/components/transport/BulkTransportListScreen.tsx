@@ -59,19 +59,19 @@ export const BulkTransportListScreen: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-col gap-4">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900"><Layers className="h-5 w-5 text-blue-600" />Bulk Transports</h1>
-          <p className="mt-0.5 text-xs text-slate-500">Review bulk dispatch batches and vehicle counts.</p>
+          <p className="mt-0.5 text-xs text-slate-500">Review bulk dispatch batches.</p>
         </div>
         <button type="button" onClick={() => navigate('bulk-transport', { returnTo: 'bulk-transport-list' })} className="inline-flex items-center justify-center gap-1.5 self-start rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800 sm:self-auto">
           <Plus className="h-3.5 w-3.5" />Add bulk transport
         </button>
       </header>
 
-      <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-2xs">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xs">
+        <div className="shrink-0 flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Dispatch batches</h2>
             <p className="mt-0.5 text-[11px] text-slate-500">{pageData ? `${pageData.total} total` : 'Loading records'}</p>
@@ -80,21 +80,21 @@ export const BulkTransportListScreen: React.FC = () => {
         </div>
 
         {error ? (
-          <div role="alert" className="m-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">{error}</div>
+          <div role="alert" className="m-4 min-h-0 flex-1 overflow-auto rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">{error}</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-200 bg-slate-50 font-semibold uppercase tracking-wider text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Loading Date</th>
-                  <th className="px-4 py-3">Bill / Bilty</th>
-                  <th className="w-[140px] max-w-[140px] px-4 py-3">Vehicle No</th>
-                  <th className="px-4 py-3">Commodity</th>
-                  <th className="px-4 py-3">Route (To / From)</th>
-                  <th className="px-4 py-3 text-right">Gross Weight</th>
-                  <th className="px-4 py-3 text-right">Received Weight</th>
-                  <th className="px-4 py-3">Unload Date</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Loading Date</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Bill / Bilty</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 w-[140px] max-w-[140px] px-4 py-3">Vehicle No</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Commodity</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Route (To / From)</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">Gross Weight</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">Received Weight</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Unload Date</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -244,7 +244,7 @@ export const BulkTransportListScreen: React.FC = () => {
           </div>
         )}
 
-        <footer className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+        <footer className="shrink-0 flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
           <span>
             Showing {total === 0 ? 0 : (pageNumber - 1) * PAGE_SIZE + 1} to {Math.min(pageNumber * PAGE_SIZE, total)} of {total} bulk transports
           </span>

@@ -17,7 +17,9 @@ import {
   Calendar,
   Building2,
   FileSpreadsheet,
-  MoreVertical
+  MoreVertical,
+  SlidersHorizontal,
+  ChevronDown
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { MultiSearchableSelect } from '../common/SearchableSelect';
@@ -96,6 +98,7 @@ export const TransportListScreen: React.FC = () => {
     validStatuses.includes(initialStatus) ? initialStatus : 'PENDING'
   );
   const [searchTerm, setSearchTerm] = useState('');
+  const [filtersCollapsed, setFiltersCollapsed] = useState(true);
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [commodityFilter, setCommodityFilter] = useState<string[]>([]);
   const [transporterFilter, setTransporterFilter] = useState<string[]>([]);
@@ -320,18 +323,30 @@ export const TransportListScreen: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-col gap-4">
       {/* Top Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight"><Truck className="h-5 w-5 text-blue-600" />Transport Logistics</h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Monitor truck consignments, gross & received weights, waybills, and freight disbursements.
+            Monitor truck consignments.
           </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          {!isLabour && (
+          <button
+            type="button"
+            aria-expanded={!filtersCollapsed}
+            aria-controls="transport-filter-panel"
+            aria-label={filtersCollapsed ? 'Show transport filters' : 'Hide transport filters'}
+            onClick={() => setFiltersCollapsed(collapsed => !collapsed)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Filters
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${filtersCollapsed ? '' : 'rotate-180'}`} />
+          </button>
+          {/* {!isLabour && (
             <button
               type="button"
               onClick={() => navigate('bulk-transport-list')}
@@ -340,7 +355,7 @@ export const TransportListScreen: React.FC = () => {
               <Layers className="w-3.5 h-3.5 text-blue-600" />
               Bulk Transport
             </button>
-          )}
+          )} */}
           <button
             type="button"
             onClick={() => navigate('transport-form', { returnTo: 'transport' })}
@@ -352,6 +367,7 @@ export const TransportListScreen: React.FC = () => {
         </div>
       </div>
 
+      <div id="transport-filter-panel" className={`space-y-4 ${filtersCollapsed ? 'hidden' : ''}`}>
       {/* Filter and Search Bar */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
         <div className="grid grid-cols-1 gap-2.5">
@@ -477,11 +493,12 @@ export const TransportListScreen: React.FC = () => {
           </div>
         </div>
       </div>
+      </div>
 
       {/* Status Color Legend */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-slate-700">Status Color Legend:</span>
+          {/* <span className="font-semibold text-slate-700">Status Color Legend:</span> */}
           <span className="text-[11px] text-slate-400">Rows are color-coded by shipment lifecycle</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -570,21 +587,21 @@ export const TransportListScreen: React.FC = () => {
       </div>
 
       {/* Transport Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-visible">
-        <div className="overflow-x-auto">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white rounded-xl border border-slate-200 shadow-2xs overflow-visible">
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3">Loading Date</th>
-                <th className="px-4 py-3">Bill / Bilty</th>
-                <th className="w-[140px] max-w-[140px] px-4 py-3">Vehicle No</th>
-                <th className="px-4 py-3">Commodity</th>
-                <th className="px-4 py-3">Route (To / From)</th>
-                <th className="px-4 py-3 text-right">Gross Weight</th>
-                <th className="px-4 py-3 text-right">Bharti (Kg)</th>
-                <th className="px-4 py-3 text-right">Received Weight</th>
-                <th className="px-4 py-3">Unload Date</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Loading Date</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Bill / Bilty</th>
+                <th className="sticky top-0 z-10 bg-slate-50 w-[140px] max-w-[140px] px-4 py-3">Vehicle No</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Commodity</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Route (To / From)</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">Gross Weight</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">Bharti (Kg)</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">Received Weight</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Unload Date</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -854,7 +871,7 @@ export const TransportListScreen: React.FC = () => {
 
         {/* Pagination Footer */}
         {(serverPage.total > 0 || totalPages > 1) && (
-          <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
+          <div className="shrink-0 px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
             <span>
               Showing {serverPage.total === 0 ? 0 : (currentPageNum - 1) * pageSize + 1} to {Math.min(currentPageNum * pageSize, serverPage.total)} of {serverPage.total} transports
             </span>

@@ -21,7 +21,9 @@ import {
   Loader2,
   CheckCircle2,
   Clock,
-  Building2
+  Building2,
+  SlidersHorizontal,
+  ChevronDown
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { MultiSearchableSelect } from '../common/SearchableSelect';
@@ -90,6 +92,7 @@ export const OrderListScreen: React.FC = () => {
 
   // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
+  const [filtersCollapsed, setFiltersCollapsed] = useState(true);
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<OrderType>('SALES ORDER');
   const [statusFilter, setStatusFilter] = useState<string>(pageParams.statusFilter || 'PENDING');
@@ -109,7 +112,7 @@ export const OrderListScreen: React.FC = () => {
     commodities: Commodity[];
     brokers: Broker[];
   }>({ firms: [], clients: [], commodities: [], brokers: [] });
-  const [sortField, setSortField] = useState<'orderNumber' | 'startDate' | 'expiryDate' | 'quantity' | 'remaining'>('startDate');
+  const [sortField, setSortField] = useState<'orderNumber' | 'startDate' | 'expiryDate' | 'quantity' | 'remaining' | null>(null);
   const [sortAsc, setSortAsc] = useState<boolean>(false);
 
   // Pagination
@@ -220,6 +223,8 @@ export const OrderListScreen: React.FC = () => {
 
   // Sort the server-filtered page locally.
   const filteredOrders = useMemo(() => {
+    if (!sortField) return serverPage.results;
+
     return serverPage.results.slice().sort((a, b) => {
       let valA: any = a[sortField as keyof Order];
       let valB: any = b[sortField as keyof Order];
@@ -328,7 +333,7 @@ export const OrderListScreen: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-col gap-4">
       {/* Top Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -340,24 +345,37 @@ export const OrderListScreen: React.FC = () => {
             </span> */}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Manage sales and purchase commodity contracts, fulfillment rates, and dispatch quotas.
+            Manage sales and purchase orders.
           </p>
         </div>
 
-        {!isLabour && (
-          <div className="flex items-center gap-2 self-start sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setShowTypeSelectModal(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New Order
-              </button>
-            </div>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            aria-expanded={!filtersCollapsed}
+            aria-controls="orders-filter-panel"
+            aria-label={filtersCollapsed ? 'Show order filters' : 'Hide order filters'}
+            onClick={() => setFiltersCollapsed(collapsed => !collapsed)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Filters
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${filtersCollapsed ? '' : 'rotate-180'}`} />
+          </button>
+          {!isLabour && (
+            <button
+              type="button"
+              onClick={() => setShowTypeSelectModal(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              New Order
+            </button>
           )}
         </div>
+      </div>
 
+      <div id="orders-filter-panel" className={`space-y-4 ${filtersCollapsed ? 'hidden' : ''}`}>
       {/* Filter Bar */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
         <div className="grid grid-cols-1 gap-2.5">
@@ -495,10 +513,12 @@ export const OrderListScreen: React.FC = () => {
         </div>
       </div>
 
+      </div>
+
       {/* Status Color Legend */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-slate-700">Status Color Legend:</span>
+          {/* <span className="font-semibold text-slate-700">Status Color Legend:</span> */}
           <span className="text-[11px] text-slate-400">Rows are color-coded by contract status</span>
         </div>
         <div className="flex items-center gap-2">
@@ -539,7 +559,7 @@ export const OrderListScreen: React.FC = () => {
             title="Filter by Pending"
           >
             <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-600"></span>
-            <span>Pending (Active)</span>
+            <span>Pending</span>
           </button>
 
           <button
@@ -559,27 +579,27 @@ export const OrderListScreen: React.FC = () => {
       </div>
 
       {/* Orders Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-visible">
-        <div className="overflow-x-auto">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white rounded-xl border border-slate-200 shadow-2xs overflow-visible">
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3">CONTRACT DATE</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">CONTRACT DATE</th>
                 <th 
                   onClick={() => toggleSort('orderNumber')}
-                  className="px-4 py-3 cursor-pointer hover:text-slate-900"
+                  className="sticky top-0 z-10 bg-slate-50 px-4 py-3 cursor-pointer hover:text-slate-900"
                 >
                   <div className="flex items-center gap-1">
                     ORDER NO <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="px-4 py-3">COMMODITY</th>
-                <th className="px-4 py-3">ROUTE / PARTY</th>
-                <th className="px-4 py-3">BROKER</th>
-                <th className="px-4 py-3 text-right">RATE</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">COMMODITY</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">ROUTE / PARTY</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">BROKER</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">RATE</th>
                 <th 
                   onClick={() => toggleSort('quantity')}
-                  className="px-4 py-3 cursor-pointer hover:text-slate-900"
+                  className="sticky top-0 z-10 bg-slate-50 px-4 py-3 cursor-pointer hover:text-slate-900"
                 >
                   <div className="flex items-center gap-1">
                     ORDER QTY <ArrowUpDown className="w-3 h-3" />
@@ -587,7 +607,7 @@ export const OrderListScreen: React.FC = () => {
                 </th>
                 <th
                   onClick={() => toggleSort('remaining')}
-                  className="px-4 py-3 cursor-pointer hover:text-slate-900 text-left"
+                  className="sticky top-0 z-10 bg-slate-50 px-4 py-3 cursor-pointer hover:text-slate-900 text-left"
                 >
                   <div className="flex items-center gap-1">
                     REM QTY <ArrowUpDown className="w-3 h-3" />
@@ -595,14 +615,14 @@ export const OrderListScreen: React.FC = () => {
                 </th>
                 <th 
                   onClick={() => toggleSort('expiryDate')}
-                  className="px-4 py-3 cursor-pointer hover:text-slate-900"
+                  className="sticky top-0 z-10 bg-slate-50 px-4 py-3 cursor-pointer hover:text-slate-900"
                 >
                   <div className="flex items-center gap-1">
                     CONTRACT PERIOD <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="px-4 py-3">NOTES</th>
-                <th className="px-4 py-3 text-right">ACTIONS</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">NOTES</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">ACTIONS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -776,7 +796,9 @@ export const OrderListScreen: React.FC = () => {
                           Expiry: {formatShortDate(order.expiryDate)}
                         </div>
                         <div className={`mt-0.5 text-[10px] font-semibold ${
-                          daysMeta.isExpired
+                          isCompleted
+                            ? 'text-emerald-700'
+                            : daysMeta.isExpired
                             ? 'text-red-600'
                             : !hasStarted
                             ? 'text-slate-500'
@@ -784,7 +806,9 @@ export const OrderListScreen: React.FC = () => {
                             ? 'text-amber-600'
                             : 'text-emerald-600'
                         }`}>
-                          {daysMeta.isExpired ? (
+                          {isCompleted ? (
+                            'Completed'
+                          ) : daysMeta.isExpired ? (
                             <span className="inline-flex items-center gap-0.5">
                               <AlertTriangle className="h-2.5 w-2.5" /> Expired
                             </span>
@@ -914,7 +938,7 @@ export const OrderListScreen: React.FC = () => {
 
         {/* Pagination Footer */}
         {(serverPage.total > 0 || totalPages > 1) && (
-          <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
+          <div className="shrink-0 px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
             <span>
               Showing {serverPage.total === 0 ? 0 : (currentPageNum - 1) * pageSize + 1} to {Math.min(currentPageNum * pageSize, serverPage.total)} of {serverPage.total} orders
             </span>

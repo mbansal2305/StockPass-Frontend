@@ -151,7 +151,7 @@ export const TransportPaymentBill: React.FC<TransportPaymentBillProps> = ({
           <div className="shrink-0 text-right">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Bill no.</p>
             <p className="mt-1 font-mono text-sm font-bold text-slate-900">{transport.billNumber}</p>
-            <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Bill Date</p>
+            <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Hisaab Date</p>
             <p className="mt-1 text-xs font-medium text-slate-800">{billDate}</p>
             <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Unloading Date</p>
             <p className="mt-1 text-xs font-medium text-slate-800">{formatDate(draft.unloadDate)}</p>
@@ -185,7 +185,7 @@ export const TransportPaymentBill: React.FC<TransportPaymentBillProps> = ({
           <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-700 print:mb-1">Settlement</h2>
           <dl className="space-y-2 text-xs print:space-y-1">
             <div className="flex justify-between gap-4"><dt className="text-slate-600">Freight amount</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(totalRent)}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-slate-600">Hamali (advance by party)</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(draft.advanceByClient)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-600">Hammali (advance by party)</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(draft.advanceByClient)}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-slate-600">Advance paid by firm</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(draft.advanceByFirm)}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-slate-600">Shortage</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(draft.shortageAmount)}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-slate-600">Extra charges</dt><dd className="font-mono font-medium text-slate-900">{formatCurrency(draft.extraAmount)}</dd></div>

@@ -469,7 +469,7 @@ export const TransportDetailScreen: React.FC = () => {
             </div>
 
             <div className="flex justify-between items-center py-1 border-b border-slate-50">
-              <span className="text-slate-500">Advance by Client / Consignee:</span>
+              <span className="text-slate-500">Advance Paid by Party / Hammali:</span>
               <span className="font-mono text-slate-700 tabular-nums">
                 {formatCurrency(transport.advanceByClient)}
               </span>
