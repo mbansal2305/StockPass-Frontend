@@ -51,7 +51,7 @@ export const DateInput: React.FC<DateInputProps> = ({ id, value, onChange, requi
   };
 
   const displayError = invalid && (showError || draft.replace(/\D/g, '').length === 8);
-  const dateLabel = id.replace(/^(transport|order)-/, '').replace(/-/g, ' ');
+  const dateLabel = id.replace(/^(transport|order|bulk|expense|hisaab)-/, '').replace(/-/g, ' ');
 
   return (
     <div>

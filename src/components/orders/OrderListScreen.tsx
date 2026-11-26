@@ -26,6 +26,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
+import { shouldIgnoreShortcut } from '../common/keyboardShortcuts';
 import { MultiSearchableSelect } from '../common/SearchableSelect';
 import { formatCurrency, formatWeight, formatQuantityWithUnit, formatShortDate, getDaysRemaining } from '../../utils/formatters';
 import { PaginatedOrdersResult } from '../../api/orders';
@@ -342,11 +343,7 @@ export const OrderListScreen: React.FC = () => {
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || event.isComposing || event.ctrlKey || event.altKey || event.metaKey
-        || deleteOrderTarget || openActionMenuId || mobileMenuOpen) return;
-      const target = event.target;
-      if (target instanceof HTMLElement
-        && (target.isContentEditable || target.closest('input, textarea, select, [role="textbox"], [role="combobox"]'))) return;
+      if (shouldIgnoreShortcut(event) || deleteOrderTarget || openActionMenuId || mobileMenuOpen) return;
 
       const key = event.key.toLowerCase();
       if (showTypeSelectModal) {
@@ -439,6 +436,7 @@ export const OrderListScreen: React.FC = () => {
       <div id="orders-filter-panel" className={`space-y-4 ${filtersCollapsed ? 'hidden' : ''}`}>
       {/* Filter Bar */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
+        <p className="text-xs text-slate-500">Filters: Up/Down to navigate, Tab to toggle, Enter for next filter, Shift+Tab to go back.</p>
         <div className="grid grid-cols-1 gap-2.5">
           <div className="col-span-full row-start-1">
             <MultiSearchableSelect
@@ -448,6 +446,7 @@ export const OrderListScreen: React.FC = () => {
               placeholder="All Parties"
               fullWidth
               keyboardNavigation
+              nextFocusId="orders-firm-filter"
               onChange={(values: string[]) => { setPartyFilter(values); setCurrentPageNum(1); }}
             />
           </div>
@@ -459,6 +458,7 @@ export const OrderListScreen: React.FC = () => {
               options={filterOptions.firms.map(firm => ({ id: firm.id, label: firm.name, searchText: `${firm.city} ${firm.address}` }))}
               placeholder="All Firms"
               keyboardNavigation
+              nextFocusId="orders-commodity-filter"
               onChange={(values: string[]) => { setFirmFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
@@ -467,6 +467,7 @@ export const OrderListScreen: React.FC = () => {
               options={filterOptions.commodities.map(commodity => ({ id: commodity.id, label: commodity.type ? `${commodity.name} (${commodity.type})` : commodity.name, searchText: commodity.type }))}
               placeholder="All Commodities"
               keyboardNavigation
+              nextFocusId="orders-broker-filter"
               onChange={(values: string[]) => { setCommodityFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
@@ -482,11 +483,13 @@ export const OrderListScreen: React.FC = () => {
               ]}
               placeholder="All Brokers"
               keyboardNavigation
+              nextFocusId="orders-search"
               onChange={(values: string[]) => { setBrokerFilter(values); setCurrentPageNum(1); }}
             />
             <div className="relative shrink-0">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
+                id="orders-search"
                 type="text"
                 value={searchTerm}
                 onChange={(e) => { setSearchTerm(e.target.value); setCurrentPageNum(1); }}

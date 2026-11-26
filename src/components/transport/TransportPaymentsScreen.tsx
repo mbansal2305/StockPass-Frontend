@@ -600,6 +600,7 @@ export const TransportPaymentsScreen: React.FC = () => {
 
       <div id="transport-payments-filter-panel" className={`space-y-4 ${filtersCollapsed ? 'hidden' : ''}`}>
       <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
+        <p className="text-xs text-slate-500">Filters: Up/Down to navigate, Tab to toggle, Enter for next filter, Shift+Tab to go back.</p>
         <div className="grid grid-cols-1 gap-2.5">
           <div className="relative col-span-full row-start-1 min-w-0">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -620,6 +621,8 @@ export const TransportPaymentsScreen: React.FC = () => {
               selectedIds={partyFilter}
               options={partyOptions}
               placeholder="All Parties"
+              keyboardNavigation
+              nextFocusId="transport-payments-commodity-filter"
               onChange={values => { setPartyFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
@@ -627,6 +630,8 @@ export const TransportPaymentsScreen: React.FC = () => {
               selectedIds={commodityFilter}
               options={commodityOptions}
               placeholder="All Commodities"
+              keyboardNavigation
+              nextFocusId="transport-payments-transporter-filter"
               onChange={values => { setCommodityFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
@@ -641,6 +646,8 @@ export const TransportPaymentsScreen: React.FC = () => {
                 }))
               ]}
               placeholder="All Transporters"
+              keyboardNavigation
+              nextFocusId="transport-payments-billing-firm-filter"
               onChange={values => { setTransporterFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
@@ -652,6 +659,8 @@ export const TransportPaymentsScreen: React.FC = () => {
                 searchText: firm.city || ''
               }))}
               placeholder="All Billing Firms"
+              keyboardNavigation
+              nextFocusId="transport-payments-broker-filter"
               onChange={values => { setBillingFirmFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
@@ -666,6 +675,8 @@ export const TransportPaymentsScreen: React.FC = () => {
                 }))
               ]}
               placeholder="All Brokers"
+              keyboardNavigation
+              nextFocusId="transport-payments-loading-date-all"
               onChange={values => { setBrokerFilter(values); setCurrentPageNum(1); }}
             />
             {(searchTerm || commodityFilter.length > 0 || transporterFilter.length > 0 || billingFirmFilter.length > 0 || partyFilter.length > 0 || brokerFilter.length > 0 || loadingDateFrom || loadingDateTo || activeStatus !== 'PENDING') && (
@@ -694,6 +705,7 @@ export const TransportPaymentsScreen: React.FC = () => {
               ] as [DatePreset, string][]).map(([preset, label]) => (
                 <button
                   key={preset}
+                  id={preset === 'all' ? 'transport-payments-loading-date-all' : undefined}
                   type="button"
                   role="tab"
                   aria-selected={datePreset === preset}

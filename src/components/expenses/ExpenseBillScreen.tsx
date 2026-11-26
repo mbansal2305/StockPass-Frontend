@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Printer, ReceiptText, Trash2, X } from 'lucide-react';
 import { masterApi, SelectionClient, SelectionFirm } from '../../api/master';
 import { transportsApi } from '../../api/transports';
 import { Transporter } from '../../types';
 import { SearchableSelect, SearchableOption } from '../common/SearchableSelect';
+import { DateInput } from '../common/DateInput';
+import { handleFormEnterKeyDown } from '../common/formKeyboard';
 import { useApp } from '../../context/AppContext';
 
 interface ExpenseItem {
@@ -289,6 +291,8 @@ export const ExpenseBillScreen: React.FC = () => {
   const [transporters, setTransporters] = useState<Transporter[]>([]);
   const [commodities, setCommodities] = useState<Array<{ id: string; name: string; type: string }>>([]);
   const [showPreview, setShowPreview] = useState(false);
+  const [dateResetKey, setDateResetKey] = useState(0);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -384,6 +388,7 @@ export const ExpenseBillScreen: React.FC = () => {
       bill.vehicleNumber ||
       bill.grossWeight ||
       bill.bardanWeight ||
+      formRef.current?.querySelector('input:invalid') ||
       bill.date !== localDateString() ||
       bill.items.length > 1 ||
       bill.additions.length > additionTypes.length ||
@@ -398,6 +403,7 @@ export const ExpenseBillScreen: React.FC = () => {
     );
     if (hasEnteredData && !window.confirm('Discard the entered expense bill details and reset the form?')) return;
     setBill(createInitialBill());
+    setDateResetKey(current => current + 1);
     setShowPreview(false);
   };
 
@@ -406,11 +412,13 @@ export const ExpenseBillScreen: React.FC = () => {
       showToast('Select a firm before previewing the expense bill', 'error');
       return;
     }
+    if (!formRef.current?.reportValidity()) return;
     setShowPreview(true);
   };
 
   return (
     <div className="space-y-5">
+      <form ref={formRef} className="space-y-5" onKeyDown={handleFormEnterKeyDown} onSubmit={event => event.preventDefault()}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900"><ReceiptText className="h-5 w-5 text-blue-600" />Expense Bill</h1>
@@ -430,7 +438,7 @@ export const ExpenseBillScreen: React.FC = () => {
         <label className="block max-w-xl text-sm font-semibold text-slate-700">
           Select Firm
           <div className="mt-1.5">
-            <SearchableSelect id="expense-firm" value={bill.firmId} options={firmOptions} placeholder="Search and select a firm" onChange={value => setBill(current => ({ ...current, firmId: value }))} highlightFirstMatch />
+            <SearchableSelect id="expense-firm" value={bill.firmId} options={firmOptions} placeholder="Search and select a firm" onChange={value => setBill(current => ({ ...current, firmId: value }))} highlightFirstMatch selectOnTab />
           </div>
         </label>
         {selectedFirm && (
@@ -461,14 +469,15 @@ export const ExpenseBillScreen: React.FC = () => {
         <h2 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-700">Transport details</h2>
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-4">
-            <label className="block text-xs font-semibold text-slate-600">Date
-              <input type="date" value={bill.date} onChange={event => setBill(current => ({ ...current, date: event.target.value }))} className={`${decimalFieldClass} mt-1.5`} />
-            </label>
+            <div>
+              <label htmlFor="expense-bill-date" className="block text-xs font-semibold text-slate-600">Date</label>
+              <div className="mt-1.5"><DateInput key={dateResetKey} id="expense-bill-date" value={bill.date} onChange={value => setBill(current => ({ ...current, date: value }))} /></div>
+            </div>
             <label className="block text-xs font-semibold text-slate-600">Bill Number
               <input type="text" value={bill.billNumber} onChange={event => setBill(current => ({ ...current, billNumber: event.target.value }))} className={`${decimalFieldClass} mt-1.5`} />
             </label>
             <label className="block text-xs font-semibold text-slate-600">Party/Client
-              <div className="mt-1.5"><SearchableSelect id="expense-party" value={bill.clientId} options={clientOptions} placeholder="Search parties" onChange={value => setBill(current => ({ ...current, clientId: value }))} highlightFirstMatch /></div>
+              <div className="mt-1.5"><SearchableSelect id="expense-party" value={bill.clientId} options={clientOptions} placeholder="Search parties" onChange={value => setBill(current => ({ ...current, clientId: value }))} highlightFirstMatch selectOnTab /></div>
             </label>
           </div>
           <div className="space-y-4">
@@ -476,7 +485,7 @@ export const ExpenseBillScreen: React.FC = () => {
               <input type="text" value={bill.vehicleNumber} onChange={event => setBill(current => ({ ...current, vehicleNumber: event.target.value }))} className={`${decimalFieldClass} mt-1.5`} />
             </label>
             <label className="block text-xs font-semibold text-slate-600">Transporter
-              <div className="mt-1.5"><SearchableSelect id="expense-transporter" value={bill.transporterId} options={transporterOptions} placeholder="Search transporters" onChange={value => setBill(current => ({ ...current, transporterId: value }))} highlightFirstMatch /></div>
+              <div className="mt-1.5"><SearchableSelect id="expense-transporter" value={bill.transporterId} options={transporterOptions} placeholder="Search transporters" onChange={value => setBill(current => ({ ...current, transporterId: value }))} highlightFirstMatch selectOnTab /></div>
             </label>
             <label className="block text-xs font-semibold text-slate-600">Driver Contact
               <input type="text" inputMode="numeric" maxLength={13} value={bill.driverContact} onChange={event => {
@@ -559,8 +568,8 @@ export const ExpenseBillScreen: React.FC = () => {
                 const amount = roundedInteger(numericValue(item.netWeight) * numericValue(item.rate));
                 return (
                   <tr key={item.id}>
-                    <td className="border border-slate-200 p-1.5"><input aria-label="Item date" type="date" value={item.date} onChange={event => updateItem(item.id, 'date', event.target.value)} className="w-full min-w-32 rounded border border-slate-300 px-2 py-2" /></td>
-                    <td className="min-w-[220px] border border-slate-200 p-1.5"><SearchableSelect id={`expense-product-${item.id}`} value={item.commodityId} options={commodityOptions} placeholder="Search products" onChange={value => updateItem(item.id, 'commodityId', value)} highlightFirstMatch /></td>
+                    <td className="border border-slate-200 p-1.5"><label htmlFor={`expense-item-date-${item.id}`} className="sr-only">Item date</label><div className="min-w-32"><DateInput key={dateResetKey} id={`expense-item-date-${item.id}`} value={item.date} onChange={value => updateItem(item.id, 'date', value)} /></div></td>
+                    <td className="min-w-[220px] border border-slate-200 p-1.5"><SearchableSelect id={`expense-product-${item.id}`} value={item.commodityId} options={commodityOptions} placeholder="Search products" onChange={value => updateItem(item.id, 'commodityId', value)} highlightFirstMatch selectOnTab portalOptions /></td>
                     <td className="border border-slate-200 p-1.5"><input aria-label="Bags" type="text" inputMode="numeric" value={item.bags} onChange={event => {
                       if (/^\d*$/.test(event.target.value)) updateItem(item.id, 'bags', event.target.value);
                     }} className="w-full min-w-20 rounded border border-slate-300 px-2 py-2 text-right" /></td>
@@ -686,6 +695,7 @@ export const ExpenseBillScreen: React.FC = () => {
         </div>
       </section>
 
+      </form>
       {showPreview && (
         <ExpenseBillPreview
           bill={bill}

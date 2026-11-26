@@ -1,11 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Order, QuantityUnit, Transport, TransportStatus } from '../../types';
 import { BulkTransportDetail, TransportClientOption, transportsApi } from '../../api';
-import { ArrowLeft, Calendar, CheckCircle, ChevronDown, Layers, Plus, Search, Trash2, Truck, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle, ChevronDown, Layers, Plus, Search, Trash2, Truck, X } from 'lucide-react';
 import { formatQuantityWithUnit, formatCurrency, getClientTypeLabel } from '../../utils/formatters';
+import { calculateBulkOrderProgress } from '../../utils/bulkOrderProgress';
+import { DateInput } from '../common/DateInput';
 import { DecimalInput } from '../common/DecimalInput';
-import { SearchableSelect } from '../common/SearchableSelect';
+import { handleFormEnterKeyDown } from '../common/formKeyboard';
+import { SearchableSelect, scrollActiveOptionIntoView } from '../common/SearchableSelect';
 
 interface TruckRow {
   id: string;
@@ -26,46 +29,6 @@ const today = (): string => {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
-
-const formatTransportDate = (value: string): string => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  return match ? `${match[3]} / ${match[2]} / ${match[1]}` : '';
-};
-
-interface TransportDateInputProps {
-  id: string;
-  value: string;
-  onChange: (value: string) => void;
-  required?: boolean;
-}
-
-const TransportDateInput: React.FC<TransportDateInputProps> = ({ id, value, onChange, required }) => (
-  <div className="relative">
-    <button
-      id={id}
-      type="button"
-      aria-label={`Choose ${id.replace(/^transport-/, '').replace(/-/g, ' ')} date`}
-      aria-required={required}
-      onClick={event => {
-        const dateInput = event.currentTarget.parentElement?.querySelector<HTMLInputElement>('input[type="date"]');
-        if (dateInput?.showPicker) dateInput.showPicker();
-        else dateInput?.click();
-      }}
-      className="flex w-full items-center justify-between rounded-lg border border-slate-300 px-3 py-2 text-left text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-    >
-      <span>{formatTransportDate(value) || 'DD / MM / YYYY'}</span>
-      <Calendar className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
-    </button>
-    <input
-      type="date"
-      aria-hidden="true"
-      tabIndex={-1}
-      value={value}
-      onChange={event => onChange(event.target.value)}
-      className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
-    />
-  </div>
-);
 
 const getShortUnitLabel = (unit: QuantityUnit): string =>
   unit === 'quintal' ? 'Qtl' : unit === 'kg' ? 'Kg' : 'MT';
@@ -94,6 +57,7 @@ export const BulkTransportWorkflow: React.FC = () => {
   const [billNumber, setBillNumber] = useState('');
   const [totalReceivedWeight, setTotalReceivedWeight] = useState(0);
   const [totalOrderEntry, setTotalOrderEntry] = useState(0);
+  const [originalBulkEntry, setOriginalBulkEntry] = useState<{ orderId: string; quantity: number; unit: QuantityUnit } | null>(null);
   const [title, setTitle] = useState('');
   const [titleEdited, setTitleEdited] = useState(false);
   const [orderId, setOrderId] = useState('');
@@ -111,7 +75,10 @@ export const BulkTransportWorkflow: React.FC = () => {
   const [trucks, setTrucks] = useState<Record<string, TruckRow[]>>({});
   const [locationSearch, setLocationSearch] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [activeLocationIndex, setActiveLocationIndex] = useState(0);
   const locationPickerRef = useRef<HTMLDivElement>(null);
+  const locationOptionsRef = useRef<HTMLDivElement>(null);
+  const sourceTabsRef = useRef<HTMLDivElement>(null);
   const [lookupsReady, setLookupsReady] = useState(false);
   const [loadingBulk, setLoadingBulk] = useState(false);
 
@@ -163,9 +130,10 @@ export const BulkTransportWorkflow: React.FC = () => {
           ...bulk.selectedSources,
           ...bulk.transports.map(transport => transport.fromClientId).filter(Boolean)
         ])];
+        const bulkOrderId = bulk.orderId || bulk.transports[0]?.items[0]?.orderId || '';
         const bulkOrder = bulk.order
-          || orderOptions.find(order => order.id === bulk.orderId)
-          || orders.find(order => order.id === bulk.orderId);
+          || orderOptions.find(order => order.id === bulkOrderId)
+          || orders.find(order => order.id === bulkOrderId);
         if (bulkOrder) {
           setDetailOrder(bulkOrder);
           setOrderOptions(current => [
@@ -202,9 +170,10 @@ export const BulkTransportWorkflow: React.FC = () => {
         setBillNumber(bulk.billNumber || firstTransport?.billNumber || '');
         setTotalReceivedWeight(bulk.totalReceivedWeight || 0);
         setTotalOrderEntry(bulk.orderEntry || 0);
+        setOriginalBulkEntry({ orderId: bulkOrderId, quantity: bulk.orderEntry || 0, unit: bulkOrderUnit });
         setTitle(bulk.title);
         setTitleEdited(true);
-        setOrderId(bulk.orderId || firstTransport?.items[0]?.orderId || '');
+        setOrderId(bulkOrderId);
         setBillingFirmId(bulk.billingFirmId || firstTransport?.billingFirmId || '');
         setTransporterId(bulk.transporterId || firstTransport?.transporterId || DIRECT_TRANSPORT);
         setDestinationId(bulk.toClientId || firstTransport?.toClientId || '');
@@ -233,8 +202,15 @@ export const BulkTransportWorkflow: React.FC = () => {
   const commodity = commodities.find(item => item.id === selectedOrder?.commodityId);
   const selectedUnit = selectedOrder?.unit || 'mt';
   const contractQuantity = selectedOrder?.quantity || 0;
-  const fulfilledQuantity = selectedOrder?.quantityFulfilled || 0;
-  const remainingQuantity = Math.max(0, contractQuantity - fulfilledQuantity);
+  const originalOrderEntry = originalBulkEntry?.orderId === orderId
+    ? convertQuantityUnit(originalBulkEntry.quantity, originalBulkEntry.unit, selectedUnit)
+    : 0;
+  const orderProgress = calculateBulkOrderProgress(
+    contractQuantity,
+    selectedOrder?.quantityFulfilled || 0,
+    selectedOrder ? totalOrderEntry : 0,
+    originalOrderEntry
+  );
   useEffect(() => {
     if (!titleEdited) setTitle(`${billNumber} : Bulk Dispatch - ${selectedOrder?.orderNumber || ''}`.trim());
   }, [billNumber, selectedOrder?.orderNumber, titleEdited]);
@@ -253,6 +229,10 @@ export const BulkTransportWorkflow: React.FC = () => {
     return (grossInKg - row.bagNumbers * bagWeightInKg) / row.bagNumbers;
   };
   const filteredLocations = locations.filter(location => `${location.name} ${location.clientType || ''} ${location.city || ''}`.toLowerCase().includes(locationSearch.toLowerCase().trim()));
+  const activeLocation = filteredLocations.length ? Math.min(activeLocationIndex, filteredLocations.length - 1) : -1;
+  useLayoutEffect(() => {
+    if (pickerOpen && activeLocation >= 0) scrollActiveOptionIntoView(locationOptionsRef.current, activeLocation);
+  }, [pickerOpen, activeLocation, locationSearch, filteredLocations.length]);
   const locationSummary = selectedLocations.map(location => {
     const rows = trucks[location.id] || [];
     return {
@@ -354,12 +334,14 @@ export const BulkTransportWorkflow: React.FC = () => {
 
     {loadingBulk && <div role="status" className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">Loading bulk transport details...</div>}
 
+    <form className="space-y-4" onKeyDown={handleFormEnterKeyDown} onSubmit={event => { event.preventDefault(); void handleSave(); }}>
     <section className="bg-white p-5 rounded-lg border border-slate-200 space-y-4">
       <h2 className="text-xs font-bold text-slate-900 uppercase border-b border-slate-100 pb-2">Step 1 · Common transport details</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div><label htmlFor="bulk-loading-date" className="mb-1 block text-xs font-medium text-slate-700">Loading date</label><TransportDateInput id="bulk-loading-date" value={loadingDate} onChange={setLoadingDate} required /></div>
-        <div><label htmlFor="bulk-unloading-date" className="mb-1 block text-xs font-medium text-slate-700">Unload date</label><TransportDateInput id="bulk-unloading-date" value={unloadingDate} onChange={setUnloadingDate} /></div>
-        <label className="block text-xs font-medium text-slate-700">Bill number<input value={billNumber} onChange={event => setBillNumber(event.target.value)} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2" /></label>
+        <label className="block text-xs font-medium text-slate-700">Title<input value={title} onChange={event => { setTitle(event.target.value); setTitleEdited(true); }} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2" /></label>
+        <label className="block text-xs font-medium text-slate-700">Bill number<input autoFocus={!editingBulkId} value={billNumber} onChange={event => setBillNumber(event.target.value)} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2" /></label>
+        <div><label htmlFor="bulk-loading-date" className="mb-1 block text-xs font-medium text-slate-700">Loading date</label><DateInput id="bulk-loading-date" value={loadingDate} onChange={setLoadingDate} required /></div>
+        <div><label htmlFor="bulk-billing-firm" className="mb-1 block text-xs font-medium text-slate-700">Billing firm</label><SearchableSelect id="bulk-billing-firm" value={billingFirmId} onChange={setBillingFirmId} placeholder="Select or search billing firm" highlightFirstMatch selectOnTab options={billingFirms.map(firm => ({ id: firm.id, label: `${firm.name}${firm.city ? ` (${firm.city})` : ''}`, searchText: firm.city }))} /></div>
         <div><label htmlFor="bulk-order" className="mb-1 block text-xs font-medium text-slate-700">Order</label><SearchableSelect id="bulk-order" value={orderId} onChange={changeOrder} placeholder="Select or search order" options={orderOptions.map(order => {
           const commodityName = order.commodityName || commodities.find(item => item.id === order.commodityId)?.name || 'Commodity';
           return {
@@ -368,36 +350,79 @@ export const BulkTransportWorkflow: React.FC = () => {
             highlightText: order.orderNumber,
             searchText: `${order.orderNumber} ${order.type} ${commodityName} ${order.selectorClientName || ''} ${order.brokerName || 'Direct'}`
           };
-        })} highlightFirstMatch wrapOptions portalOptions /></div>
-        <label className="block text-xs font-medium text-slate-700">Title<input value={title} onChange={event => { setTitle(event.target.value); setTitleEdited(true); }} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2" /></label>
-        <div><label htmlFor="bulk-billing-firm" className="mb-1 block text-xs font-medium text-slate-700">Billing firm</label><SearchableSelect id="bulk-billing-firm" value={billingFirmId} onChange={setBillingFirmId} placeholder="Select or search billing firm" highlightFirstMatch options={billingFirms.map(firm => ({ id: firm.id, label: `${firm.name}${firm.city ? ` (${firm.city})` : ''}`, searchText: firm.city }))} /></div>
-        <div><label htmlFor="bulk-transporter" className="mb-1 block text-xs font-medium text-slate-700">Transporter</label><SearchableSelect id="bulk-transporter" value={transporterId} onChange={setTransporterId} placeholder="Select or search transporter" highlightFirstMatch options={[{ id: DIRECT_TRANSPORT, label: 'Direct Transport' }, ...agencyOptions.map(item => ({
+        })} highlightFirstMatch selectOnTab wrapOptions portalOptions /></div>
+        <div><label htmlFor="bulk-destination" className="mb-1 block text-xs font-medium text-slate-700">Destination location</label><SearchableSelect id="bulk-destination" value={destinationId} onChange={setDestinationId} placeholder="Select or search destination" highlightFirstMatch selectOnTab options={locations.map(item => ({ id: item.id, label: `${item.name}${item.city ? ` (${item.city})` : ''}`, searchText: `${item.city || ''} ${item.clientType || ''}` }))} /></div>
+        <div><label htmlFor="bulk-transporter" className="mb-1 block text-xs font-medium text-slate-700">Transporter</label><SearchableSelect id="bulk-transporter" value={transporterId} onChange={setTransporterId} placeholder="Select or search transporter" highlightFirstMatch selectOnTab options={[{ id: DIRECT_TRANSPORT, label: 'Direct Transport' }, ...agencyOptions.map(item => ({
           id: item.id,
           label: `${item.name}${item.agency && item.agency !== item.name ? ` (${item.agency})` : ''}`,
           searchText: `${item.agency || ''} ${item.city || ''} ${item.phone || item.phone_number || ''}`
         }))]} /></div>
-        <div><label htmlFor="bulk-destination" className="mb-1 block text-xs font-medium text-slate-700">Destination location</label><SearchableSelect id="bulk-destination" value={destinationId} onChange={setDestinationId} placeholder="Select or search destination" highlightFirstMatch options={locations.map(item => ({ id: item.id, label: `${item.name}${item.city ? ` (${item.city})` : ''}`, searchText: `${item.city || ''} ${item.clientType || ''}` }))} /></div>
         <label className="block text-xs font-medium text-slate-700">Status<select value={status} onChange={event => setStatus(event.target.value as TransportStatus)} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white"><option value="PENDING">Loading / Pending</option><option value="DELIVERY">In Transit / Delivery</option><option value="FINANCE">Unloaded / Finance</option><option value="PAID">Settled / Paid</option></select></label>
-        <label className="block text-xs font-medium text-slate-700">Total received weight ({getShortUnitLabel(selectedUnit)})<DecimalInput aria-label={`Total received weight in ${getShortUnitLabel(selectedUnit)}`} value={totalReceivedWeight} onChange={setTotalReceivedWeight} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none" /></label>
+        <div><label htmlFor="bulk-unloading-date" className="mb-1 block text-xs font-medium text-slate-700">Unload date</label><DateInput id="bulk-unloading-date" value={unloadingDate} onChange={setUnloadingDate} /></div>
+        <label className="block text-xs font-medium text-slate-700">Total received weight ({getShortUnitLabel(selectedUnit)})<DecimalInput aria-label={`Total received weight in ${getShortUnitLabel(selectedUnit)}`} value={totalReceivedWeight} onChange={value => { setTotalReceivedWeight(value); setTotalOrderEntry(value); }} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none" /></label>
         <label className="block text-xs font-medium text-slate-700">Total Order Entry ({getShortUnitLabel(selectedUnit)})<DecimalInput aria-label={`Total order entry in ${getShortUnitLabel(selectedUnit)}`} value={totalOrderEntry} onChange={setTotalOrderEntry} className="mt-1 w-full text-xs border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none" /></label>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           ['Commodity', commodity?.name || selectedOrder?.commodityName || 'Select an order', 'text-slate-900'],
           ['Contract size', formatQuantityWithUnit(contractQuantity, selectedUnit), 'text-slate-900'],
-          ['Already fulfilled', formatQuantityWithUnit(fulfilledQuantity, selectedUnit), 'text-emerald-700'],
-          ['Remaining', formatQuantityWithUnit(remainingQuantity, selectedUnit), 'text-blue-900']
+          ['Already fulfilled', formatQuantityWithUnit(orderProgress.fulfilled, selectedUnit), 'text-emerald-700'],
+          ['Remaining', formatQuantityWithUnit(orderProgress.remaining, selectedUnit), orderProgress.remaining <= 0 ? 'text-emerald-700' : 'text-orange-600']
         ].map(([label, value, color]) => <div key={label} className="p-3 rounded-lg bg-slate-50 border border-slate-100"><span className="text-[10px] text-slate-500 uppercase font-semibold">{label}</span><p className={`mt-1 text-sm font-bold tabular-nums ${color}`}>{value}</p>{label === 'Commodity' && <p className="mt-1 text-xs text-slate-500">{commodity?.type || selectedOrder?.commodityType || '—'}</p>}</div>)}
       </div>
     </section>
 
     <section className="bg-white p-5 rounded-lg border border-slate-200 space-y-4">
       <h2 className="text-xs font-bold text-slate-900 uppercase border-b border-slate-100 pb-2">Step 2 · Source locations</h2>
-      <div ref={locationPickerRef} className="relative max-w-xl">
-        <div className="flex items-center border border-slate-300 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-600"><Search className="ml-3 w-4 h-4 text-slate-400" /><input aria-label="Search source locations" value={locationSearch} onFocus={() => setPickerOpen(true)} onChange={event => { setLocationSearch(event.target.value); setPickerOpen(true); }} placeholder="Search by location or client type" className="w-full px-2 py-2 text-xs outline-none" /><button type="button" aria-label="Toggle source locations" onClick={() => setPickerOpen(open => !open)} className="p-2 text-slate-500 cursor-pointer"><ChevronDown className="w-4 h-4" /></button></div>
-        {pickerOpen && <div className="absolute z-20 mt-1 w-full max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg">{filteredLocations.length ? filteredLocations.map(location => <label key={location.id} className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 cursor-pointer"><input type="checkbox" checked={sourceIds.includes(location.id)} onChange={() => toggleSource(location.id)} className="h-4 w-4 rounded border-slate-300 text-blue-600" /><span className="min-w-0 flex-1 text-slate-800">{location.name} <span className="text-slate-500">({getClientTypeLabel(location.clientType || 'Location')})</span></span>{location.city && <span className="text-slate-400">{location.city}</span>}</label>) : <p className="px-3 py-3 text-xs text-slate-500">No matching locations</p>}</div>}
+      <div ref={locationPickerRef} className="relative max-w-xl" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPickerOpen(false); }}>
+        <div className="flex items-center border border-slate-300 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-600">
+          <Search className="ml-3 w-4 h-4 text-slate-400" />
+          <input
+            aria-label="Search source locations"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={pickerOpen}
+            aria-controls="bulk-source-options"
+            aria-activedescendant={pickerOpen && activeLocation >= 0 ? `bulk-source-option-${activeLocation}` : undefined}
+            aria-description="Use Up and Down to navigate, Tab to toggle an option, Enter to exit, and Shift+Tab to go back."
+            value={locationSearch}
+            onFocus={() => { setActiveLocationIndex(0); setPickerOpen(true); }}
+            onClick={() => setPickerOpen(true)}
+            onChange={event => { setLocationSearch(event.target.value); setActiveLocationIndex(0); setPickerOpen(true); }}
+            onKeyDown={event => {
+              if (event.nativeEvent.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
+              if (event.key === 'Escape') {
+                setPickerOpen(false);
+              } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (!pickerOpen) {
+                  setActiveLocationIndex(0);
+                  setPickerOpen(true);
+                } else if (filteredLocations.length) {
+                  setActiveLocationIndex(index => event.key === 'ArrowDown'
+                    ? Math.min(index + 1, filteredLocations.length - 1)
+                    : Math.max(index - 1, 0));
+                }
+              } else if (pickerOpen && event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                setPickerOpen(false);
+                sourceTabsRef.current?.querySelector<HTMLButtonElement>('[role="tab"]')?.focus();
+              } else if (pickerOpen && event.key === 'Tab' && !event.shiftKey) {
+                event.preventDefault();
+                if (!event.repeat && activeLocation >= 0) {
+                  toggleSource(filteredLocations[activeLocation].id);
+                  setActiveLocationIndex(Math.min(activeLocation + 1, filteredLocations.length - 1));
+                }
+              }
+            }}
+            placeholder="Search by location or client type"
+            className="w-full px-2 py-2 text-xs outline-none"
+          />
+          <button type="button" tabIndex={-1} aria-label="Toggle source locations" onClick={() => { setActiveLocationIndex(0); setPickerOpen(open => !open); }} className="p-2 text-slate-500 cursor-pointer"><ChevronDown className="w-4 h-4" /></button>
+        </div>
+        {pickerOpen && <div ref={locationOptionsRef} id="bulk-source-options" role="listbox" aria-label="Source locations" aria-multiselectable="true" tabIndex={-1} className="absolute z-20 mt-1 w-full max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg">{filteredLocations.length ? filteredLocations.map((location, index) => <label key={location.id} id={`bulk-source-option-${index}`} role="option" aria-selected={sourceIds.includes(location.id)} onMouseEnter={() => setActiveLocationIndex(index)} className={`flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 cursor-pointer ${index === activeLocation ? 'bg-blue-50' : ''}`}><input type="checkbox" tabIndex={-1} checked={sourceIds.includes(location.id)} onChange={() => toggleSource(location.id)} className="h-4 w-4 rounded border-slate-300 text-blue-600" /><span className="min-w-0 flex-1 text-slate-800">{location.name} <span className="text-slate-500">({getClientTypeLabel(location.clientType || 'Location')})</span></span>{location.city && <span className="text-slate-400">{location.city}</span>}</label>) : <p className="px-3 py-3 text-xs text-slate-500">No matching locations</p>}</div>}
       </div>
-      {selectedLocations.length > 0 && <div className="flex flex-wrap items-center gap-2 border-b border-slate-100" role="tablist" aria-label="Source location truck lists">{selectedLocations.map(location => <div key={location.id} className={`inline-flex items-center border-b-2 ${activeSourceId === location.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}><button type="button" role="tab" aria-selected={activeSourceId === location.id} onClick={() => setActiveSourceId(location.id)} className="px-3 py-2 text-xs font-semibold cursor-pointer">{location.name} <span className="text-slate-400">({trucks[location.id]?.length || 0})</span></button><button type="button" aria-label={`Discard ${location.name}`} title="Discard source location" onClick={() => toggleSource(location.id)} className="p-1 mr-1 text-slate-400 hover:text-red-600 cursor-pointer"><X className="w-3.5 h-3.5" /></button></div>)}</div>}
+      {selectedLocations.length > 0 && <div ref={sourceTabsRef} className="flex flex-wrap items-center gap-2 border-b border-slate-100" role="tablist" aria-label="Source location truck lists">{selectedLocations.map(location => <div key={location.id} className={`inline-flex items-center border-b-2 ${activeSourceId === location.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}><button type="button" role="tab" aria-selected={activeSourceId === location.id} onClick={() => setActiveSourceId(location.id)} className="px-3 py-2 text-xs font-semibold cursor-pointer">{location.name} <span className="text-slate-400">({trucks[location.id]?.length || 0})</span></button><button type="button" aria-label={`Discard ${location.name}`} title="Discard source location" onClick={() => toggleSource(location.id)} className="p-1 mr-1 text-slate-400 hover:text-red-600 cursor-pointer"><X className="w-3.5 h-3.5" /></button></div>)}</div>}
     </section>
 
     <section className="bg-white p-5 rounded-lg border border-slate-200 space-y-4">
@@ -407,10 +432,11 @@ export const BulkTransportWorkflow: React.FC = () => {
 
     <section className="bg-slate-900 text-white p-5 rounded-lg space-y-4">
       <h2 className="flex items-center gap-2 text-xs font-bold uppercase text-slate-200"><Truck className="w-4 h-4 text-blue-300" />Dispatch summary</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4"><div><span className="block text-[10px] uppercase text-slate-400">Total trucks</span><strong className="text-lg tabular-nums">{allTrucks.length}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total gross allocation</span><strong className={`text-lg tabular-nums ${Math.abs(grossTotal - remainingQuantity) < 0.01 ? 'text-emerald-400' : 'text-amber-300'}`}>{formatSelectedQuantity(grossTotal)}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total bags</span><strong className="text-lg tabular-nums">{totalBags}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total received weight</span><strong className="text-lg tabular-nums">{formatSelectedQuantity(totalReceivedWeight)}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Diff (Gross - Received)</span><strong className="text-lg tabular-nums text-red-400">{formatSelectedQuantity(receivedWeightDiff)}</strong></div></div>
-      {totalOrderEntry > remainingQuantity + 0.01 && <p className="rounded-md bg-amber-400/10 border border-amber-400/30 px-3 py-2 text-xs text-amber-200">Order entry is above the remaining order quantity. You can still save this dispatch.</p>}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4"><div><span className="block text-[10px] uppercase text-slate-400">Total trucks</span><strong className="text-lg tabular-nums">{allTrucks.length}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total gross allocation</span><strong className={`text-lg tabular-nums ${Math.abs(grossTotal - orderProgress.available) < 0.01 ? 'text-emerald-400' : 'text-amber-300'}`}>{formatSelectedQuantity(grossTotal)}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total bags</span><strong className="text-lg tabular-nums">{totalBags}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Total received weight</span><strong className="text-lg tabular-nums">{formatSelectedQuantity(totalReceivedWeight)}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Diff (Gross - Received)</span><strong className="text-lg tabular-nums text-red-400">{formatSelectedQuantity(receivedWeightDiff)}</strong></div></div>
+      {totalOrderEntry > orderProgress.available + 0.01 && <p className="rounded-md bg-amber-400/10 border border-amber-400/30 px-3 py-2 text-xs text-amber-200">Order entry is above the remaining order quantity. You can still save this dispatch.</p>}
       {locationSummary.length > 0 && <div className="overflow-x-auto border border-slate-700 rounded-lg"><table className="w-full min-w-[520px] text-left text-xs"><thead className="bg-slate-800 text-slate-300"><tr><th className="px-3 py-2">Source location</th><th className="px-3 py-2 text-right">Trucks</th><th className="px-3 py-2 text-right">Gross ({getShortUnitLabel(selectedUnit)})</th><th className="px-3 py-2 text-right">Bags</th></tr></thead><tbody className="divide-y divide-slate-700">{locationSummary.map(item => <tr key={item.location.id}><td className="px-3 py-2">{item.location.name}</td><td className="px-3 py-2 text-right tabular-nums">{item.rows.length}</td><td className="px-3 py-2 text-right tabular-nums">{formatSelectedQuantity(item.gross)}</td><td className="px-3 py-2 text-right tabular-nums">{item.bags}</td></tr>)}</tbody></table></div>}
-      <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-700"><button type="button" onClick={() => navigate(returnPage)} className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white rounded-lg cursor-pointer">Cancel</button><button type="button" disabled={!allTrucks.length} onClick={handleSave} className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold cursor-pointer"><CheckCircle className="w-4 h-4" />Save {allTrucks.length} transport{allTrucks.length === 1 ? '' : 's'}</button></div>
+      <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-700"><button type="button" onClick={() => navigate(returnPage)} className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white rounded-lg cursor-pointer">Cancel</button><button type="submit" disabled={!allTrucks.length} className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold cursor-pointer"><CheckCircle className="w-4 h-4" />Save {allTrucks.length} transport{allTrucks.length === 1 ? '' : 's'}</button></div>
     </section>
+    </form>
   </div>;
 };

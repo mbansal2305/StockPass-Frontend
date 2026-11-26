@@ -4,6 +4,7 @@ import { transportsApi, BulkTransportListItem, BulkTransportListPage } from '../
 import { useApp } from '../../context/AppContext';
 import { formatDate, formatQuantityWithUnit } from '../../utils/formatters';
 import { ConfirmationModal } from '../common/ConfirmationModal';
+import { shouldIgnoreShortcut } from '../common/keyboardShortcuts';
 
 const PAGE_SIZE = 10;
 
@@ -11,7 +12,7 @@ const formatTransportListDate = (date: string | null | undefined): string =>
   formatDate(date).replace(/ (\d{4})$/, (_, year: string) => `'${year.slice(-2)}`);
 
 export const BulkTransportListScreen: React.FC = () => {
-  const { navigate, showToast } = useApp();
+  const { navigate, showToast, mobileMenuOpen } = useApp();
   const [pageNumber, setPageNumber] = useState(1);
   const [pageData, setPageData] = useState<BulkTransportListPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -20,6 +21,18 @@ export const BulkTransportListScreen: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<BulkTransportListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (shouldIgnoreShortcut(event) || deleteTarget || openActionMenuId || mobileMenuOpen
+        || event.key.toLowerCase() !== 'n') return;
+      event.preventDefault();
+      navigate('bulk-transport', { returnTo: 'bulk-transport-list' });
+    };
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [deleteTarget, openActionMenuId, mobileMenuOpen, navigate]);
 
   useEffect(() => {
     let cancelled = false;

@@ -9,7 +9,7 @@ export interface SearchableOption {
   highlightText?: string;
 }
 
-const scrollActiveOptionIntoView = (list: HTMLDivElement | null, activeIndex: number) => {
+export const scrollActiveOptionIntoView = (list: HTMLDivElement | null, activeIndex: number) => {
   const option = list?.children.item(activeIndex);
   if (!list || !option) return;
 
@@ -116,6 +116,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
       ref={optionsRef}
       id={`${id}-options`}
       role="listbox"
+      tabIndex={selectOnTab ? -1 : undefined}
       className={`${portalOptions ? 'fixed z-20' : 'absolute z-20 mt-1 max-h-52 w-full'} overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg`}
       style={portalOptions ? dropdownStyle : undefined}
     >
@@ -221,15 +222,19 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   );
 };
 
-interface MultiSearchableSelectProps {
+interface MultiSearchableSelectBaseProps {
   id: string;
   selectedIds: string[];
   options: SearchableOption[];
   placeholder: string;
   onChange: (values: string[]) => void;
   fullWidth?: boolean;
-  keyboardNavigation?: boolean;
 }
+
+type MultiSearchableSelectProps = MultiSearchableSelectBaseProps & (
+  | { keyboardNavigation: true; nextFocusId: string }
+  | { keyboardNavigation?: false; nextFocusId?: never }
+);
 
 export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
   id,
@@ -238,7 +243,8 @@ export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
   placeholder,
   onChange,
   fullWidth = false,
-  keyboardNavigation = false
+  keyboardNavigation,
+  nextFocusId
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -283,6 +289,7 @@ export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
         aria-expanded={isOpen}
         aria-controls={`${id}-options`}
         aria-activedescendant={keyboardNavigation && isOpen && activeOptionIndex >= 0 ? `${id}-option-${activeOptionIndex}` : undefined}
+        aria-description={keyboardNavigation ? 'Use Up and Down to navigate, Tab to toggle an option, Enter for the next filter, and Shift+Tab to go back.' : undefined}
         autoComplete="off"
         value={query}
         onFocus={() => {
@@ -314,10 +321,17 @@ export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
                 ? Math.min(activeOptionIndex + 1, filteredOptions.length - 1)
                 : Math.max(activeOptionIndex - 1, 0));
             }
-          } else if (keyboardNavigation && event.key === 'Enter' && isOpen && activeOptionIndex >= 0) {
+          } else if (keyboardNavigation && event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && isOpen) {
             event.preventDefault();
-            toggleOption(filteredOptions[activeOptionIndex].id);
-            setActiveIndex(Math.min(activeOptionIndex + 1, filteredOptions.length - 1));
+            if (!event.repeat && activeOptionIndex >= 0) {
+              toggleOption(filteredOptions[activeOptionIndex].id);
+              setActiveIndex(Math.min(activeOptionIndex + 1, filteredOptions.length - 1));
+            }
+          } else if (keyboardNavigation && event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+            event.preventDefault();
+            const next = document.getElementById(nextFocusId);
+            if (next instanceof HTMLElement) next.focus();
+            else console.error(`Next filter "${nextFocusId}" was not found`);
           }
         }}
         placeholder={searchPlaceholder}

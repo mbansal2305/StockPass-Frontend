@@ -22,6 +22,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { ConfirmationModal } from '../common/ConfirmationModal';
+import { shouldIgnoreShortcut } from '../common/keyboardShortcuts';
 import { MultiSearchableSelect } from '../common/SearchableSelect';
 import { formatDate, formatQuantityWithUnit, getTransportStatusBadge } from '../../utils/formatters';
 
@@ -80,6 +81,7 @@ export const TransportListScreen: React.FC = () => {
     showToast,
     transportGet,
     navigate,
+    mobileMenuOpen,
     pageParams,
     clients,
     commodities,
@@ -136,6 +138,18 @@ export const TransportListScreen: React.FC = () => {
   } | null>(null);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const isPaidTab = activeTab === 'PAID';
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (shouldIgnoreShortcut(event) || deleteTarget || statusChangeTarget || openActionMenuId || mobileMenuOpen
+        || event.key.toLowerCase() !== 'n') return;
+      event.preventDefault();
+      navigate('transport-form', { returnTo: 'transport' });
+    };
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [deleteTarget, statusChangeTarget, openActionMenuId, mobileMenuOpen, navigate]);
 
   // Lookups
   useEffect(() => {
@@ -331,6 +345,7 @@ export const TransportListScreen: React.FC = () => {
           <p className="text-xs text-slate-500 mt-0.5">
             Monitor truck consignments.
           </p>
+          <p className="text-xs text-slate-500 mt-0.5">Shortcut: N new transport</p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -358,6 +373,7 @@ export const TransportListScreen: React.FC = () => {
           )} */}
           <button
             type="button"
+            aria-keyshortcuts="N"
             onClick={() => navigate('transport-form', { returnTo: 'transport' })}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
           >
@@ -370,6 +386,7 @@ export const TransportListScreen: React.FC = () => {
       <div id="transport-filter-panel" className={`space-y-4 ${filtersCollapsed ? 'hidden' : ''}`}>
       {/* Filter and Search Bar */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
+        <p className="text-xs text-slate-500">Filters: Up/Down to navigate, Tab to toggle, Enter for next filter, Shift+Tab to go back.</p>
         <div className="grid grid-cols-1 gap-2.5">
           <div className="relative col-span-full row-start-1 min-w-0">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -388,6 +405,8 @@ export const TransportListScreen: React.FC = () => {
               selectedIds={partyFilter}
               options={partyOptions}
               placeholder="All Parties"
+              keyboardNavigation
+              nextFocusId="transport-commodity-filter"
               onChange={values => { setPartyFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
@@ -395,6 +414,8 @@ export const TransportListScreen: React.FC = () => {
               selectedIds={commodityFilter}
               options={commodityOptions}
               placeholder="All Commodities"
+              keyboardNavigation
+              nextFocusId="transport-transporter-filter"
               onChange={values => { setCommodityFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
@@ -409,6 +430,8 @@ export const TransportListScreen: React.FC = () => {
                 }))
               ]}
               placeholder="All Transporters"
+              keyboardNavigation
+              nextFocusId="transport-billing-firm-filter"
               onChange={values => { setTransporterFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
@@ -416,6 +439,8 @@ export const TransportListScreen: React.FC = () => {
               selectedIds={billingFirmFilter}
               options={billingFirmOptions}
               placeholder="All Billing Firms"
+              keyboardNavigation
+              nextFocusId="transport-broker-filter"
               onChange={values => { setBillingFirmFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
@@ -430,6 +455,8 @@ export const TransportListScreen: React.FC = () => {
                 }))
               ]}
               placeholder="All Brokers"
+              keyboardNavigation
+              nextFocusId="transport-loading-date-all"
               onChange={values => { setBrokerFilter(values); setCurrentPageNum(1); }}
             />
             {(searchTerm || commodityFilter.length > 0 || transporterFilter.length > 0 || billingFirmFilter.length > 0 || partyFilter.length > 0 || brokerFilter.length > 0 || loadingDateFrom || loadingDateTo) && (
@@ -459,6 +486,7 @@ export const TransportListScreen: React.FC = () => {
               ] as [DatePreset, string][]).map(([preset, label]) => (
                 <button
                   key={preset}
+                  id={preset === 'all' ? 'transport-loading-date-all' : undefined}
                   type="button"
                   role="tab"
                   aria-selected={datePreset === preset}

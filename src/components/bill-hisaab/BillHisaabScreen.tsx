@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Calculator, Printer, Search, X } from 'lucide-react';
 import { billsApi, BillHisaabSearchResult } from '../../api/bills';
 import { masterApi, SelectionFirm } from '../../api/master';
 import { useApp } from '../../context/AppContext';
 import { SearchableOption, SearchableSelect } from '../common/SearchableSelect';
+import { DateInput } from '../common/DateInput';
+import { handleFormEnterKeyDown } from '../common/formKeyboard';
 
 interface Deduction {
   id: string;
@@ -233,6 +235,7 @@ export const BillHisaabScreen: React.FC = () => {
   const [form, setForm] = useState<BillHisaabForm | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const detailFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -315,20 +318,22 @@ export const BillHisaabScreen: React.FC = () => {
           <p className="mt-1 text-sm text-slate-500">Search for a transport bill, enter settlement details, then save the bill as a PDF.</p>
         </div>
         {form && (
-          <button type="button" onClick={() => setShowPreview(true)} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">
+          <button type="button" onClick={() => { if (detailFormRef.current?.reportValidity()) setShowPreview(true); }} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">
             <Printer className="h-4 w-4" /> Print PDF
           </button>
         )}
       </div>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <form onSubmit={searchBill} className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.7fr)_auto] sm:items-end">
+        <form onSubmit={searchBill} onKeyDown={handleFormEnterKeyDown} className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.7fr)_auto] sm:items-end">
           <label className="block text-sm font-semibold text-slate-700">Select Firm
             <div className="mt-1.5">
               <SearchableSelect id="bill-hisaab-firm" value={firmId} options={firmOptions} placeholder="Search and select a firm" onChange={value => {
-                setFirmId(value);
-                setForm(null);
-              }} />
+                if (value !== firmId) {
+                  setFirmId(value);
+                  setForm(null);
+                }
+              }} highlightFirstMatch selectOnTab />
             </div>
           </label>
           <label className="block text-sm font-semibold text-slate-700">Bill Number
@@ -341,6 +346,7 @@ export const BillHisaabScreen: React.FC = () => {
       </section>
 
       {form && totals && (
+        <form ref={detailFormRef} onKeyDown={handleFormEnterKeyDown} onSubmit={event => event.preventDefault()}>
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <div className="mb-5 flex items-center justify-center gap-3 border-b-2 border-slate-900 pb-3">
             {selectedFirm?.profilePicture && <img src={selectedFirm.profilePicture} alt={`${form.firmName} logo`} className="h-8 w-8 object-contain" />}
@@ -353,7 +359,7 @@ export const BillHisaabScreen: React.FC = () => {
             <EditableText label="Broker Name" value={form.brokerName} onChange={value => updateForm('brokerName', value)} />
             <ReadOnlyValue label="Vehicle No." value={form.vehicleNumber} />
             <ReadOnlyValue label="Bill No." value={form.billNumber} />
-            <EditableDate label="Bill Date" value={form.billDate} onChange={value => updateForm('billDate', value)} />
+            <EditableDate id="hisaab-bill-date" label="Bill Date" value={form.billDate} onChange={value => updateForm('billDate', value)} />
             <EditableText label="Type" value={form.billType} onChange={value => updateForm('billType', value)} />
           </div>
 
@@ -408,15 +414,14 @@ export const BillHisaabScreen: React.FC = () => {
             <label className="text-sm font-semibold text-slate-700">Advance Paid
               <DecimalField label="Advance paid" value={form.advanceAmount} onChange={value => updateForm('advanceAmount', value)} className="mt-1.5" />
             </label>
-            <label className="text-sm font-semibold text-slate-700">Advance Date
-              <input type="date" value={form.advanceDate} onChange={event => updateForm('advanceDate', event.target.value)} className={`${decimalInputClass} mt-1.5`} />
-            </label>
+            <EditableDate id="hisaab-advance-date" label="Advance Date" value={form.advanceDate} onChange={value => updateForm('advanceDate', value)} />
             <ReadOnlyValue label="Left to be Paid" value={displayNumber(totals.leftToBePaid)} />
             <label className="text-sm font-semibold text-slate-700">GST Amount
               <DecimalField label="GST amount" value={form.gstAmount} onChange={value => updateForm('gstAmount', value)} className="mt-1.5" />
             </label>
           </div>
         </section>
+        </form>
       )}
 
       {showPreview && form && (
@@ -439,8 +444,9 @@ const EditableText: React.FC<{ label: string; value: string; onChange: (value: s
   </label>
 );
 
-const EditableDate: React.FC<{ label: string; value: string; onChange: (value: string) => void }> = ({ label, value, onChange }) => (
-  <label className="text-sm font-semibold text-slate-700">{label}
-    <input type="date" value={value} onChange={event => onChange(event.target.value)} className={`${decimalInputClass} mt-1.5`} />
-  </label>
+const EditableDate: React.FC<{ id: string; label: string; value: string; onChange: (value: string) => void }> = ({ id, label, value, onChange }) => (
+  <div>
+    <label htmlFor={id} className="text-sm font-semibold text-slate-700">{label}</label>
+    <div className="mt-1.5"><DateInput id={id} value={value} onChange={onChange} /></div>
+  </div>
 );
