@@ -441,27 +441,6 @@ export const OrderListScreen: React.FC = () => {
           </div>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2 pb-1 sm:pb-0 col-span-full row-start-2">
-            <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-lg shrink-0" role="tablist" aria-label="Order type">
-              {(['PURCHASE ORDER', 'SALES ORDER'] as OrderType[]).map(type => (
-                <button
-                  key={type}
-                  type="button"
-                  role="tab"
-                  aria-selected={typeFilter === type}
-                  onClick={() => { setTypeFilter(type); setCurrentPageNum(1); }}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                    typeFilter === type
-                      ? type === 'PURCHASE ORDER'
-                        ? 'bg-emerald-100 text-emerald-800 shadow-xs'
-                        : 'bg-blue-100 text-blue-800 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {type === 'PURCHASE ORDER' ? 'Purchase' : 'Sales'}
-                </button>
-              ))}
-            </div>
-
             <MultiSearchableSelect
               id="orders-firm-filter"
               selectedIds={firmFilter}
@@ -518,8 +497,28 @@ export const OrderListScreen: React.FC = () => {
       {/* Status Color Legend */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
         <div className="flex items-center gap-2">
+          <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-lg shrink-0" role="tablist" aria-label="Order type">
+            {(['PURCHASE ORDER', 'SALES ORDER'] as OrderType[]).map(type => (
+              <button
+                key={type}
+                type="button"
+                role="tab"
+                aria-selected={typeFilter === type}
+                onClick={() => { setTypeFilter(type); setCurrentPageNum(1); }}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                  typeFilter === type
+                    ? type === 'PURCHASE ORDER'
+                      ? 'bg-emerald-100 text-emerald-800 shadow-xs'
+                      : 'bg-blue-100 text-blue-800 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {type === 'PURCHASE ORDER' ? 'Purchase' : 'Sales'}
+              </button>
+            ))}
+          </div>
           {/* <span className="font-semibold text-slate-700">Status Color Legend:</span> */}
-          <span className="text-[11px] text-slate-400">Rows are color-coded by contract status</span>
+          {/* <span className="text-[11px] text-slate-400">Rows are color-coded by contract status</span> */}
         </div>
         <div className="flex items-center gap-2">
           <button
