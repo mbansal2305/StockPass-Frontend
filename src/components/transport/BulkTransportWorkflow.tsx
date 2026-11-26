@@ -364,7 +364,7 @@ export const BulkTransportWorkflow: React.FC = () => {
           const commodityName = order.commodityName || commodities.find(item => item.id === order.commodityId)?.name || 'Commodity';
           return {
             id: order.id,
-            label: `${order.orderNumber}${order.selectorClientName ? ` (${order.selectorClientName})` : ''} · ${formatQuantityWithUnit(order.quantity, order.unit || 'mt')} · ${formatCurrency(order.rate)} / ${getRateUnitLabel(order.remQuantityUnit || order.unit)} · ${order.brokerName || 'Direct'}`,
+            label: `${order.orderNumber}${order.selectorClientName ? ` (${order.selectorClientName})` : ''} · ${formatQuantityWithUnit(order.quantity, order.remQuantityUnit || order.unit)} · ${formatCurrency(order.rate)} / ${getRateUnitLabel(order.remQuantityUnit || order.unit)} · ${order.brokerName || 'Direct'}`,
             highlightText: order.orderNumber,
             searchText: `${order.orderNumber} ${order.type} ${commodityName} ${order.selectorClientName || ''} ${order.brokerName || 'Direct'}`
           };

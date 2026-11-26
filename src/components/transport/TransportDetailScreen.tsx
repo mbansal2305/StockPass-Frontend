@@ -576,6 +576,13 @@ export const TransportDetailScreen: React.FC = () => {
             <p className="text-[11px] text-slate-500">
               Orders fulfilled by this vehicle consignment. Quantities are shown in {getShortUnitLabel(transport.grossWeightUnit)}.
             </p>
+            <span className={`mt-1 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold ${
+              transport.orderless
+                ? 'border-amber-200 bg-amber-50 text-amber-800'
+                : 'border-slate-200 bg-slate-50 text-slate-600'
+            }`}>
+              {transport.orderless ? 'Orderless Transport' : 'Order-linked Transport'}
+            </span>
           </div>
 
           <button
@@ -668,6 +675,11 @@ export const TransportDetailScreen: React.FC = () => {
               })}
             </tbody>
           </table>
+          {transport.items.length === 0 && (
+            <p className="p-4 text-center text-xs text-slate-500">
+              {transport.orderless ? 'This transport has no order allocations.' : 'No order allocations.'}
+            </p>
+          )}
         </div>
       </div>
 

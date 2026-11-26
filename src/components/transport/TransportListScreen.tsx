@@ -497,7 +497,7 @@ export const TransportListScreen: React.FC = () => {
 
       {/* Status Color Legend */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* <span className="font-semibold text-slate-700">Status Color Legend:</span> */}
           <span className="text-[11px] text-slate-400">Rows are color-coded by shipment lifecycle</span>
         </div>
@@ -702,6 +702,11 @@ export const TransportListScreen: React.FC = () => {
                             <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-1.5 py-0.5 font-sans text-[9px] font-semibold tracking-wide text-teal-800">
                               <Layers className="h-2.5 w-2.5" aria-hidden="true" />
                               Bulk
+                            </span>
+                          )}
+                          {t.orderless && (
+                            <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-sans text-[9px] font-semibold tracking-wide text-amber-800">
+                              Orderless
                             </span>
                           )}
                         </div>

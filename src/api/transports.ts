@@ -273,6 +273,7 @@ export function transformBackendTransport(raw: any, lookups: TransportLookups = 
     bagWeight: Number(raw?.bag_wt ?? raw?.bag_weight ?? raw?.bagWeight ?? 0),
     anugya: normalizeFlag(raw?.anugya),
     gatepass: normalizeFlag(raw?.gatepass),
+    orderless: toBooleanFlag(raw?.orderless),
     rent: Number(raw?.rent ?? 0),
     rentType: raw?.rent_type === 'fix' ? 'fix' : 'per_unit',
     advanceByClient: Number(raw?.adv_by_client ?? raw?.advance_by_client ?? raw?.advanceByClient ?? 0),
@@ -349,6 +350,7 @@ function toTransportFormData(
   if (transport.grossWeightUnit !== undefined) appendValue(form, 'gross_wt_unit', transport.grossWeightUnit);
   if (transport.anugya !== undefined) appendValue(form, 'anugya', toBooleanFlag(transport.anugya));
   if (transport.gatepass !== undefined) appendValue(form, 'gatepass', toBooleanFlag(transport.gatepass));
+  if (transport.orderless !== undefined) appendValue(form, 'orderless', toBooleanFlag(transport.orderless));
   if (transport.status !== undefined) appendValue(form, 'status', transport.status.toLowerCase());
   if (transport.rentType !== undefined) appendValue(form, 'rent_type', transport.rentType);
   if (transport.notes !== undefined) form.append('notes', transport.notes);
@@ -614,6 +616,14 @@ function normalizeTransporterOptions(response: any): Transporter[] {
   });
 }
 
+function normalizeQuantityUnit(value: unknown, fallback: QuantityUnit = 'mt'): QuantityUnit {
+  const unit = String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (unit === 'kg' || unit === 'kgs' || unit === 'kilogram' || unit === 'kilograms') return 'kg';
+  if (unit === 'qtl' || unit === 'quintal' || unit === 'quintals') return 'quintal';
+  if (unit === 'mt' || unit === 'metric_ton' || unit === 'metric_tons') return 'mt';
+  return fallback;
+}
+
 function normalizeOrderOptions(
   response: any,
   lookups: Pick<TransportLookups, 'clients' | 'commodities'> = {}
@@ -630,13 +640,16 @@ function normalizeOrderOptions(
           ? 0
           : quantity - Number(remainingQuantity)
       );
+      const remainingUnit = normalizeQuantityUnit(
+        raw.rem_qty_unit ?? raw.remaining_quantity_unit ?? raw.quantity_unit ?? raw.qty_unit ?? raw.unit
+      );
       const order = transformBackendOrderToFrontend({
         ...raw,
         type: raw.type ?? raw.order_type,
         order_no: raw.order_no ?? raw.order_number,
         quantity,
         quantity_fulfilled: fulfilledQuantity,
-        quantity_unit: raw.quantity_unit ?? raw.qty_unit ?? raw.unit,
+        quantity_unit: raw.quantity_unit ?? raw.qty_unit ?? raw.unit ?? remainingUnit,
         from_client: relationId(raw.from_client, lookups.clients),
         to_client: relationId(raw.to_client, lookups.clients),
         commodity: raw.commodity_id ?? relationId(raw.commodity, lookups.commodities)
@@ -644,7 +657,7 @@ function normalizeOrderOptions(
       return {
         ...order,
         remQuantity: Number(remainingQuantity ?? quantity - Number(fulfilledQuantity)),
-        remQuantityUnit: (raw.rem_qty_unit ?? raw.remaining_quantity_unit ?? raw.qty_unit ?? raw.quantity_unit ?? 'mt') as QuantityUnit,
+        remQuantityUnit: remainingUnit,
         commodityName: typeof raw.commodity === 'string' ? raw.commodity : raw.commodity?.name,
         commodityType: raw.commodity_type ?? raw.commodityType,
         selectorClientName: String(counterpartyName ?? '')

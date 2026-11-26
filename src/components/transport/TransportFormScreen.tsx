@@ -7,7 +7,7 @@ import {
   Save,
   Plus,
   Trash2,
-  AlertCircle,
+  Info,
   Truck,
   Building,
   CheckCircle2,
@@ -138,6 +138,7 @@ export const TransportFormScreen: React.FC = () => {
     bagWeight: 0,
     anugya: false,
     gatepass: false,
+    orderless: false,
     rent: 0,
     rentType: 'per_unit' as TransportRentType,
     advanceByClient: 0,
@@ -268,6 +269,7 @@ export const TransportFormScreen: React.FC = () => {
         bagWeight: existingTransport.bagWeight ?? 500,
         anugya: isFlagEnabled(existingTransport.anugya),
         gatepass: isFlagEnabled(existingTransport.gatepass),
+        orderless: isFlagEnabled(existingTransport.orderless),
         rent: existingTransport.rent,
         rentType: existingTransport.rentType || 'per_unit',
         advanceByClient: existingTransport.advanceByClient || 0,
@@ -307,8 +309,11 @@ export const TransportFormScreen: React.FC = () => {
   };
 
   const handleAddItem = (orderType: 'SALES ORDER' | 'PURCHASE ORDER') => {
+    if (formData.orderless) return;
     const orderOptions = orderType === 'SALES ORDER' ? salesOrdersForCommodity : purchaseOrdersForCommodity;
-    const unallocatedOrder = orderOptions.find(o => !items.some(i => i.orderId === o.id) && o.status === 'PENDING') || orderOptions[0];
+    const unallocatedOrder = orderOptions.find(o =>
+      o.status === 'PENDING' && !items.some(item => sameId(item.orderId, o.id))
+    ) || orderOptions.find(o => !items.some(item => sameId(item.orderId, o.id)));
     if (unallocatedOrder) {
       setItems([...items, { orderId: unallocatedOrder.id, allocatedQuantity: 0, orderEntryQuantity: 0 }]);
       setErrors(previous => {
@@ -339,6 +344,10 @@ export const TransportFormScreen: React.FC = () => {
   };
 
   const handleItemOrderChange = (index: number, orderId: string) => {
+    if (items.some((item, itemIndex) => itemIndex !== index && sameId(item.orderId, orderId))) {
+      showToast('This order is already attached to this transport', 'error');
+      return;
+    }
     const next = [...items];
     next[index] = { ...next[index], orderId, orderEntryQuantity: 0 };
     setItems(next);
@@ -378,6 +387,37 @@ export const TransportFormScreen: React.FC = () => {
   };
   const orderTypeById = new Map(contractOrdersForCommodity.map(order => [order.id.trim(), order.type]));
   const findOrderForItem = (orderId: string) => contractOrdersForCommodity.find(order => sameId(order.id, orderId));
+  const findOriginalItem = (item: TransportItem) => {
+    if (!existingTransport) return undefined;
+    if (item.id !== undefined) {
+      return existingTransport.items.find(original => original.id === item.id);
+    }
+    return existingTransport.items.find(original => sameId(original.orderId, item.orderId));
+  };
+  const getAvailableRemaining = (item: TransportItem, order?: typeof contractOrdersForCommodity[number]) => {
+    const remaining = order?.remQuantity !== undefined
+      ? convertQuantityUnit(order.remQuantity, order.remQuantityUnit || 'mt', formData.grossWeightUnit)
+      : item.orderSizeRemaining === undefined
+      ? undefined
+      : convertQuantityUnit(
+        item.orderSizeRemaining,
+        item.orderSizeUnit || 'mt',
+        formData.grossWeightUnit
+      );
+    if (remaining === undefined) return undefined;
+
+    const originalItem = findOriginalItem(item);
+    const originalEntryBelongsToCurrentOrder = originalItem
+      && sameId(originalItem.orderId, item.orderId);
+    if (!originalEntryBelongsToCurrentOrder) return remaining;
+
+    const originalEntry = convertQuantityUnit(
+      Number(originalItem.orderEntryQuantity) || 0,
+      existingTransport?.grossWeightUnit || 'quintal',
+      formData.grossWeightUnit
+    );
+    return remaining + originalEntry;
+  };
   const getOrderType = (item: TransportItem): 'SALES ORDER' | 'PURCHASE ORDER' | undefined => {
     const normalizedId = String(item.orderId).trim();
     const directMatch = orderTypeById.get(normalizedId);
@@ -407,8 +447,9 @@ export const TransportFormScreen: React.FC = () => {
           <h3 className="text-xs font-bold text-slate-800">{orderType === 'SALES ORDER' ? 'Sales Orders' : 'Purchase Orders'}</h3>
           <button
             type="button"
+            disabled={formData.orderless}
             onClick={() => handleAddItem(orderType)}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold cursor-pointer"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="w-3 h-3" /> Add Order
           </button>
@@ -430,22 +471,22 @@ export const TransportFormScreen: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {groupItems.map(({ item, index }) => {
                   const order = findOrderForItem(item.orderId);
-                  const remaining = order?.remQuantity !== undefined
-                    ? convertQuantityUnit(order.remQuantity, order.remQuantityUnit || 'mt', formData.grossWeightUnit)
-                    : item.orderSizeRemaining === undefined
-                    ? undefined
-                    : convertQuantityUnit(
-                      item.orderSizeRemaining,
-                      item.orderSizeUnit || 'mt',
-                      formData.grossWeightUnit
-                    );
+                  const remaining = getAvailableRemaining(item, order);
+                  const exceedsRemaining = remaining !== undefined
+                    && Number(item.orderEntryQuantity || 0) > remaining + 0.000001;
+                  const exceededBy = remaining === undefined
+                    ? 0
+                    : Number(item.orderEntryQuantity || 0) - remaining;
                   const getFullOrderLabel = (selectedOrder: typeof order) => selectedOrder
-                    ? `${selectedOrder.orderNumber}${selectedOrder.selectorClientName ? ` (${selectedOrder.selectorClientName})` : ''} · ${formatQuantityWithUnit(selectedOrder.quantity, selectedOrder.unit || 'mt')} · ${formatCurrency(selectedOrder.rate)} / ${getRateUnitLabel(selectedOrder.remQuantityUnit || selectedOrder.unit)} · ${selectedOrder.brokerName || 'Direct'}`
+                    ? `${selectedOrder.orderNumber}${selectedOrder.selectorClientName ? ` (${selectedOrder.selectorClientName})` : ''} · ${formatQuantityWithUnit(selectedOrder.quantity, selectedOrder.remQuantityUnit || selectedOrder.unit)} · ${formatCurrency(selectedOrder.rate)} / ${getRateUnitLabel(selectedOrder.remQuantityUnit || selectedOrder.unit)} · ${selectedOrder.brokerName || 'Direct'}`
                     : item.orderNumber || item.orderId;
                   return (
                   <tr key={item.id ?? `${orderType}-${index}`}>
                     <td className="min-w-[360px] px-3 py-2">
-                      <SearchableSelect
+                      {formData.orderless ? (
+                        <span className="text-xs text-slate-700">{getFullOrderLabel(order)}</span>
+                      ) : (
+                        <SearchableSelect
                         id={`transport-${orderType === 'SALES ORDER' ? 'sales' : 'purchase'}-order-${index}`}
                         value={item.orderId}
                         onChange={(orderId) => handleItemOrderChange(index, orderId)}
@@ -465,9 +506,15 @@ export const TransportFormScreen: React.FC = () => {
                             label: getFullOrderLabel(option),
                             highlightText: option.orderNumber,
                             searchText: `${option.orderNumber} ${option.selectorClientName || ''} ${option.brokerName || 'Direct'}`
-                          }))
+                          })).filter(option =>
+                            sameId(option.id, item.orderId)
+                            || !items.some((otherItem, otherIndex) =>
+                              otherIndex !== index && sameId(otherItem.orderId, option.id)
+                            )
+                          )
                         ]}
-                      />
+                        />
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">
                       {remaining === undefined ? '-' : formatQuantityWithUnit(remaining, formData.grossWeightUnit)}
@@ -480,11 +527,24 @@ export const TransportFormScreen: React.FC = () => {
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <DecimalInput
-                        value={item.orderEntryQuantity || 0}
-                        onChange={(quantity) => handleOrderEntryChange(index, quantity)}
-                        className="w-[110px] text-xs border border-slate-300 rounded px-2 py-1.5 tabular-nums text-slate-900 text-right"
-                      />
+                      <div className="relative inline-block">
+                        <DecimalInput
+                          value={item.orderEntryQuantity || 0}
+                          onChange={(quantity) => handleOrderEntryChange(index, quantity)}
+                          aria-describedby={exceedsRemaining ? `order-entry-warning-${index}` : undefined}
+                          className={`w-[110px] text-xs border border-slate-300 rounded py-1.5 pr-2 tabular-nums text-slate-900 text-right ${exceedsRemaining ? 'pl-7' : 'pl-2'}`}
+                        />
+                        {exceedsRemaining && (
+                          <span
+                            id={`order-entry-warning-${index}`}
+                            title={`Exceeds the remaining quantity by ${formatQuantityWithUnit(exceededBy, formData.grossWeightUnit)}`}
+                            className="absolute left-2 top-1/2 -translate-y-1/2 text-amber-700"
+                          >
+                            <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            <span className="sr-only">Exceeds by {formatQuantityWithUnit(exceededBy, formData.grossWeightUnit)}</span>
+                          </span>
+                        )}
+                      </div>
                       {errors[`orderEntry-${index}`] && <p className="mt-1 text-left text-[10px] text-red-600">{errors[`orderEntry-${index}`]}</p>}
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -524,26 +584,26 @@ export const TransportFormScreen: React.FC = () => {
     if (formData.grossWeight <= 0) newErrors.grossWeight = 'Gross weight must be greater than zero';
     if (formData.rent < 0) newErrors.rent = 'Freight rent cannot be negative';
 
-    if (items.length === 0) {
+    if (items.length === 0 && !formData.orderless) {
       newErrors.items = 'Please allocate at least one order to this transport';
-    } else if (hasSalesItems && hasPurchaseItems && (
+    } else if (items.length > 0 && hasSalesItems && hasPurchaseItems && (
       Math.abs(Number(formData.grossWeight) - salesAllocated) > 0.01 || Math.abs(Number(formData.grossWeight) - purchaseAllocated) > 0.01
     )) {
       newErrors.items = 'Sales and purchase allocation totals must each equal the gross loading weight';
-    } else if (hasSalesItems && !hasPurchaseItems && Math.abs(Number(formData.grossWeight) - salesAllocated) > 0.01) {
+    } else if (items.length > 0 && hasSalesItems && !hasPurchaseItems && Math.abs(Number(formData.grossWeight) - salesAllocated) > 0.01) {
       newErrors.items = 'Sales allocation total must equal the gross loading weight';
-    } else if (hasPurchaseItems && !hasSalesItems && Math.abs(Number(formData.grossWeight) - purchaseAllocated) > 0.01) {
+    } else if (items.length > 0 && hasPurchaseItems && !hasSalesItems && Math.abs(Number(formData.grossWeight) - purchaseAllocated) > 0.01) {
       newErrors.items = 'Purchase allocation total must equal the gross loading weight';
     }
 
-    items.forEach((item, index) => {
-      const order = findOrderForItem(item.orderId);
-      if (order?.remQuantity === undefined) return;
-      const remaining = convertQuantityUnit(order.remQuantity, order.remQuantityUnit || 'mt', formData.grossWeightUnit);
-      if ((item.orderEntryQuantity || 0) > remaining + 0.000001) {
-        newErrors[`orderEntry-${index}`] = `Must be no more than ${formatQuantityWithUnit(remaining, formData.grossWeightUnit)}`;
-      }
-    });
+    const duplicateOrder = items.find((item, index) =>
+      items.some((otherItem, otherIndex) =>
+        otherIndex !== index && sameId(otherItem.orderId, item.orderId)
+      )
+    );
+    if (duplicateOrder) {
+      newErrors.items = 'Each order can only be attached once to a transport.';
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -582,6 +642,7 @@ export const TransportFormScreen: React.FC = () => {
         bagWeight: Number(formData.bagWeight),
         anugya: formData.anugya,
         gatepass: formData.gatepass,
+        orderless: formData.orderless,
         rent: Number(formData.rent),
         rentType: formData.rentType,
         advanceByClient: Number(formData.advanceByClient),
@@ -911,30 +972,57 @@ export const TransportFormScreen: React.FC = () => {
 
         {/* SECTION 4: SALES AND PURCHASE ORDER ALLOCATION */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-5">
-          <div className="border-b border-slate-100 pb-2">
-            <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">4. Order Allocation</h2>
-            <p className="text-[11px] text-slate-500 mt-1">When both order types are attached, each type&apos;s allocation total must equal gross weight.</p>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-2">
+            <div>
+              <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">4. Order Allocation</h2>
+              <p className="text-[11px] text-slate-500 mt-1">
+                {formData.orderless
+                  ? 'Adding or changing orders is disabled. Existing allocations can still be removed.'
+                  : "When both order types are attached, each type's allocation total must equal gross weight."}
+              </p>
+            </div>
+            <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+              <span>Orderless Transport</span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={formData.orderless}
+                onChange={event => {
+                  setFormData(previous => ({ ...previous, orderless: event.target.checked }));
+                  setErrors(previous => {
+                    const { items: _itemsError, ...remainingErrors } = previous;
+                    return remainingErrors;
+                  });
+                }}
+                className="peer sr-only"
+              />
+              <span aria-hidden="true" className="relative h-6 w-11 rounded-full bg-slate-300 transition-colors peer-checked:bg-blue-600 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-600 peer-focus-visible:ring-offset-2">
+                <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${formData.orderless ? 'translate-x-5' : ''}`} />
+              </span>
+            </label>
           </div>
 
-          {renderAllocationGroup('SALES ORDER')}
-          <div className="border-t border-slate-100" />
-          {renderAllocationGroup('PURCHASE ORDER')}
+          <div className={`space-y-5 ${formData.orderless ? 'rounded-lg border border-slate-200 bg-slate-100 p-3' : ''}`}>
+            {renderAllocationGroup('SALES ORDER')}
+            <div className="border-t border-slate-200" />
+            {renderAllocationGroup('PURCHASE ORDER')}
 
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2 text-xs">
-            <div className="flex flex-wrap justify-between gap-2">
-              <span className="text-slate-600">Sales allocation: <strong>{formatQuantityWithUnit(salesAllocated, formData.grossWeightUnit)}</strong></span>
-              <span className="text-slate-600">Purchase allocation: <strong>{formatQuantityWithUnit(purchaseAllocated, formData.grossWeightUnit)}</strong></span>
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2 text-xs">
+              <div className="flex flex-wrap justify-between gap-2">
+                <span className="text-slate-600">Sales allocation: <strong>{formatQuantityWithUnit(salesAllocated, formData.grossWeightUnit)}</strong></span>
+                <span className="text-slate-600">Purchase allocation: <strong>{formatQuantityWithUnit(purchaseAllocated, formData.grossWeightUnit)}</strong></span>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2 border-t border-slate-200 pt-2">
+                <span className="text-slate-600">Gross weight: <strong>{formatQuantityWithUnit(Number(formData.grossWeight), formData.grossWeightUnit)}</strong></span>
+                {hasSalesItems && <span className={Math.abs(Number(formData.grossWeight) - salesAllocated) <= 0.01 ? 'text-emerald-700' : 'text-amber-700'}>Sales vs gross: <strong>{formatQuantityWithUnit(salesAllocated, formData.grossWeightUnit)} / {formatQuantityWithUnit(Number(formData.grossWeight), formData.grossWeightUnit)}</strong></span>}
+                {hasPurchaseItems && <span className={Math.abs(Number(formData.grossWeight) - purchaseAllocated) <= 0.01 ? 'text-emerald-700' : 'text-amber-700'}>Purchase vs gross: <strong>{formatQuantityWithUnit(purchaseAllocated, formData.grossWeightUnit)} / {formatQuantityWithUnit(Number(formData.grossWeight), formData.grossWeightUnit)}</strong></span>}
+                {((hasSalesItems && Math.abs(Number(formData.grossWeight) - salesAllocated) <= 0.01) || !hasSalesItems) &&
+                  ((hasPurchaseItems && Math.abs(Number(formData.grossWeight) - purchaseAllocated) <= 0.01) || !hasPurchaseItems) && (
+                    <span className="text-emerald-700 font-semibold inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Reconciled</span>
+                  )}
+              </div>
+              {errors.items && <p className="text-red-600">{errors.items}</p>}
             </div>
-            <div className="flex flex-wrap justify-between gap-2 border-t border-slate-200 pt-2">
-              <span className="text-slate-600">Gross weight: <strong>{formatQuantityWithUnit(Number(formData.grossWeight), formData.grossWeightUnit)}</strong></span>
-              {hasSalesItems && <span className={Math.abs(Number(formData.grossWeight) - salesAllocated) <= 0.01 ? 'text-emerald-700' : 'text-amber-700'}>Sales vs gross: <strong>{formatQuantityWithUnit(salesAllocated, formData.grossWeightUnit)} / {formatQuantityWithUnit(Number(formData.grossWeight), formData.grossWeightUnit)}</strong></span>}
-              {hasPurchaseItems && <span className={Math.abs(Number(formData.grossWeight) - purchaseAllocated) <= 0.01 ? 'text-emerald-700' : 'text-amber-700'}>Purchase vs gross: <strong>{formatQuantityWithUnit(purchaseAllocated, formData.grossWeightUnit)} / {formatQuantityWithUnit(Number(formData.grossWeight), formData.grossWeightUnit)}</strong></span>}
-              {((hasSalesItems && Math.abs(Number(formData.grossWeight) - salesAllocated) <= 0.01) || !hasSalesItems) &&
-                ((hasPurchaseItems && Math.abs(Number(formData.grossWeight) - purchaseAllocated) <= 0.01) || !hasPurchaseItems) && (
-                  <span className="text-emerald-700 font-semibold inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Reconciled</span>
-                )}
-            </div>
-            {errors.items && <p className="text-red-600">{errors.items}</p>}
           </div>
         </div>
 

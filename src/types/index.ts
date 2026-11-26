@@ -312,6 +312,7 @@ export interface Transport {
   bagWeight?: number; // grams per bag
   anugya?: boolean | string; // Mandi permit availability; string supports legacy records
   gatepass?: boolean | string;
+  orderless?: boolean;
   rent: number; // ₹ freight
   rentType?: TransportRentType;
   advanceByClient: number; // ₹
