@@ -200,6 +200,7 @@ interface MultiSearchableSelectProps {
   options: SearchableOption[];
   placeholder: string;
   onChange: (values: string[]) => void;
+  fullWidth?: boolean;
 }
 
 export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
@@ -207,7 +208,8 @@ export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
   selectedIds,
   options,
   placeholder,
-  onChange
+  onChange,
+  fullWidth = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -230,7 +232,7 @@ export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
 
   return (
     <div
-      className="relative shrink-0"
+      className={`relative ${fullWidth ? 'w-full' : 'shrink-0'}`}
       onBlur={event => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsOpen(false);
       }}
@@ -253,10 +255,10 @@ export const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
           if (event.key === 'Escape') setIsOpen(false);
         }}
         placeholder={searchPlaceholder}
-        className="w-40 max-w-48 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+        className={`${fullWidth ? 'w-full' : 'w-40 max-w-48'} rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-600`}
       />
       {isOpen && (
-        <div className="absolute left-0 z-30 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+        <div className={`absolute left-0 z-30 mt-1 ${fullWidth ? 'w-full' : 'w-64'} rounded-lg border border-slate-200 bg-white p-2 shadow-lg`}>
           <div id={`${id}-options`} role="listbox" aria-multiselectable="true" className="max-h-52 overflow-y-auto">
             {filteredOptions.length ? filteredOptions.map(option => {
               const isSelected = selectedIds.includes(option.id);

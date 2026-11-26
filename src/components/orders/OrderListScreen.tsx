@@ -350,6 +350,26 @@ export const OrderListScreen: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-lg shrink-0" role="tablist" aria-label="Order type">
+            {(['PURCHASE ORDER', 'SALES ORDER'] as OrderType[]).map(type => (
+              <button
+                key={type}
+                type="button"
+                role="tab"
+                aria-selected={typeFilter === type}
+                onClick={() => { setTypeFilter(type); setCurrentPageNum(1); }}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                  typeFilter === type
+                    ? type === 'PURCHASE ORDER'
+                      ? 'bg-emerald-100 text-emerald-800 shadow-xs'
+                      : 'bg-blue-100 text-blue-800 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {type === 'PURCHASE ORDER' ? 'Purchase' : 'Sales'}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             aria-expanded={!filtersCollapsed}
@@ -379,14 +399,14 @@ export const OrderListScreen: React.FC = () => {
       {/* Filter Bar */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
         <div className="grid grid-cols-1 gap-2.5">
-          <div className="relative col-span-full row-start-1 min-w-0">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPageNum(1); }}
-              placeholder="Search orders by order #"
-              className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
+          <div className="col-span-full row-start-1">
+            <MultiSearchableSelect
+              id="orders-party-filter"
+              selectedIds={partyFilter}
+              options={filterOptions.clients.map(client => ({ id: client.id, label: client.city ? `${client.name} (${client.city})` : client.name, searchText: `${client.city} ${client.type} ${client.maanNo}` }))}
+              placeholder="All Parties"
+              fullWidth
+              onChange={(values: string[]) => { setPartyFilter(values); setCurrentPageNum(1); }}
             />
           </div>
 
@@ -449,13 +469,6 @@ export const OrderListScreen: React.FC = () => {
               onChange={(values: string[]) => { setFirmFilter(values); setCurrentPageNum(1); }}
             />
             <MultiSearchableSelect
-              id="orders-party-filter"
-              selectedIds={partyFilter}
-              options={filterOptions.clients.map(client => ({ id: client.id, label: client.city ? `${client.name} (${client.city})` : client.name, searchText: `${client.city} ${client.type} ${client.maanNo}` }))}
-              placeholder="All Parties"
-              onChange={(values: string[]) => { setPartyFilter(values); setCurrentPageNum(1); }}
-            />
-            <MultiSearchableSelect
               id="orders-commodity-filter"
               selectedIds={commodityFilter}
               options={filterOptions.commodities.map(commodity => ({ id: commodity.id, label: commodity.type ? `${commodity.name} (${commodity.type})` : commodity.name, searchText: commodity.type }))}
@@ -476,6 +489,16 @@ export const OrderListScreen: React.FC = () => {
               placeholder="All Brokers"
               onChange={(values: string[]) => { setBrokerFilter(values); setCurrentPageNum(1); }}
             />
+            <div className="relative shrink-0">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPageNum(1); }}
+                placeholder="Search orders by order #"
+                className="w-40 max-w-48 pl-9 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
+              />
+            </div>
 
             {(searchTerm || statusFilter !== 'ALL' || contractDateFrom || contractDateTo || commodityFilter.length > 0 || firmFilter.length > 0 || partyFilter.length > 0 || brokerFilter.length > 0) && (
               <button
@@ -497,28 +520,8 @@ export const OrderListScreen: React.FC = () => {
       {/* Status Color Legend */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
         <div className="flex items-center gap-2">
-          <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-lg shrink-0" role="tablist" aria-label="Order type">
-            {(['PURCHASE ORDER', 'SALES ORDER'] as OrderType[]).map(type => (
-              <button
-                key={type}
-                type="button"
-                role="tab"
-                aria-selected={typeFilter === type}
-                onClick={() => { setTypeFilter(type); setCurrentPageNum(1); }}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                  typeFilter === type
-                    ? type === 'PURCHASE ORDER'
-                      ? 'bg-emerald-100 text-emerald-800 shadow-xs'
-                      : 'bg-blue-100 text-blue-800 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {type === 'PURCHASE ORDER' ? 'Purchase' : 'Sales'}
-              </button>
-            ))}
-          </div>
           {/* <span className="font-semibold text-slate-700">Status Color Legend:</span> */}
-          {/* <span className="text-[11px] text-slate-400">Rows are color-coded by contract status</span> */}
+          <span className="text-[11px] text-slate-400">Rows are color-coded by contract status</span>
         </div>
         <div className="flex items-center gap-2">
           <button
