@@ -87,7 +87,7 @@ export const BulkTransportListScreen: React.FC = () => {
               <thead className="border-b border-slate-200 bg-slate-50 font-semibold uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Loading Date</th>
-                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Bill / Bilty</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Bill</th>
                   <th className="sticky top-0 z-10 bg-slate-50 w-[140px] max-w-[140px] px-4 py-3">Vehicle No</th>
                   <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Commodity</th>
                   <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Route (To / From)</th>

@@ -7,7 +7,6 @@ import {
   Save,
   Plus,
   Trash2,
-  Info,
   Truck,
   Building,
   CheckCircle2,
@@ -387,17 +386,14 @@ export const TransportFormScreen: React.FC = () => {
   };
   const orderTypeById = new Map(contractOrdersForCommodity.map(order => [order.id.trim(), order.type]));
   const findOrderForItem = (orderId: string) => contractOrdersForCommodity.find(order => sameId(order.id, orderId));
-  const findOriginalItem = (item: TransportItem) => {
-    if (!existingTransport) return undefined;
-    if (item.id !== undefined) {
-      return existingTransport.items.find(original => original.id === item.id);
-    }
-    return existingTransport.items.find(original => sameId(original.orderId, item.orderId));
-  };
-  const getAvailableRemaining = (item: TransportItem, order?: typeof contractOrdersForCommodity[number]) => {
+  const getRemaining = (item: TransportItem, order?: typeof contractOrdersForCommodity[number]) => {
+    const originalItem = existingTransport?.items.find(original => sameId(original.orderId, item.orderId));
+    const itemWasChanged = item.id !== undefined && existingTransport?.items.some(original =>
+      original.id === item.id && !sameId(original.orderId, item.orderId)
+    );
     const remaining = order?.remQuantity !== undefined
       ? convertQuantityUnit(order.remQuantity, order.remQuantityUnit || 'mt', formData.grossWeightUnit)
-      : item.orderSizeRemaining === undefined
+      : item.orderSizeRemaining === undefined || itemWasChanged
       ? undefined
       : convertQuantityUnit(
         item.orderSizeRemaining,
@@ -406,17 +402,14 @@ export const TransportFormScreen: React.FC = () => {
       );
     if (remaining === undefined) return undefined;
 
-    const originalItem = findOriginalItem(item);
-    const originalEntryBelongsToCurrentOrder = originalItem
-      && sameId(originalItem.orderId, item.orderId);
-    if (!originalEntryBelongsToCurrentOrder) return remaining;
-
-    const originalEntry = convertQuantityUnit(
-      Number(originalItem.orderEntryQuantity) || 0,
-      existingTransport?.grossWeightUnit || 'quintal',
-      formData.grossWeightUnit
-    );
-    return remaining + originalEntry;
+    const originalEntry = originalItem
+      ? convertQuantityUnit(
+        Number(originalItem.orderEntryQuantity) || 0,
+        existingTransport?.grossWeightUnit || 'quintal',
+        formData.grossWeightUnit
+      )
+      : 0;
+    return remaining + (originalEntry - (Number(item.orderEntryQuantity) || 0));
   };
   const getOrderType = (item: TransportItem): 'SALES ORDER' | 'PURCHASE ORDER' | undefined => {
     const normalizedId = String(item.orderId).trim();
@@ -471,12 +464,7 @@ export const TransportFormScreen: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {groupItems.map(({ item, index }) => {
                   const order = findOrderForItem(item.orderId);
-                  const remaining = getAvailableRemaining(item, order);
-                  const exceedsRemaining = remaining !== undefined
-                    && Number(item.orderEntryQuantity || 0) > remaining + 0.000001;
-                  const exceededBy = remaining === undefined
-                    ? 0
-                    : Number(item.orderEntryQuantity || 0) - remaining;
+                  const remaining = getRemaining(item, order);
                   const getFullOrderLabel = (selectedOrder: typeof order) => selectedOrder
                     ? `${selectedOrder.orderNumber}${selectedOrder.selectorClientName ? ` (${selectedOrder.selectorClientName})` : ''} · ${formatQuantityWithUnit(selectedOrder.quantity, selectedOrder.remQuantityUnit || selectedOrder.unit)} · ${formatCurrency(selectedOrder.rate)} / ${getRateUnitLabel(selectedOrder.remQuantityUnit || selectedOrder.unit)} · ${selectedOrder.brokerName || 'Direct'}`
                     : item.orderNumber || item.orderId;
@@ -516,7 +504,7 @@ export const TransportFormScreen: React.FC = () => {
                         />
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">
+                    <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${remaining === undefined ? 'text-slate-600' : remaining <= 0 ? 'text-green-600' : 'text-orange-600'}`}>
                       {remaining === undefined ? '-' : formatQuantityWithUnit(remaining, formData.grossWeightUnit)}
                     </td>
                     <td className="px-3 py-2">
@@ -527,24 +515,11 @@ export const TransportFormScreen: React.FC = () => {
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <div className="relative inline-block">
-                        <DecimalInput
-                          value={item.orderEntryQuantity || 0}
-                          onChange={(quantity) => handleOrderEntryChange(index, quantity)}
-                          aria-describedby={exceedsRemaining ? `order-entry-warning-${index}` : undefined}
-                          className={`w-[110px] text-xs border border-slate-300 rounded py-1.5 pr-2 tabular-nums text-slate-900 text-right ${exceedsRemaining ? 'pl-7' : 'pl-2'}`}
-                        />
-                        {exceedsRemaining && (
-                          <span
-                            id={`order-entry-warning-${index}`}
-                            title={`Exceeds the remaining quantity by ${formatQuantityWithUnit(exceededBy, formData.grossWeightUnit)}`}
-                            className="absolute left-2 top-1/2 -translate-y-1/2 text-amber-700"
-                          >
-                            <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
-                            <span className="sr-only">Exceeds by {formatQuantityWithUnit(exceededBy, formData.grossWeightUnit)}</span>
-                          </span>
-                        )}
-                      </div>
+                      <DecimalInput
+                        value={item.orderEntryQuantity || 0}
+                        onChange={(quantity) => handleOrderEntryChange(index, quantity)}
+                        className="w-[110px] text-xs border border-slate-300 rounded px-2 py-1.5 tabular-nums text-slate-900 text-right"
+                      />
                       {errors[`orderEntry-${index}`] && <p className="mt-1 text-left text-[10px] text-red-600">{errors[`orderEntry-${index}`]}</p>}
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -571,7 +546,7 @@ export const TransportFormScreen: React.FC = () => {
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.billNumber.trim()) newErrors.billNumber = 'Bill / Bilty number is required';
+    if (!formData.billNumber.trim()) newErrors.billNumber = 'Bill number is required';
     if (!formData.vehicleNumber.trim()) newErrors.vehicleNumber = 'Vehicle number is required';
     if (!formData.loadingDate) newErrors.loadingDate = 'Loading date is required';
     if (!formData.billingFirmId) newErrors.billingFirmId = 'Billing firm is required';
@@ -707,7 +682,7 @@ export const TransportFormScreen: React.FC = () => {
             {existingTransport ? `Edit Transport: ${existingTransport.vehicleNumber}` : 'Record New Transport Consignment'}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Truck loading weight, bilty details, waybill, and freight payments.
+            Truck loading weight, bill details, waybill, and freight payments.
           </p>
         </div>
       </div>
@@ -738,7 +713,7 @@ export const TransportFormScreen: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Bill / Bilty Number *</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Bill Number *</label>
               <input
                 type="text"
                 required

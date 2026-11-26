@@ -609,7 +609,7 @@ export const TransportPaymentsScreen: React.FC = () => {
                 setSearchTerm(event.target.value);
                 setCurrentPageNum(1);
               }}
-              placeholder="Search vehicle #, bill/bilty #, mandi anugya, transporter..."
+              placeholder="Search vehicle #, bill #, mandi anugya, transporter..."
               className="w-full rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
           </div>
@@ -949,7 +949,7 @@ export const TransportPaymentsScreen: React.FC = () => {
                     {loadingYear && <div className="w-full">{loadingYear}</div>}
                   </td>
                   <td style={{ backgroundColor: stickyBackgroundColor }} className={`sticky left-[107px] z-20 w-[95px] max-w-[95px] overflow-hidden px-1 py-2 ${stickyRowColor} ${stickyRowHoverColor}`}>
-                    <div className="font-mono font-semibold text-slate-900">{transport.billNumber}</div>
+                    <div className="font-mono font-bold text-slate-900">{transport.billNumber}</div>
                     <div className="mt-1 flex min-w-0 items-start gap-1 overflow-hidden text-[10px] font-semibold text-violet-700" title={`Billing firm: ${party}`}>
                       <Building2 className="h-3 w-3 shrink-0" />
                       <span className="min-w-0 max-w-[13ch] whitespace-normal break-words">{party}</span>
