@@ -12,6 +12,14 @@ export interface VehicleEntry {
   bags: string;
 }
 
+export interface VehicleEditor {
+  trainKey: string;
+  wagonKey: string;
+  entry: VehicleEntry;
+  original: VehicleEntry;
+  isNew: boolean;
+}
+
 export function vehicleEntryChanged(original: VehicleEntry, current: VehicleEntry): boolean {
   return original.quantity !== current.quantity || original.bags !== current.bags;
 }
@@ -69,6 +77,30 @@ export function bagUnits(value: string): number | null {
 
 export function displayQuantity(units: number): string {
   return (units / 1000).toFixed(3);
+}
+
+export function displayEditableQuantity(value: string): string {
+  const units = quantityUnits(value);
+  if (units === null) return value;
+  const hundredths = Math.floor(units / 10) + (units % 10 >= 5 ? 1 : 0);
+  const fraction = String(hundredths % 100).padStart(2, '0').replace(/0+$/, '');
+  return `${Math.floor(hundredths / 100)}${fraction ? `.${fraction}` : ''}`;
+}
+
+export function proportionalQuantity(vehicle: WagonVehicle, bags: string): string | null {
+  const totalQuantity = quantityUnits(String(vehicle.gross_wt ?? ''));
+  const totalBags = bagUnits(String(vehicle.bag_nos ?? ''));
+  const assignedBags = bagUnits(bags);
+  if (totalQuantity === null || totalBags === null || totalBags === 0 || assignedBags === null) return null;
+  const denominator = BigInt(totalBags);
+  const units = (BigInt(totalQuantity) * BigInt(assignedBags) * 2n + denominator) / (denominator * 2n);
+  if (units > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return `${units / 1000n}.${String(units % 1000n).padStart(3, '0')}`;
+}
+
+export function updateEntryBags(entry: VehicleEntry, vehicle: WagonVehicle | undefined, bags: string): VehicleEntry {
+  const quantity = vehicle ? proportionalQuantity(vehicle, bags) : null;
+  return { ...entry, bags, quantity: quantity ?? entry.quantity };
 }
 
 export function displayRemainingQuantity(units: number): string {
@@ -216,6 +248,33 @@ export function validateEntry(entry: VehicleEntry, vehicle: WagonVehicle): strin
   if (quantity === null || bags === null) return `Enter a valid quantity (up to 3 decimals) and whole bags for ${vehicle.vehicle_no}.`;
   if (quantity === 0 && bags === 0) return `Enter a quantity or bags for ${vehicle.vehicle_no}.`;
   return null;
+}
+
+export function stateWithVehicleEntry(state: EditorState, editor: VehicleEditor, vehicles: WagonVehicle[]): EditorState {
+  const vehicle = vehicles.find(item => String(item.id) === editor.entry.transport);
+  if (!vehicle) throw new Error('This vehicle is no longer available. Remove or replace it before saving.');
+  const wagon = state.trains.find(train => train.key === editor.trainKey)?.wagons.find(item => item.key === editor.wagonKey);
+  if (!wagon) throw new Error('This wagon is no longer available. Reopen the vehicle entry before saving.');
+  if (editor.isNew && hasVehicleAssignment(wagon, editor.entry.transport)) {
+    throw new Error(`${vehicle.vehicle_no} is already assigned to this wagon. Edit the existing assignment instead.`);
+  }
+  if (!editor.isNew && !wagon.entries.some(entry => entry.key === editor.entry.key)) {
+    throw new Error('This vehicle assignment is no longer available. Reopen it before saving.');
+  }
+  const validationError = validateEntry(editor.entry, vehicle);
+  if (validationError) throw new Error(validationError);
+  return {
+    ...state,
+    trains: state.trains.map(train => train.key !== editor.trainKey ? train : {
+      ...train,
+      wagons: train.wagons.map(item => item.key !== editor.wagonKey ? item : {
+        ...item,
+        entries: editor.isNew
+          ? [...item.entries, editor.entry]
+          : item.entries.map(entry => entry.key === editor.entry.key ? editor.entry : entry)
+      })
+    })
+  };
 }
 
 export function toApi(state: EditorState, bulkId: number, vehicles: WagonVehicle[]): WagonAssignmentState {

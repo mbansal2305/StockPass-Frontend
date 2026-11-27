@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { WagonAssignmentState, WagonVehicle } from '../../api';
-import { displayQuantity, displayRemainingQuantity, fromApi, hasVehicleAssignment, newEntry, newTrain, newWagon, quantityUnits, remaining, remainingAfterEntry, toApi, trainName, validateEntry, vehicleAssignmentSummary, vehicleEntryChanged, vehicleSummaryTotals } from './wagonAssignmentModel';
+import { displayEditableQuantity, displayQuantity, displayRemainingQuantity, fromApi, hasVehicleAssignment, newEntry, newTrain, newWagon, proportionalQuantity, quantityUnits, remaining, remainingAfterEntry, stateWithVehicleEntry, toApi, trainName, updateEntryBags, validateEntry, vehicleAssignmentSummary, vehicleEntryChanged, vehicleSummaryTotals } from './wagonAssignmentModel';
 
 const vehicles: WagonVehicle[] = [
   { id: 101, vehicle_no: 'MP09AB1234', gross_wt: '20.000', quantity_unit: 'quintal', bag_nos: '40' }
@@ -126,6 +126,47 @@ test('calculates remaining amounts from the current edit without double counting
   assert.deepEqual(remainingAfterEntry(balance, { ...entry, quantity: 'invalid', bags: '1' }), { quantity: null, bags: 29 });
 });
 
+test('calculates quantity from the vehicle ratio when bags change', () => {
+  const vehicle = vehicles[0];
+  assert.equal(proportionalQuantity(vehicle, '10'), '5.000');
+  assert.equal(proportionalQuantity(vehicle, '40'), '20.000');
+  assert.equal(proportionalQuantity(vehicle, '50'), '25.000');
+  assert.equal(proportionalQuantity(vehicle, '0'), '0.000');
+  assert.equal(proportionalQuantity({ ...vehicle, gross_wt: '1', bag_nos: '3' }, '1'), '0.333');
+  assert.equal(proportionalQuantity({ ...vehicle, gross_wt: '0.001', bag_nos: '2' }, '1'), '0.001');
+  assert.equal(proportionalQuantity({ ...vehicle, gross_wt: '1000000', bag_nos: '1000000000' }, '999999999'), '999999.999');
+
+  const entry = { ...newEntry(), transport: '101', quantity: '4.500', bags: '8' };
+  assert.deepEqual(updateEntryBags(entry, vehicle, '10'), { ...entry, quantity: '5.000', bags: '10' });
+  assert.deepEqual(updateEntryBags(entry, vehicle, ''), { ...entry, bags: '' });
+  assert.deepEqual(updateEntryBags(entry, vehicle, '1.5'), { ...entry, bags: '1.5' });
+  assert.deepEqual(updateEntryBags(entry, { ...vehicle, bag_nos: 0 }, '10'), { ...entry, bags: '10' });
+  assert.equal(proportionalQuantity({ ...vehicle, gross_wt: null }, '10'), null);
+});
+
+test('prepares an open vehicle entry for saving without mutating the editor state', () => {
+  const state = fromApi(saved);
+  const train = state.trains[0];
+  const wagon = train.wagons[0];
+  const original = wagon.entries[0];
+  const editor = { trainKey: train.key, wagonKey: wagon.key, original, entry: { ...original, quantity: '13' }, isNew: false };
+  const updated = stateWithVehicleEntry(state, editor, vehicles);
+  assert.equal(state.trains[0].wagons[0].entries[0].quantity, '12.500');
+  assert.equal(toApi(updated, 1, vehicles).trains[0].assignments[0].id, 99);
+  assert.equal(toApi(updated, 1, vehicles).trains[0].assignments[0].quantity, '13.000');
+  assert.throws(() => stateWithVehicleEntry(state, { ...editor, entry: { ...editor.entry, quantity: 'bad' } }, vehicles), /valid quantity/);
+  assert.throws(() => stateWithVehicleEntry(state, { ...editor, wagonKey: 'missing' }, vehicles), /wagon is no longer available/);
+
+  const newWagonEntry = newWagon('3');
+  train.wagons.push(newWagonEntry);
+  const addedEntry = { ...newEntry(), transport: '101', quantity: '1', bags: '' };
+  const newEditor = { trainKey: train.key, wagonKey: newWagonEntry.key, original: addedEntry, entry: addedEntry, isNew: true };
+  const withAddedEntry = stateWithVehicleEntry(state, newEditor, vehicles);
+  assert.equal(state.trains[0].wagons[2].entries.length, 0);
+  assert.equal(toApi(withAddedEntry, 1, vehicles).trains[0].assignments[2].transport, 101);
+  assert.throws(() => stateWithVehicleEntry(state, { ...newEditor, wagonKey: wagon.key }, vehicles), /already assigned/);
+});
+
 test('summarizes committed and in-progress assignments for each vehicle', () => {
   const editor = fromApi(saved);
   const vehicle = vehicles[0];
@@ -202,6 +243,19 @@ test('formats remaining quantities to at most two decimals without changing assi
   assert.equal(displayRemainingQuantity(1005), '1.01');
   assert.equal(displayRemainingQuantity(-1234), '-1.23');
   assert.equal(displayQuantity(1234), '1.234');
+});
+
+test('formats editable quantity to two decimals without changing saved precision', () => {
+  assert.equal(displayEditableQuantity('1.234'), '1.23');
+  assert.equal(displayEditableQuantity('1.235'), '1.24');
+  assert.equal(displayEditableQuantity('9.999'), '10');
+  assert.equal(displayEditableQuantity('0.001'), '0');
+  assert.equal(displayEditableQuantity(''), '');
+  const editor = fromApi(saved);
+  const entry = editor.trains[0].wagons[0].entries[0];
+  entry.quantity = '12.505';
+  assert.equal(displayEditableQuantity(entry.quantity), '12.51');
+  assert.equal(toApi(editor, 1, vehicles).trains[0].assignments[0].quantity, '12.505');
 });
 
 test('detects uncommitted quantity or bag changes and ignores reverted edits', () => {

@@ -6,7 +6,7 @@ import { getShortUnitLabel } from '../../utils/formatters';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { scrollActiveOptionIntoView } from '../common/SearchableSelect';
 import { AssignmentPopover } from './AssignmentPopover';
-import { displayQuantity, displayRemainingQuantity, EditorState, fromApi, hasVehicleAssignment, newEntry, newTrain, newWagon, remaining, remainingAfterEntry, toApi, trainName, Train, validateEntry, VehicleEntry, vehicleAssignmentSummary, vehicleEntryChanged, vehicleSummaryTotals, Wagon } from './wagonAssignmentModel';
+import { bagUnits, displayEditableQuantity, displayQuantity, displayRemainingQuantity, EditorState, fromApi, hasVehicleAssignment, newEntry, newTrain, newWagon, proportionalQuantity, quantityUnits, remaining, remainingAfterEntry, stateWithVehicleEntry, toApi, trainName, Train, updateEntryBags, VehicleEditor, VehicleEntry, vehicleAssignmentSummary, vehicleEntryChanged, vehicleSummaryTotals, Wagon } from './wagonAssignmentModel';
 
 const inputClass = 'w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-base text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100';
 const vehicleBadgeClass = 'inline-flex max-w-full items-center rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-mono text-xs font-bold text-sky-800';
@@ -17,12 +17,8 @@ const summaryRemainingColor = (value: number | null): string =>
 const summaryDifferenceColor = (value: number | null): string =>
   value === 0 ? 'text-emerald-400' : value === null || value < 0 ? 'text-red-400' : 'text-amber-300';
 
-interface VehicleEditor {
-  trainKey: string;
-  wagonKey: string;
-  entry: VehicleEntry;
-  original: VehicleEntry;
-  isNew: boolean;
+interface AssignmentEditor extends VehicleEditor {
+  quantityInput: string;
 }
 
 type RemovalTarget =
@@ -45,8 +41,9 @@ export const WagonAssignmentScreen: React.FC = () => {
   const [picker, setPicker] = useState<{ trainKey: string; wagonKey: string } | null>(null);
   const [search, setSearch] = useState('');
   const [activeOption, setActiveOption] = useState(0);
-  const [editor, setEditor] = useState<VehicleEditor | null>(null);
+  const [editor, setEditor] = useState<AssignmentEditor | null>(null);
   const [editorError, setEditorError] = useState('');
+  const [confirmEditorDiscard, setConfirmEditorDiscard] = useState(false);
   const [removalTarget, setRemovalTarget] = useState<RemovalTarget | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<(() => void | Promise<void>) | null>(null);
   const [loading, setLoading] = useState(true);
@@ -208,7 +205,7 @@ export const WagonAssignmentScreen: React.FC = () => {
   const selectVehicle = (vehicle: WagonVehicle) => {
     if (!picker) return;
     const entry = { ...newEntry(), transport: String(vehicle.id) };
-    setEditor({ ...picker, entry, original: { ...entry }, isNew: true });
+    setEditor({ ...picker, entry, original: { ...entry }, isNew: true, quantityInput: '' });
     setEditorError('');
     setPicker(null);
   };
@@ -218,11 +215,14 @@ export const WagonAssignmentScreen: React.FC = () => {
     popoverAnchor.current = anchor;
     setPicker(null);
     setEditorError('');
-    setEditor({ trainKey, wagonKey, entry: { ...entry }, original: { ...entry }, isNew: false });
+    setEditor({ trainKey, wagonKey, entry: { ...entry }, original: { ...entry }, isNew: false, quantityInput: displayEditableQuantity(entry.quantity) });
   };
 
   const dismissPopover = () => {
-    if (editorDirty && !window.confirm('Discard the vehicle entry being edited?')) return;
+    if (editorDirty) {
+      setConfirmEditorDiscard(true);
+      return;
+    }
     setPicker(null);
     setEditor(null);
     setEditorError('');
@@ -230,35 +230,19 @@ export const WagonAssignmentScreen: React.FC = () => {
 
   const commitVehicle = () => {
     if (!editor) return;
-    const vehicle = vehicles.find(item => String(item.id) === editor.entry.transport);
-    if (!vehicle) {
-      setEditorError('This vehicle is no longer available. Remove or replace it before saving.');
-      return;
+    try {
+      setState(stateWithVehicleEntry(state, editor, vehicles));
+      setEditor(null);
+      setEditorError('');
+    } catch (entryError: unknown) {
+      setEditorError(entryError instanceof Error ? entryError.message : 'Unable to update the vehicle assignment.');
     }
-    const wagon = state.trains.find(train => train.key === editor.trainKey)?.wagons.find(item => item.key === editor.wagonKey);
-    if (editor.isNew && wagon && hasVehicleAssignment(wagon, editor.entry.transport)) {
-      setEditorError(`${vehicle.vehicle_no} is already assigned to this wagon. Edit the existing assignment instead.`);
-      return;
-    }
-    const validationError = validateEntry(editor.entry, vehicle);
-    if (validationError) {
-      setEditorError(validationError);
-      return;
-    }
-    updateWagon(editor.trainKey, editor.wagonKey, wagon => ({
-      ...wagon,
-      entries: editor.isNew
-        ? [...wagon.entries, editor.entry]
-        : wagon.entries.map(entry => entry.key === editor.entry.key ? editor.entry : entry)
-    }));
-    setEditor(null);
-    setEditorError('');
   };
 
-  const save = async () => {
-    if (saving || editor) return;
+  const save = async (stateToSave: EditorState = state, includeEditor = false): Promise<boolean> => {
+    if (saving || (editor && !includeEditor)) return false;
     try {
-      const payload = toApi(state, Number(bulkId), vehicles);
+      const payload = toApi(stateToSave, Number(bulkId), vehicles);
       setSaving(true);
       const saved = await wagonAssignmentsApi.save(payload, exists);
       setExists(true);
@@ -269,7 +253,7 @@ export const WagonAssignmentScreen: React.FC = () => {
         updated = fromApi(saved);
       } catch {
         setError('Assignments were saved, but the response could not be read. Retry to load the latest state before editing.');
-        return;
+        return false;
       }
       const activeIndex = state.trains.findIndex(train => train.key === activeTrainKey);
       setCollapsedWagons(current => {
@@ -284,18 +268,19 @@ export const WagonAssignmentScreen: React.FC = () => {
       setActiveTrainKey(updated.trains[activeIndex]?.key || updated.trains[0]?.key || '');
       setBaseline(JSON.stringify(updated));
       setPicker(null);
+      setEditor(null);
+      setEditorError('');
       showToast('Wagon assignments saved.', 'success');
+      return true;
     } catch (saveError: unknown) {
       showToast(saveError instanceof Error ? saveError.message : 'Unable to save wagon assignments.', 'error');
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
-  const confirmDiscard = () => {
-    const proceed = pendingNavigation;
-    setPendingNavigation(null);
-    if (!proceed) return;
+  const proceedWithNavigation = (proceed: () => void | Promise<void>) => {
     const reportError = (navigationError: unknown) =>
       showToast(navigationError instanceof Error ? navigationError.message : 'Unable to leave wagon assignments.', 'error');
     try {
@@ -305,14 +290,40 @@ export const WagonAssignmentScreen: React.FC = () => {
       reportError(navigationError);
     }
   };
+  const confirmDiscard = () => {
+    const proceed = pendingNavigation;
+    setPendingNavigation(null);
+    if (proceed) proceedWithNavigation(proceed);
+  };
+  const saveAndLeave = async () => {
+    const proceed = pendingNavigation;
+    if (!proceed || saving) return;
+    let stateToSave = state;
+    if (editor && editorDirty) {
+      try {
+        stateToSave = stateWithVehicleEntry(state, editor, vehicles);
+      } catch (entryError: unknown) {
+        const message = entryError instanceof Error ? entryError.message : 'Unable to update the vehicle assignment.';
+        setEditorError(message);
+        showToast(message, 'error');
+        setPendingNavigation(null);
+        return;
+      }
+    }
+    const saved = await save(stateToSave, true);
+    setPendingNavigation(null);
+    if (saved) proceedWithNavigation(proceed);
+  };
   const discardModal = pendingNavigation && (
     <div className="relative z-[102]">
       <ConfirmationModal
         isOpen
         title="Discard unsaved changes?"
-        message="Your unsaved wagon assignment changes will be lost."
+        message="Save your changes before leaving, or discard them."
         confirmLabel="Discard"
         variant="warning"
+        disabled={saving}
+        additionalAction={!loading && !error ? { label: saving ? 'Saving...' : 'Save and leave', onClick: () => void saveAndLeave() } : undefined}
         onConfirm={confirmDiscard}
         onCancel={() => setPendingNavigation(null)}
       />
@@ -332,16 +343,16 @@ export const WagonAssignmentScreen: React.FC = () => {
   );
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-3 pb-6">
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-3 pb-6">
       <header className="flex items-start gap-3">
         <button type="button" onClick={() => navigate('bulk-transport-list')} aria-label="Back to bulk transports" className="rounded-lg border border-slate-200 bg-white p-2.5 text-slate-600 hover:bg-slate-50"><ArrowLeft className="h-4 w-4" /></button>
         <div className="min-w-0">
           <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900"><TrainFront className="h-5 w-5 shrink-0 text-blue-600" />Manage Wagons</h1>
-          <p className="mt-1 text-sm text-slate-500">{pageParams.bulkTitle || `Bulk transport ${bulkId}`}</p>
+          <p className="mt-1 break-words text-sm text-slate-500">{pageParams.bulkTitle || `Bulk transport ${bulkId}`}</p>
         </div>
       </header>
 
-      <fieldset disabled={saving} className="space-y-3">
+      <fieldset disabled={saving} className="w-full min-w-0 space-y-3">
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-3 py-2.5 sm:px-4">
             <div>
@@ -436,18 +447,40 @@ export const WagonAssignmentScreen: React.FC = () => {
                           </p>
                         ) : <p role="alert" className="text-xs text-red-700">This vehicle is no longer available. Remove or replace it before saving.</p>}
                         <div className="grid grid-cols-2 gap-2">
-                          <label className="text-xs font-semibold text-slate-600">Quantity {editingVehicle?.quantity_unit && `(${getShortUnitLabel(editingVehicle.quantity_unit)})`}
-                            <input className={`${inputClass} mt-1`} type="text" inputMode="decimal" value={wagonEditor.entry.quantity} onChange={event => { setEditor({ ...wagonEditor, entry: { ...wagonEditor.entry, quantity: event.target.value } }); setEditorError(''); }} />
-                          </label>
                           <label className="text-xs font-semibold text-slate-600">Bags
-                            <input className={`${inputClass} mt-1`} type="text" inputMode="numeric" value={wagonEditor.entry.bags} onChange={event => { setEditor({ ...wagonEditor, entry: { ...wagonEditor.entry, bags: event.target.value } }); setEditorError(''); }} />
+                            <input className={`${inputClass} mt-1`} type="text" inputMode="numeric" value={wagonEditor.entry.bags} onChange={event => {
+                              const bags = event.target.value;
+                              const entry = updateEntryBags(wagonEditor.entry, editingVehicle || undefined, bags);
+                              const calculated = editingVehicle ? proportionalQuantity(editingVehicle, bags) : null;
+                              setEditor({ ...wagonEditor, entry, quantityInput: calculated === null ? wagonEditor.quantityInput : displayEditableQuantity(calculated) });
+                              setEditorError('');
+                            }} />
+                          </label>
+                          <label className="text-xs font-semibold text-slate-600">Quantity {editingVehicle?.quantity_unit && `(${getShortUnitLabel(editingVehicle.quantity_unit)})`}
+                            <input className={`${inputClass} mt-1`} type="text" inputMode="decimal" value={wagonEditor.quantityInput} onChange={event => {
+                              const quantity = event.target.value;
+                              if (/\.\d{3}/.test(quantity)) {
+                                setEditorError('Enter a quantity with at most 2 decimal places.');
+                                return;
+                              }
+                              setEditor({ ...wagonEditor, quantityInput: quantity, entry: { ...wagonEditor.entry, quantity } });
+                              setEditorError('');
+                            }} />
                           </label>
                         </div>
+                        {quantityUnits(wagonEditor.entry.quantity) !== null && quantityUnits(wagonEditor.quantityInput) !== null
+                          && quantityUnits(wagonEditor.entry.quantity) !== quantityUnits(wagonEditor.quantityInput) && (
+                          <p className="text-xs text-slate-500">Rounded for display; exact quantity to save: {wagonEditor.entry.quantity}.</p>
+                        )}
+                        {editingVehicle && bagUnits(wagonEditor.entry.bags) !== null && proportionalQuantity(editingVehicle, wagonEditor.entry.bags) === null && (
+                          <p className="text-xs text-amber-700">Quantity could not be calculated from the vehicle totals. Enter it manually.</p>
+                        )}
                         {editorError && <p role="alert" className="text-xs text-red-700">{editorError}</p>}
                         <div className="flex flex-wrap gap-2">
                           <button type="button" disabled={!editorBalance || (editorBalance.quantity <= 0 && editorBalance.bags <= 0)} onClick={() => {
                             if (editorBalance) {
-                              setEditor({ ...wagonEditor, entry: { ...wagonEditor.entry, quantity: displayQuantity(Math.max(0, editorBalance.quantity)), bags: String(Math.max(0, editorBalance.bags)) } });
+                              const quantity = displayQuantity(Math.max(0, editorBalance.quantity));
+                              setEditor({ ...wagonEditor, quantityInput: displayEditableQuantity(quantity), entry: { ...wagonEditor.entry, quantity, bags: String(Math.max(0, editorBalance.bags)) } });
                               setEditorError('');
                             }
                           }} className="min-h-10 rounded-lg border border-blue-200 px-3 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-40">Assign all remaining</button>
@@ -530,7 +563,7 @@ export const WagonAssignmentScreen: React.FC = () => {
                                     <span className={vehicleBadgeClass}>{vehicle?.vehicle_no || `Vehicle #${entry.transport}`}</span>
                                     {vehicle ? (
                                       <span className="mt-0.5 block text-xs leading-4">
-                                        <strong className="block font-bold text-blue-700">{entry.quantity || '0'} {getShortUnitLabel(vehicle.quantity_unit)}</strong>
+                                        <strong className="block font-bold text-blue-700">{displayEditableQuantity(entry.quantity || '0')} {getShortUnitLabel(vehicle.quantity_unit)}</strong>
                                         <span className="block font-medium text-gray-700">{entry.bags || '0'} bags</span>
                                       </span>
                                     ) : <span className="mt-0.5 block text-xs text-red-700">Vehicle unavailable</span>}
@@ -542,7 +575,7 @@ export const WagonAssignmentScreen: React.FC = () => {
                                     });
                                   }} className="flex w-6 shrink-0 items-center justify-center border-l border-red-100 bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700"><X className="h-3.5 w-3.5" /></button>
                                 </div>
-                                {!pendingNavigation && editingThisEntry && editorPanel && popoverAnchor.current && (
+                                {!pendingNavigation && !confirmEditorDiscard && editingThisEntry && editorPanel && popoverAnchor.current && (
                                   <AssignmentPopover anchor={popoverAnchor.current} mode="editor" onDismiss={dismissPopover}>{editorPanel}</AssignmentPopover>
                                 )}
                               </div>
@@ -552,7 +585,7 @@ export const WagonAssignmentScreen: React.FC = () => {
                             <button type="button" onClick={event => pickerOpen ? setPicker(null) : openPicker(activeTrain.key, wagon.key, event.currentTarget)} disabled={!vehicles.length} aria-haspopup="dialog" aria-controls={pickerOpen || wagonEditor?.isNew ? 'wagon-assignment-dialog' : undefined} aria-expanded={pickerOpen || Boolean(wagonEditor?.isNew)} aria-label={`Add vehicle to wagon ${wagon.number}`} className="flex min-h-16 min-w-20 flex-col items-center justify-center gap-0.5 rounded-md border border-dashed border-blue-400 bg-blue-50/80 px-2 text-xs font-semibold text-blue-700 hover:border-blue-600 hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400">
                               <Plus className="h-4 w-4" />Add vehicle
                             </button>
-                            {!pendingNavigation && (pickerOpen || wagonEditor?.isNew) && popoverAnchor.current && (
+                            {!pendingNavigation && !confirmEditorDiscard && (pickerOpen || wagonEditor?.isNew) && popoverAnchor.current && (
                               <AssignmentPopover anchor={popoverAnchor.current} mode={pickerOpen ? 'picker' : 'editor'} onDismiss={dismissPopover}>
                                 {pickerOpen ? pickerPanel : editorPanel}
                               </AssignmentPopover>
@@ -614,24 +647,24 @@ export const WagonAssignmentScreen: React.FC = () => {
           {editor && <p className="mt-2 text-xs text-slate-400">Vehicle totals include the entry being edited.</p>}
           {vehicleSummaries.length ? (
             <div className="mt-3 overflow-x-auto rounded-lg border border-slate-700">
-              <table className="w-full min-w-[600px] text-left text-xs">
+              <table className="w-full table-fixed text-left text-xs">
                 <thead className="bg-slate-800 text-slate-300">
                   <tr>
-                    <th scope="col" className="px-3 py-2">Vehicle</th>
+                    <th scope="col" className="w-[36%] px-2 py-2 sm:px-3">Vehicle</th>
                     {/* <th scope="col" className="px-3 py-2 text-right">Assigned quantity</th>
                     <th scope="col" className="px-3 py-2 text-right">Assigned bags</th> */}
-                    <th scope="col" className="px-3 py-2 text-right">Remaining quantity</th>
-                    <th scope="col" className="px-3 py-2 text-right">Remaining bags</th>
+                    <th scope="col" className="w-[34%] px-2 py-2 text-right sm:px-3">Remaining quantity</th>
+                    <th scope="col" className="w-[30%] px-2 py-2 text-right sm:px-3">Remaining bags</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">
                   {vehicleSummaries.map(({ vehicle, summary }) => (
                     <tr key={vehicle.id}>
-                      <th scope="row" className="whitespace-nowrap px-3 py-2 text-left font-mono font-semibold">{vehicle.vehicle_no}</th>
+                      <th scope="row" className="break-words px-2 py-2 text-left font-mono font-semibold sm:px-3">{vehicle.vehicle_no}</th>
                       {/* <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{summary.assigned.quantity === null ? 'Invalid quantity' : `${displayQuantity(summary.assigned.quantity)} ${getShortUnitLabel(vehicle.quantity_unit)}`}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{summary.assigned.bags === null ? 'Invalid bags' : summary.assigned.bags}</td> */}
-                      <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${summaryRemainingColor(summary.remaining.quantity)}`}>{summary.remaining.quantity === null ? 'Invalid quantity' : `${displayRemainingQuantity(summary.remaining.quantity)} ${getShortUnitLabel(vehicle.quantity_unit)}`}</td>
-                      <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${summaryRemainingColor(summary.remaining.bags)}`}>{summary.remaining.bags === null ? 'Invalid bags' : summary.remaining.bags}</td>
+                      <td className={`break-words px-2 py-2 text-right tabular-nums sm:px-3 ${summaryRemainingColor(summary.remaining.quantity)}`}>{summary.remaining.quantity === null ? 'Invalid quantity' : `${displayRemainingQuantity(summary.remaining.quantity)} ${getShortUnitLabel(vehicle.quantity_unit)}`}</td>
+                      <td className={`break-words px-2 py-2 text-right tabular-nums sm:px-3 ${summaryRemainingColor(summary.remaining.bags)}`}>{summary.remaining.bags === null ? 'Invalid bags' : summary.remaining.bags}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -650,6 +683,19 @@ export const WagonAssignmentScreen: React.FC = () => {
         </section>
       </fieldset>
       {discardModal}
+      {confirmEditorDiscard && !pendingNavigation && (
+        <div className="relative z-[102]">
+          <ConfirmationModal
+            isOpen
+            title="Discard vehicle entry?"
+            message="Your changes to this vehicle entry will be lost."
+            confirmLabel="Discard"
+            variant="warning"
+            onConfirm={() => { setConfirmEditorDiscard(false); setEditor(null); setPicker(null); setEditorError(''); }}
+            onCancel={() => setConfirmEditorDiscard(false)}
+          />
+        </div>
+      )}
       {removalTarget && (
         <ConfirmationModal
           isOpen

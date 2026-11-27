@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Building2, Calendar, Edit2, Layers, Loader2, Trash2, Truck } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { BulkTransportDetail, transportsApi } from '../../api';
+import { TransportStatus } from '../../types';
 import { formatDate, formatQuantityWithUnit, getTransportStatusBadge } from '../../utils/formatters';
-import { StatusStepper } from '../common/StatusStepper';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 
 export const BulkTransportDetailScreen: React.FC = () => {
@@ -16,6 +16,8 @@ export const BulkTransportDetailScreen: React.FC = () => {
   const [error, setError] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [pendingStatusTarget, setPendingStatusTarget] = useState<TransportStatus | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
   const [activeSourceId, setActiveSourceId] = useState('');
 
   useEffect(() => {
@@ -67,6 +69,23 @@ export const BulkTransportDetailScreen: React.FC = () => {
     }
   };
 
+  const confirmStatusChange = async () => {
+    if (!bulk || !pendingStatusTarget || updatingStatus) return;
+    setUpdatingStatus(true);
+    try {
+      await transportsApi.updateBulk({ id: bulk.id, status: pendingStatusTarget }, lookupsRef.current);
+      await refreshData();
+      const updatedBulk = await transportsApi.getBulk(bulk.id, lookupsRef.current);
+      setBulk(updatedBulk);
+      showToast(`Status updated to ${pendingStatusTarget}`, 'success');
+      setPendingStatusTarget(null);
+    } catch (statusError: unknown) {
+      showToast(statusError instanceof Error ? statusError.message : 'Failed to update bulk transport status', 'error');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-slate-500" role="status">
@@ -97,7 +116,8 @@ export const BulkTransportDetailScreen: React.FC = () => {
   const receivedTotal = bulk.totalReceivedWeight ?? bulk.transports.reduce((total, transport) => total + (transport.receivedWeight || 0), 0);
   const bagTotal = bulk.transports.reduce((total, transport) => total + (transport.bagNumbers || 0), 0);
   const receivedWeightDiff = grossTotal - receivedTotal;
-  const badge = getTransportStatusBadge(bulk.status || firstTransport?.status || 'PENDING');
+  const currentStatus = bulk.status || firstTransport?.status || 'PENDING';
+  const badge = getTransportStatusBadge(currentStatus);
   const sourceIds = [...new Set([
     ...bulk.selectedSources,
     ...bulk.transports.map(transport => transport.fromClientId).filter(Boolean)
@@ -147,11 +167,33 @@ export const BulkTransportDetailScreen: React.FC = () => {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Bulk Dispatch Lifecycle</span>
-          <span className="text-xs text-slate-500">{bulk.transports.length} vehicles</span>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-900">Bulk Transport Status</h2>
+            <p className="mt-1 text-xs text-slate-500">Statuses are independent and can be changed directly.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${badge.bg} ${badge.text} ${badge.border}`}>
+              {badge.label}
+            </span>
+            <select
+              aria-label="Bulk transport status"
+              value={currentStatus}
+              disabled={updatingStatus}
+              onChange={event => {
+                const nextStatus = event.target.value as TransportStatus;
+                if (nextStatus !== currentStatus) setPendingStatusTarget(nextStatus);
+              }}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+            >
+              <option value="DRAFT">Draft</option>
+              <option value="PENDING">Pending / Loading</option>
+              <option value="DELIVERY">In Delivery</option>
+              <option value="FINANCE">Finance Audit (Unloaded)</option>
+              <option value="PAID">Settled &amp; Paid</option>
+            </select>
+          </div>
         </div>
-        <StatusStepper currentStatus={bulk.status || firstTransport?.status || 'PENDING'} canChangeStatus={false} onStatusClick={() => undefined} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -278,6 +320,16 @@ export const BulkTransportDetailScreen: React.FC = () => {
         )}
       </section>
 
+      <ConfirmationModal
+        isOpen={!!pendingStatusTarget}
+        title="Update Bulk Transport Status"
+        message={`Are you sure you want to change the bulk transport status from "${currentStatus}" to "${pendingStatusTarget}"?`}
+        confirmLabel={updatingStatus ? 'Updating...' : 'Confirm Status'}
+        variant="primary"
+        disabled={updatingStatus}
+        onConfirm={() => void confirmStatusChange()}
+        onCancel={() => setPendingStatusTarget(null)}
+      />
       <ConfirmationModal isOpen={deleteOpen} title="Delete Bulk Transport" message={`Delete ${bulk.title} and all ${bulk.transports.length} associated vehicle transports?`} confirmLabel={deleting ? 'Deleting...' : 'Delete'} onConfirm={() => void confirmDelete()} onCancel={() => setDeleteOpen(false)} />
     </div>
   );

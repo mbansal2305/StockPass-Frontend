@@ -8,6 +8,8 @@ interface ConfirmationModalProps {
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: 'danger' | 'warning' | 'primary';
+  additionalAction?: { label: string; onClick: () => void };
+  disabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -19,6 +21,8 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   variant = 'danger',
+  additionalAction,
+  disabled = false,
   onConfirm,
   onCancel
 }) => {
@@ -43,27 +47,36 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           </div>
           <button 
             onClick={onCancel}
+            disabled={disabled}
             className="text-slate-400 hover:text-slate-600 p-1 rounded-lg -mr-1 -mt-1"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+        <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors"
+            disabled={disabled}
+            className="px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors disabled:opacity-50"
           >
             {cancelLabel}
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-colors shadow-xs ${btnBg}`}
+            disabled={disabled}
+            className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-colors shadow-xs disabled:opacity-50 ${btnBg}`}
           >
             {confirmLabel}
           </button>
+          {additionalAction && (
+            <button type="button" onClick={additionalAction.onClick} disabled={disabled}
+              className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-white shadow-xs transition-colors hover:bg-blue-700 disabled:opacity-50">
+              {additionalAction.label}
+            </button>
+          )}
         </div>
       </div>
     </div>
