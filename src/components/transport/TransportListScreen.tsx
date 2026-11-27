@@ -8,6 +8,7 @@ import {
   Plus,
   Truck,
   Layers,
+  XCircle,
   Eye,
   Edit2,
   Trash2,
@@ -138,7 +139,7 @@ export const TransportListScreen: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<Transport | null>(null);
   const [statusChangeTarget, setStatusChangeTarget] = useState<{
     transport: Transport;
-    nextStatus: TransportStatus;
+    status: TransportStatus;
   } | null>(null);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const isPaidTab = activeTab === 'PAID';
@@ -286,22 +287,15 @@ export const TransportListScreen: React.FC = () => {
     }));
   };
 
-  const getNextStatus = (current: TransportStatus): TransportStatus | null => {
-    if (current === 'PENDING') return 'DELIVERY';
-    if (current === 'DELIVERY') return 'FINANCE';
-    if (current === 'FINANCE') return 'PAID';
-    return null;
-  };
-
-  const handleAdvanceStatus = async () => {
+  const handleStatusChangeConfirm = async () => {
     if (!statusChangeTarget) return;
-    const { transport, nextStatus } = statusChangeTarget;
+    const { transport, status } = statusChangeTarget;
     try {
-      await transportsApi.updateStatus(transport.id, nextStatus);
+      await transportsApi.updateStatus(transport.id, status);
       await refreshData();
       setReloadSequence(sequence => sequence + 1);
       setStatusChangeTarget(null);
-      showToast(`Vehicle ${transport.vehicleNumber} moved to ${nextStatus}`, 'success');
+      showToast(`Vehicle ${transport.vehicleNumber} status updated to ${status}`, 'success');
     } catch (error: any) {
       showToast(error.message || 'Failed to update transport status', 'error');
     }
@@ -726,7 +720,8 @@ export const TransportListScreen: React.FC = () => {
                     : t.fromClientName || '-';
                   const toClient = t.toClientName || '-';
                   const statusBadge = getTransportStatusBadge(t.status);
-                  const nextStatus = getNextStatus(t.status);
+                  const canChangeStatus = (t.status !== 'PAID' || isOwner)
+                    && (!isLabour || t.status === 'PENDING' || t.status === 'DELIVERY');
                   const grossWeightKg = t.grossWeightUnit === 'mt'
                     ? t.grossWeight * 1000
                     : t.grossWeightUnit === 'quintal'
@@ -903,17 +898,31 @@ export const TransportListScreen: React.FC = () => {
                                   <span>View Consignment</span>
                                 </button>
 
-                                {nextStatus && (!isLabour || nextStatus === 'DELIVERY' || nextStatus === 'FINANCE') && (
+                                {canChangeStatus && t.status !== 'PAID' && (
                                   <button
                                     type="button"
                                     onClick={() => {
                                       setOpenActionMenuId(null);
-                                      setStatusChangeTarget({ transport: t, nextStatus });
+                                      setStatusChangeTarget({ transport: t, status: 'PAID' });
                                     }}
                                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50 cursor-pointer"
                                   >
                                     <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span>Advance to {nextStatus}</span>
+                                    <span>Mark as PAID</span>
+                                  </button>
+                                )}
+
+                                {canChangeStatus && t.status !== 'REJECTED' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenActionMenuId(null);
+                                      setStatusChangeTarget({ transport: t, status: 'REJECTED' });
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 cursor-pointer"
+                                  >
+                                    <XCircle className="w-3.5 h-3.5 text-red-600" />
+                                    <span>Mark as REJECTED</span>
                                   </button>
                                 )}
 
@@ -994,11 +1003,11 @@ export const TransportListScreen: React.FC = () => {
       {/* Confirmation Modals */}
       <ConfirmationModal
         isOpen={!!statusChangeTarget}
-        title="Advance Transport Stage"
-        message={`Move vehicle consignment ${statusChangeTarget?.transport.vehicleNumber} (${statusChangeTarget?.transport.billNumber}) from ${statusChangeTarget?.transport.status} to stage "${statusChangeTarget?.nextStatus}"?`}
-        confirmLabel="Confirm Transition"
+        title="Update Transport Status"
+        message={`Change vehicle consignment ${statusChangeTarget?.transport.vehicleNumber} (${statusChangeTarget?.transport.billNumber}) from ${statusChangeTarget?.transport.status} to "${statusChangeTarget?.status}"?`}
+        confirmLabel="Confirm Status"
         variant="primary"
-        onConfirm={handleAdvanceStatus}
+        onConfirm={handleStatusChangeConfirm}
         onCancel={() => setStatusChangeTarget(null)}
       />
 

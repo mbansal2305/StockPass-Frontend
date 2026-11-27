@@ -17,7 +17,6 @@ import {
   CheckCircle2,
   Plus
 } from 'lucide-react';
-import { StatusStepper } from '../common/StatusStepper';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { TransportPaymentBill } from './TransportPaymentBill';
 import {
@@ -99,6 +98,8 @@ export const TransportDetailScreen: React.FC = () => {
   }
 
   const isPaidTransport = transport.status === 'PAID';
+  const canChangeStatus = (!isPaidTransport || isOwner)
+    && (!isLabour || transport.status === 'PENDING' || transport.status === 'DELIVERY');
   const comm = commodityMap.get(transport.commodityId);
   const transpName = transport.transporterId
     ? transport.transporterName || transporterMap.get(transport.transporterId) || '-'
@@ -258,66 +259,34 @@ export const TransportDetailScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* WORKFLOW STEPPER CARD */}
+      {/* STATUS CARD */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            Consignment Lifecycle Workflow
-          </span>
-          <span className="text-xs text-slate-500">
-            Click step to change status (Requires permission)
-          </span>
-        </div>
-
-        <StatusStepper
-          currentStatus={transport.status}
-          canChangeStatus={(!isPaidTransport || isOwner) && (!isLabour || transport.status === 'PENDING' || transport.status === 'DELIVERY')}
-          onStatusClick={(nextStatus) => {
-            if (nextStatus !== transport.status && (!isPaidTransport || isOwner)) {
-              setPendingStatusTarget(nextStatus);
-            }
-          }}
-        />
-
-        {/* Quick Progression Prompt */}
-        <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="text-slate-600">
-            Current stage: <strong className="text-slate-900">{transport.status}</strong>
-            {transport.status === 'PENDING' && ' — Truck is loading at godown/mandi.'}
-            {transport.status === 'DELIVERY' && ' — Truck is in transit to buyer/destination.'}
-            {transport.status === 'FINANCE' && ' — Unloaded at destination; waiting for tare audit & payment.'}
-            {transport.status === 'PAID' && ' — Freight settled in full.'}
-            {transport.status === 'REJECTED' && ' — This consignment was rejected.'}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Consignment Status</h2>
+            <p className="mt-1 text-xs text-slate-500">Statuses are independent and can be changed directly.</p>
           </div>
-
-          <div className="flex items-center gap-2">
-            {transport.status === 'PENDING' && (
-              <button
-                type="button"
-                onClick={() => setPendingStatusTarget('DELIVERY')}
-                className="px-3 py-1 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-xs transition-colors"
-              >
-                Mark In Delivery →
-              </button>
-            )}
-            {transport.status === 'DELIVERY' && (
-              <button
-                type="button"
-                onClick={() => setPendingStatusTarget('FINANCE')}
-                className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-xs transition-colors"
-              >
-                Confirm Unload & Send to Finance →
-              </button>
-            )}
-            {transport.status === 'FINANCE' && !isLabour && (
-              <button
-                type="button"
-                onClick={() => setPendingStatusTarget('PAID')}
-                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs transition-colors"
-              >
-                Approve Payment & Close →
-              </button>
-            )}
+          <div className="flex items-center gap-3">
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${badge.bg} ${badge.text} ${badge.border}`}>
+              {badge.label}
+            </span>
+            <select
+              aria-label="Consignment status"
+              value={transport.status}
+              disabled={!canChangeStatus}
+              onChange={event => {
+                const nextStatus = event.target.value as TransportStatus;
+                if (nextStatus !== transport.status) setPendingStatusTarget(nextStatus);
+              }}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+            >
+              <option value="DRAFT">Draft</option>
+              <option value="PENDING">Pending / Loading</option>
+              <option value="DELIVERY">In Delivery</option>
+              <option value="FINANCE">Finance Audit (Unloaded)</option>
+              <option value="PAID">Settled & Paid</option>
+              <option value="REJECTED">Rejected</option>
+            </select>
           </div>
         </div>
       </div>
@@ -710,7 +679,7 @@ export const TransportDetailScreen: React.FC = () => {
       <ConfirmationModal
         isOpen={!!pendingStatusTarget}
         title="Update Consignment Status"
-        message={`Are you sure you want to transition vehicle ${transport.vehicleNumber} to "${pendingStatusTarget}"?`}
+        message={`Are you sure you want to change vehicle ${transport.vehicleNumber}'s status from "${transport.status}" to "${pendingStatusTarget}"?`}
         confirmLabel="Confirm Status"
         variant="primary"
         onConfirm={handleConfirmStatusChange}
