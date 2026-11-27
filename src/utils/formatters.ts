@@ -130,6 +130,8 @@ export function getTransportStatusBadge(status: string): { label: string; bg: st
       return { label: 'Unloaded / Finance Audit', bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-200' };
     case 'PAID':
       return { label: 'Settled & Paid', bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200' };
+    case 'REJECTED':
+      return { label: 'Rejected', bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200' };
     default:
       return { label: status, bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200' };
   }

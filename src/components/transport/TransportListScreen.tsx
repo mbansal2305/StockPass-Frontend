@@ -97,7 +97,7 @@ export const TransportListScreen: React.FC = () => {
   const isAccountant = currentUser?.role === 'ACCOUNTANT';
 
   // Filters & Tabs
-  const validStatuses: TransportStatus[] = ['DRAFT', 'PENDING', 'DELIVERY', 'FINANCE', 'PAID'];
+  const validStatuses: TransportStatus[] = ['DRAFT', 'PENDING', 'DELIVERY', 'FINANCE', 'PAID', 'REJECTED'];
   const initialStatus = String(pageParams.statusFilter || 'PENDING').toUpperCase() as TransportStatus;
   const [activeTab, setActiveTab] = useState<TransportStatus | 'ALL'>(
     validStatuses.includes(initialStatus) ? initialStatus : 'PENDING'
@@ -626,6 +626,19 @@ export const TransportListScreen: React.FC = () => {
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-emerald-600"></span>
             <span>Paid</span>
           </button>
+          <button
+            type="button"
+            onClick={() => { setActiveTab('REJECTED'); setCurrentPageNum(1); }}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+              activeTab === 'REJECTED'
+                ? 'bg-red-100 text-red-900 border-red-300 ring-2 ring-red-400/30'
+                : 'bg-red-50 text-red-800 border-red-200 hover:bg-red-100/60'
+            }`}
+            title="Filter by Rejected"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 border border-red-600"></span>
+            <span>Rejected</span>
+          </button>
         </div>
       </div>
 
@@ -665,17 +678,18 @@ export const TransportListScreen: React.FC = () => {
                     Unload Date <ArrowUpDown className="w-3 h-3" />
                   </button>
                 </th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Status</th>
                 <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-500">Loading transports...</td>
+                  <td colSpan={11} className="py-12 text-center text-slate-500">Loading transports...</td>
                 </tr>
               ) : loadError ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center">
+                  <td colSpan={11} className="py-12 text-center">
                     <p className="text-red-600 font-medium">{loadError}</p>
                     <button
                       type="button"
@@ -688,7 +702,7 @@ export const TransportListScreen: React.FC = () => {
                 </tr>
               ) : paginatedTransports.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center">
+                  <td colSpan={11} className="py-12 text-center">
                     <p className="text-slate-500 font-medium">No transport entries found matching criteria</p>
                     <button
                       type="button"
@@ -711,6 +725,7 @@ export const TransportListScreen: React.FC = () => {
                     ? `${t.fromClientCount ?? 0} Locations`
                     : t.fromClientName || '-';
                   const toClient = t.toClientName || '-';
+                  const statusBadge = getTransportStatusBadge(t.status);
                   const nextStatus = getNextStatus(t.status);
                   const grossWeightKg = t.grossWeightUnit === 'mt'
                     ? t.grossWeight * 1000
@@ -732,6 +747,8 @@ export const TransportListScreen: React.FC = () => {
                       ? 'bg-blue-50/50 hover:bg-blue-100/60 border-l-4 border-l-blue-500'
                       : t.status === 'FINANCE'
                       ? 'bg-purple-50/50 hover:bg-purple-100/60 border-l-4 border-l-purple-500'
+                      : t.status === 'REJECTED'
+                      ? 'bg-red-50/50 hover:bg-red-100/60 border-l-4 border-l-red-500'
                       : 'bg-emerald-50/50 hover:bg-emerald-100/60 border-l-4 border-l-emerald-500';
 
                   return (
@@ -837,6 +854,13 @@ export const TransportListScreen: React.FC = () => {
                       {/* Unload Date */}
                       <td className="px-4 py-3 text-slate-600 tabular-nums whitespace-nowrap">
                         {formatTransportListDate(t.unloadDate)}
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${statusBadge.bg} ${statusBadge.text} ${statusBadge.border}`}>
+                          {statusBadge.label}
+                        </span>
                       </td>
 
                       {/* Actions: Vertical Three Dots with Dropdown */}

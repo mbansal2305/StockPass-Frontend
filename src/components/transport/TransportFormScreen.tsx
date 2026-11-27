@@ -1080,6 +1080,7 @@ export const TransportFormScreen: React.FC = () => {
                 <option value="DELIVERY">2. In Delivery</option>
                 <option value="FINANCE">3. Finance Audit (Unloaded)</option>
                 <option value="PAID">4. Settled & Paid</option>
+                <option value="REJECTED">5. Rejected</option>
               </select>
             </div>
 

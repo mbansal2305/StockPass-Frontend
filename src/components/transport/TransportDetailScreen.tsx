@@ -287,6 +287,7 @@ export const TransportDetailScreen: React.FC = () => {
             {transport.status === 'DELIVERY' && ' — Truck is in transit to buyer/destination.'}
             {transport.status === 'FINANCE' && ' — Unloaded at destination; waiting for tare audit & payment.'}
             {transport.status === 'PAID' && ' — Freight settled in full.'}
+            {transport.status === 'REJECTED' && ' — This consignment was rejected.'}
           </div>
 
           <div className="flex items-center gap-2">

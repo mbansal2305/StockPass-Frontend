@@ -1,6 +1,6 @@
 import React from 'react';
 import { TransportStatus } from '../../types';
-import { Check, Clock, Truck, Calculator, CheckCircle2 } from 'lucide-react';
+import { Check, Clock, Truck, Calculator, CheckCircle2, XCircle } from 'lucide-react';
 
 interface StatusStepperProps {
   currentStatus: TransportStatus;
@@ -21,6 +21,7 @@ export const StatusStepper: React.FC<StatusStepperProps> = ({
   canChangeStatus = false
 }) => {
   const currentIndex = STAGES.findIndex(s => s.key === currentStatus);
+  const isRejected = currentStatus === 'REJECTED';
 
   return (
     <div className="w-full py-2">
@@ -73,6 +74,25 @@ export const StatusStepper: React.FC<StatusStepperProps> = ({
             </button>
           );
         })}
+      </div>
+      <div className="mt-4 flex justify-end">
+        {isRejected ? (
+          <span className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-800">
+            <XCircle className="h-3.5 w-3.5" />
+            Rejected
+          </span>
+        ) : (
+          canChangeStatus && (
+            <button
+              type="button"
+              onClick={() => onStatusClick?.('REJECTED')}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-800 transition-colors hover:bg-red-100"
+            >
+              <XCircle className="h-3.5 w-3.5" />
+              Mark as Rejected
+            </button>
+          )
+        )}
       </div>
     </div>
   );

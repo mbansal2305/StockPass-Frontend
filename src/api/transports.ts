@@ -187,7 +187,7 @@ const relationName = (value: any): string | undefined => {
 
 const normalizeStatus = (value: unknown): TransportStatus => {
   const status = String(value || '').toUpperCase();
-  if (status === 'DRAFT' || status === 'DELIVERY' || status === 'FINANCE' || status === 'PAID') return status;
+  if (status === 'DRAFT' || status === 'DELIVERY' || status === 'FINANCE' || status === 'PAID' || status === 'REJECTED') return status;
   return 'PENDING';
 };
 

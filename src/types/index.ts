@@ -274,7 +274,7 @@ export interface TransportItem {
   orderCommodityType?: string;
 }
 
-export type TransportStatus = 'DRAFT' | 'PENDING' | 'DELIVERY' | 'FINANCE' | 'PAID';
+export type TransportStatus = 'DRAFT' | 'PENDING' | 'DELIVERY' | 'FINANCE' | 'PAID' | 'REJECTED';
 export type TransportRentType = 'fix' | 'per_unit';
 
 export interface TransportBankDetails {
