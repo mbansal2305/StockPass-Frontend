@@ -71,6 +71,7 @@ const shiftDateByMonths = (date: Date, months: number): Date => {
 };
 
 type DatePreset = 'all' | 'month' | 'three-months' | 'six-months' | 'range';
+type SortField = 'contractDate' | 'orderNumber' | 'startDate' | 'expiryDate';
 
 export const OrderListScreen: React.FC = () => {
   const {
@@ -114,7 +115,7 @@ export const OrderListScreen: React.FC = () => {
     commodities: Commodity[];
     brokers: Broker[];
   }>({ firms: [], clients: [], commodities: [], brokers: [] });
-  const [sortField, setSortField] = useState<'orderNumber' | 'startDate' | 'expiryDate' | 'quantity' | 'remaining' | null>(null);
+  const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortAsc, setSortAsc] = useState<boolean>(false);
 
   // Pagination
@@ -230,12 +231,12 @@ export const OrderListScreen: React.FC = () => {
     if (!sortField) return serverPage.results;
 
     return serverPage.results.slice().sort((a, b) => {
-      let valA: any = a[sortField as keyof Order];
-      let valB: any = b[sortField as keyof Order];
+      const valA: any = a[sortField as keyof Order];
+      const valB: any = b[sortField as keyof Order];
 
-      if (sortField === 'remaining') {
-        valA = a.quantity - a.quantityFulfilled;
-        valB = b.quantity - b.quantityFulfilled;
+      if (sortField === 'contractDate') {
+        if (!valA) return valB ? 1 : 0;
+        if (!valB) return -1;
       }
 
       if (valA < valB) return sortAsc ? -1 : 1;
@@ -261,7 +262,7 @@ export const OrderListScreen: React.FC = () => {
     setActionMenuMaxHeight(Math.max(0, availableSpace - 8));
   }, [openActionMenuId]);
 
-  const toggleSort = (field: 'orderNumber' | 'startDate' | 'expiryDate' | 'quantity' | 'remaining') => {
+  const toggleSort = (field: SortField) => {
     if (sortField === field) {
       setSortAsc(!sortAsc);
     } else {
@@ -634,7 +635,18 @@ export const OrderListScreen: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
               <tr>
-                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">CONTRACT DATE</th>
+                <th
+                  aria-sort={sortField === 'contractDate' ? (sortAsc ? 'ascending' : 'descending') : undefined}
+                  className="sticky top-0 z-10 bg-slate-50 px-4 py-3"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleSort('contractDate')}
+                    className="flex items-center gap-1 cursor-pointer hover:text-slate-900"
+                  >
+                    CONTRACT DATE <ArrowUpDown className="w-3 h-3" />
+                  </button>
+                </th>
                 <th 
                   onClick={() => toggleSort('orderNumber')}
                   className="sticky top-0 z-10 bg-slate-50 px-4 py-3 cursor-pointer hover:text-slate-900"
@@ -647,22 +659,8 @@ export const OrderListScreen: React.FC = () => {
                 <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">ROUTE / PARTY</th>
                 <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">BROKER</th>
                 <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">RATE</th>
-                <th 
-                  onClick={() => toggleSort('quantity')}
-                  className="sticky top-0 z-10 bg-slate-50 px-4 py-3 cursor-pointer hover:text-slate-900"
-                >
-                  <div className="flex items-center gap-1">
-                    ORDER QTY <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th
-                  onClick={() => toggleSort('remaining')}
-                  className="sticky top-0 z-10 bg-slate-50 px-4 py-3 cursor-pointer hover:text-slate-900 text-left"
-                >
-                  <div className="flex items-center gap-1">
-                    REM QTY <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">ORDER QTY</th>
+                <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-left">REM QTY</th>
                 <th 
                   onClick={() => toggleSort('expiryDate')}
                   className="sticky top-0 z-10 bg-slate-50 px-4 py-3 cursor-pointer hover:text-slate-900"

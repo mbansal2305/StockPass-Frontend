@@ -798,7 +798,7 @@ export const TransportPaymentsScreen: React.FC = () => {
           <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-semibold uppercase text-slate-500">
             <tr>
               <th className="sticky left-0 top-0 z-40 w-[62px] bg-slate-50 px-1 py-2"></th>
-              <th className="sticky left-[62px] top-0 z-40 w-[45px] bg-slate-50 px-2 py-2">Date</th>
+              <th className="sticky left-[62px] top-0 z-40 w-[45px] bg-slate-50 px-2 py-2">Load Date</th>
               <th className="sticky left-[107px] top-0 z-40 w-[95px] bg-slate-50 px-1 py-2">Bill</th>
               <th className="sticky left-[202px] top-0 z-40 w-[80px] bg-slate-50 px-1 py-2">Vehicle</th>
               <th className="sticky left-[282px] top-0 z-40 w-[90px] bg-slate-50 px-1 py-2">Route</th>

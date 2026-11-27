@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from 'react';
-import { ArrowRight, Building2, ChevronLeft, ChevronRight, Edit2, Eye, Layers, MoreVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ArrowRight, ArrowUpDown, Building2, ChevronLeft, ChevronRight, Edit2, Eye, Layers, MoreVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { transportsApi, BulkTransportListItem, BulkTransportListPage } from '../../api';
 import { useApp } from '../../context/AppContext';
 import { formatDate, formatQuantityWithUnit } from '../../utils/formatters';
+import { sortOptionalStrings } from '../../utils/sortOptionalStrings';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { shouldIgnoreShortcut } from '../common/keyboardShortcuts';
 
 const PAGE_SIZE = 10;
+type SortField = 'loadingDate' | 'billNumber' | 'unloadingDate';
 
 const formatTransportListDate = (date: string | null | undefined): string =>
   formatDate(date).replace(/ (\d{4})$/, (_, year: string) => `'${year.slice(-2)}`);
@@ -21,6 +23,7 @@ export const BulkTransportListScreen: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<BulkTransportListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ field: SortField; ascending: boolean } | null>(null);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -51,9 +54,19 @@ export const BulkTransportListScreen: React.FC = () => {
     return () => { cancelled = true; };
   }, [pageNumber, reloadKey]);
 
-  const results = pageData?.results || [];
+  const results = useMemo(() => {
+    const items = pageData?.results || [];
+    return sort ? sortOptionalStrings(items, item => item[sort.field], sort.ascending) : items;
+  }, [pageData, sort]);
   const total = pageData?.total || 0;
   const totalPages = Math.max(1, pageData?.totalPages || 1);
+
+  const toggleSort = (field: SortField) => {
+    setSort(current => ({
+      field,
+      ascending: current?.field === field ? !current.ascending : true
+    }));
+  };
 
   const confirmDelete = async () => {
     if (!deleteTarget || deleting) return;
@@ -99,14 +112,35 @@ export const BulkTransportListScreen: React.FC = () => {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-200 bg-slate-50 font-semibold uppercase tracking-wider text-slate-500">
                 <tr>
-                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Loading Date</th>
-                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Bill</th>
+                  <th
+                    aria-sort={sort?.field === 'loadingDate' ? (sort.ascending ? 'ascending' : 'descending') : undefined}
+                    className="sticky top-0 z-10 bg-slate-50 px-4 py-3"
+                  >
+                    <button type="button" onClick={() => toggleSort('loadingDate')} className="flex items-center gap-1 cursor-pointer hover:text-slate-900">
+                      Loading Date <ArrowUpDown className="w-3 h-3" />
+                    </button>
+                  </th>
+                  <th
+                    aria-sort={sort?.field === 'billNumber' ? (sort.ascending ? 'ascending' : 'descending') : undefined}
+                    className="sticky top-0 z-10 bg-slate-50 px-4 py-3"
+                  >
+                    <button type="button" onClick={() => toggleSort('billNumber')} className="flex items-center gap-1 cursor-pointer hover:text-slate-900">
+                      Bill <ArrowUpDown className="w-3 h-3" />
+                    </button>
+                  </th>
                   <th className="sticky top-0 z-10 bg-slate-50 w-[140px] max-w-[140px] px-4 py-3">Vehicle No</th>
                   <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Commodity</th>
                   <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Route (To / From)</th>
                   <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">Gross Weight</th>
                   <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">Received Weight</th>
-                  <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3">Unload Date</th>
+                  <th
+                    aria-sort={sort?.field === 'unloadingDate' ? (sort.ascending ? 'ascending' : 'descending') : undefined}
+                    className="sticky top-0 z-10 bg-slate-50 px-4 py-3"
+                  >
+                    <button type="button" onClick={() => toggleSort('unloadingDate')} className="flex items-center gap-1 cursor-pointer hover:text-slate-900">
+                      Unload Date <ArrowUpDown className="w-3 h-3" />
+                    </button>
+                  </th>
                   <th className="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
