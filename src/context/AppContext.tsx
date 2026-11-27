@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import {
   User,
   UserCreatePayload,
@@ -40,6 +40,7 @@ export type NavigationPage =
   | 'bulk-transport-list'
   | 'bulk-transport'
   | 'bulk-transport-detail'
+  | 'wagon-assignment'
   | 'master-data'
   | 'expenses'
   | 'bill-hisaab'
@@ -83,6 +84,7 @@ interface AppContextType {
   currentPage: NavigationPage;
   pageParams: Record<string, any>;
   navigate: (page: NavigationPage, params?: Record<string, any>) => void;
+  setNavigationGuard: (guard: (() => boolean) | null) => void;
 
   // Master Data Tabs
   masterDataTab: 'commodities' | 'clients' | 'brokers' | 'transporters';
@@ -139,6 +141,8 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const navigationGuard = useRef<(() => boolean) | null>(null);
+  const setNavigationGuard = useCallback((guard: (() => boolean) | null) => { navigationGuard.current = guard; }, []);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentPage, setCurrentPage] = useState<NavigationPage>('dashboard');
   const [pageParams, setPageParams] = useState<Record<string, any>>({});
@@ -331,6 +335,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       showToast('Only owners can manage employees', 'error');
       return;
     }
+    if (navigationGuard.current && !navigationGuard.current()) return;
     setCurrentPage(page);
     setPageParams(params);
     setMobileMenuOpen(false);
@@ -375,6 +380,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const logout = async () => {
+    if (navigationGuard.current && !navigationGuard.current()) return;
     await authApi.logout();
     setCurrentUser(null);
     showToast('Logged out successfully', 'info');
@@ -663,6 +669,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         currentPage,
         pageParams,
         navigate,
+        setNavigationGuard,
         masterDataTab,
         setMasterDataTab,
         users,

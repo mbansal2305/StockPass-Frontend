@@ -18,6 +18,17 @@ export function formatQuantityWithUnit(qty: number | undefined | null, unit?: st
   return `${Number(qty).toLocaleString('en-IN', { maximumFractionDigits: 2 })} ${unitStr}`;
 }
 
+export function getShortUnitLabel(unit?: string): string {
+  const value = unit?.trim() || '';
+  switch (value.toLowerCase()) {
+    case 'quintal':
+    case 'qtl': return 'Qtl';
+    case 'kg': return 'Kg';
+    case 'mt': return 'MT';
+    default: return value;
+  }
+}
+
 export function getUnitLabel(unit?: string): string {
   if (unit === 'kg') return 'KG';
   if (unit === 'quintal') return 'Quintal';

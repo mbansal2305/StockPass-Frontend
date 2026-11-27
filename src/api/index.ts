@@ -4,5 +4,6 @@ export * from './users';
 export * from './master';
 export * from './orders';
 export * from './transports';
+export * from './wagonAssignments';
 export * from './dashboard';
 export * from './bills';

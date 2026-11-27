@@ -169,7 +169,17 @@ export const BulkTransportListScreen: React.FC = () => {
                       }}
                       className={`${rowBgClass} cursor-pointer transition-colors`}
                     >
-                      <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-600">{formatTransportListDate(item.loadingDate)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-600">
+                        {formatTransportListDate(item.loadingDate)}
+                        <button
+                          type="button"
+                          onClick={() => navigate('wagon-assignment', { bulkTransportId: item.id, wagonAssignmentStatus: item.wagonAssignmentStatus, bulkTitle: item.title })}
+                          className="mt-2 block rounded-lg border border-blue-200 bg-white px-3 py-2 font-semibold text-blue-700 hover:bg-blue-50 sm:hidden"
+                        >
+                          Manage Wagons
+                          {item.wagonAssignmentStatus && <span className="block text-[10px] font-normal capitalize text-slate-500">{item.wagonAssignmentStatus}</span>}
+                        </button>
+                      </td>
                       <td className="max-w-[260px] px-4 py-3 font-mono font-medium text-slate-900">
                         <button
                           type="button"
@@ -221,6 +231,14 @@ export const BulkTransportListScreen: React.FC = () => {
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-600">{formatTransportListDate(item.unloadingDate)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => navigate('wagon-assignment', { bulkTransportId: item.id, wagonAssignmentStatus: item.wagonAssignmentStatus, bulkTitle: item.title })}
+                          className="mr-2 hidden rounded-lg border border-blue-200 bg-white px-3 py-2 font-semibold text-blue-700 hover:bg-blue-50 sm:inline-block"
+                        >
+                          Manage Wagons
+                          {item.wagonAssignmentStatus && <span className="ml-1 text-[10px] font-normal capitalize text-slate-500">({item.wagonAssignmentStatus})</span>}
+                        </button>
                         <div className="relative inline-block text-left">
                           <button
                             type="button"

@@ -148,6 +148,7 @@ export interface BulkTransportListItem {
   transporter?: string;
   receivedWeight?: number;
   status: string;
+  wagonAssignmentStatus: string | null;
   vehicleCount: number;
 }
 
@@ -699,6 +700,7 @@ export const transportsApi = {
           ? undefined
           : Number(item.total_rcvd_wt ?? item.totalReceivedWeight),
         status: String(item.status ?? 'pending'),
+        wagonAssignmentStatus: item.wagon_assignment_status == null ? null : String(item.wagon_assignment_status),
         vehicleCount: Number(item.num_vehicles ?? item.vehicle_nos ?? item.numVehicles) || 0
       }))
     };

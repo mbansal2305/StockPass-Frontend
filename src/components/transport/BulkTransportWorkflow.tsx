@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Order, QuantityUnit, Transport, TransportStatus } from '../../types';
 import { BulkTransportDetail, TransportClientOption, transportsApi } from '../../api';
 import { ArrowLeft, CheckCircle, ChevronDown, Layers, Plus, Search, Trash2, Truck, X } from 'lucide-react';
-import { formatQuantityWithUnit, formatCurrency, getClientTypeLabel } from '../../utils/formatters';
+import { formatQuantityWithUnit, formatCurrency, getClientTypeLabel, getShortUnitLabel } from '../../utils/formatters';
 import { calculateBulkOrderProgress } from '../../utils/bulkOrderProgress';
 import { DateInput } from '../common/DateInput';
 import { DecimalInput } from '../common/DecimalInput';
@@ -29,9 +29,6 @@ const today = (): string => {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
-
-const getShortUnitLabel = (unit: QuantityUnit): string =>
-  unit === 'quintal' ? 'Qtl' : unit === 'kg' ? 'Kg' : 'MT';
 
 const getRateUnitLabel = (unit?: QuantityUnit): string =>
   unit === 'quintal' ? 'Qtl' : unit === 'kg' ? 'Kg' : 'Mt';
