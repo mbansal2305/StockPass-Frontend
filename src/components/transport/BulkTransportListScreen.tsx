@@ -112,6 +112,7 @@ export const BulkTransportListScreen: React.FC = () => {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-200 bg-slate-50 font-semibold uppercase tracking-wider text-slate-500">
                 <tr>
+                  <th scope="col" className="sticky top-0 z-10 bg-slate-50 px-2 py-3">Wagons</th>
                   <th
                     aria-sort={sort?.field === 'loadingDate' ? (sort.ascending ? 'ascending' : 'descending') : undefined}
                     className="sticky top-0 z-10 bg-slate-50 px-4 py-3"
@@ -122,7 +123,7 @@ export const BulkTransportListScreen: React.FC = () => {
                   </th>
                   <th
                     aria-sort={sort?.field === 'billNumber' ? (sort.ascending ? 'ascending' : 'descending') : undefined}
-                    className="sticky top-0 z-10 bg-slate-50 px-4 py-3"
+                    className="sticky top-0 z-10 w-[140px] max-w-[140px] bg-slate-50 px-2 py-3"
                   >
                     <button type="button" onClick={() => toggleSort('billNumber')} className="flex items-center gap-1 cursor-pointer hover:text-slate-900">
                       Bill <ArrowUpDown className="w-3 h-3" />
@@ -146,11 +147,19 @@ export const BulkTransportListScreen: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <tr><td colSpan={9} className="py-12 text-center text-slate-500">Loading bulk transports...</td></tr>
+                  <tr><td colSpan={10} className="py-12 text-center text-slate-500">Loading bulk transports...</td></tr>
                 ) : results.length === 0 ? (
-                  <tr><td colSpan={9} className="py-12 text-center text-slate-500">No bulk transport batches found.</td></tr>
+                  <tr><td colSpan={10} className="py-12 text-center text-slate-500">No bulk transport batches found.</td></tr>
                 ) : results.map(item => {
                   const status = item.status.toUpperCase();
+                  const wagonStatus = item.wagonAssignmentStatus?.toLowerCase();
+                  const wagonButtonClass = wagonStatus === 'draft'
+                    ? 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    : wagonStatus === 'pending'
+                    ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                    : wagonStatus === 'submitted'
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                    : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100';
                   const rowBgClass = status === 'DRAFT'
                     ? 'bg-slate-50/70 hover:bg-slate-100/70 border-l-4 border-l-slate-400'
                     : status === 'PENDING'
@@ -169,30 +178,36 @@ export const BulkTransportListScreen: React.FC = () => {
                       }}
                       className={`${rowBgClass} cursor-pointer transition-colors`}
                     >
-                      <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-600">
-                        {formatTransportListDate(item.loadingDate)}
+                      <td className="whitespace-nowrap px-2 py-3">
                         <button
                           type="button"
                           onClick={() => navigate('wagon-assignment', { bulkTransportId: item.id, wagonAssignmentStatus: item.wagonAssignmentStatus, bulkTitle: item.title })}
-                          className="mt-2 block rounded-lg border border-blue-200 bg-white px-3 py-2 font-semibold text-blue-700 hover:bg-blue-50 sm:hidden"
+                          aria-label={`Manage wagons for ${item.title}${item.wagonAssignmentStatus ? `, ${item.wagonAssignmentStatus}` : ''}`}
+                          className={`inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-left text-[11px] font-semibold shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${wagonButtonClass}`}
                         >
-                          Manage Wagons
-                          {item.wagonAssignmentStatus && <span className="block text-[10px] font-normal capitalize text-slate-500">{item.wagonAssignmentStatus}</span>}
+                          <span>
+                            Wagons
+                            {item.wagonAssignmentStatus && <span className="block text-[10px] font-normal capitalize">{item.wagonAssignmentStatus}</span>}
+                          </span>
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                         </button>
                       </td>
-                      <td className="max-w-[260px] px-4 py-3 font-mono font-medium text-slate-900">
+                      <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-600">
+                        {formatTransportListDate(item.loadingDate)}
+                      </td>
+                      <td className="w-[140px] max-w-[140px] px-2 py-3 font-mono font-medium text-slate-900">
                         <button
                           type="button"
                           onClick={() => navigate('bulk-transport-detail', { bulkTransportId: item.id })}
-                          className="block max-w-full truncate text-left font-bold hover:text-blue-600"
+                          className="block max-w-full whitespace-normal break-words text-left font-bold hover:text-blue-600"
                           title={item.billNumber || ''}
                         >
                           {item.billNumber || '-'}
                         </button>
                         {item.billingFirm && (
-                          <div className="mt-1 flex items-center gap-1 truncate font-sans text-[10px] font-semibold text-violet-700" title={`Billing firm: ${item.billingFirm}`}>
+                          <div className="mt-1 flex items-start gap-1 font-sans text-[10px] font-semibold text-violet-700" title={`Billing firm: ${item.billingFirm}`}>
                             <Building2 className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{item.billingFirm}</span>
+                            <span className="min-w-0 break-words">{item.billingFirm}</span>
                           </div>
                         )}
                       </td>
@@ -231,14 +246,6 @@ export const BulkTransportListScreen: React.FC = () => {
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-600">{formatTransportListDate(item.unloadingDate)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => navigate('wagon-assignment', { bulkTransportId: item.id, wagonAssignmentStatus: item.wagonAssignmentStatus, bulkTitle: item.title })}
-                          className="mr-2 hidden rounded-lg border border-blue-200 bg-white px-3 py-2 font-semibold text-blue-700 hover:bg-blue-50 sm:inline-block"
-                        >
-                          Manage Wagons
-                          {item.wagonAssignmentStatus && <span className="ml-1 text-[10px] font-normal capitalize text-slate-500">({item.wagonAssignmentStatus})</span>}
-                        </button>
                         <div className="relative inline-block text-left">
                           <button
                             type="button"

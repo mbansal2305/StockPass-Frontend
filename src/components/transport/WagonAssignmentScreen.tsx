@@ -48,6 +48,7 @@ export const WagonAssignmentScreen: React.FC = () => {
   const [editor, setEditor] = useState<VehicleEditor | null>(null);
   const [editorError, setEditorError] = useState('');
   const [removalTarget, setRemovalTarget] = useState<RemovalTarget | null>(null);
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void | Promise<void>) | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -87,7 +88,10 @@ export const WagonAssignmentScreen: React.FC = () => {
 
   useEffect(() => {
     if (!dirty && !saving && !editorDirty) return;
-    setNavigationGuard(() => !saving && window.confirm('Discard unsaved wagon assignment changes?'));
+    setNavigationGuard(proceed => {
+      if (!saving) setPendingNavigation(() => proceed);
+      return false;
+    });
     const beforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = '';
@@ -288,7 +292,34 @@ export const WagonAssignmentScreen: React.FC = () => {
     }
   };
 
-  if (loading) return <div role="status" className="p-6 text-sm text-slate-500">Loading wagon assignments...</div>;
+  const confirmDiscard = () => {
+    const proceed = pendingNavigation;
+    setPendingNavigation(null);
+    if (!proceed) return;
+    const reportError = (navigationError: unknown) =>
+      showToast(navigationError instanceof Error ? navigationError.message : 'Unable to leave wagon assignments.', 'error');
+    try {
+      const result = proceed();
+      if (result) void result.catch(reportError);
+    } catch (navigationError: unknown) {
+      reportError(navigationError);
+    }
+  };
+  const discardModal = pendingNavigation && (
+    <div className="relative z-[102]">
+      <ConfirmationModal
+        isOpen
+        title="Discard unsaved changes?"
+        message="Your unsaved wagon assignment changes will be lost."
+        confirmLabel="Discard"
+        variant="warning"
+        onConfirm={confirmDiscard}
+        onCancel={() => setPendingNavigation(null)}
+      />
+    </div>
+  );
+
+  if (loading) return <><div role="status" className="p-6 text-sm text-slate-500">Loading wagon assignments...</div>{discardModal}</>;
   if (error) return (
     <div role="alert" className="space-y-4 rounded-xl border border-red-200 bg-white p-5 text-sm text-red-700">
       <p>{error}</p>
@@ -296,6 +327,7 @@ export const WagonAssignmentScreen: React.FC = () => {
         <button type="button" onClick={() => setReload(value => value + 1)} className="rounded-lg border border-slate-300 px-4 py-2 text-slate-700">Retry</button>
         <button type="button" onClick={() => navigate('bulk-transport-list')} className="rounded-lg border border-slate-300 px-4 py-2 text-slate-700">Back to bulk transports</button>
       </div>
+      {discardModal}
     </div>
   );
 
@@ -510,7 +542,7 @@ export const WagonAssignmentScreen: React.FC = () => {
                                     });
                                   }} className="flex w-6 shrink-0 items-center justify-center border-l border-red-100 bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700"><X className="h-3.5 w-3.5" /></button>
                                 </div>
-                                {editingThisEntry && editorPanel && popoverAnchor.current && (
+                                {!pendingNavigation && editingThisEntry && editorPanel && popoverAnchor.current && (
                                   <AssignmentPopover anchor={popoverAnchor.current} mode="editor" onDismiss={dismissPopover}>{editorPanel}</AssignmentPopover>
                                 )}
                               </div>
@@ -520,7 +552,7 @@ export const WagonAssignmentScreen: React.FC = () => {
                             <button type="button" onClick={event => pickerOpen ? setPicker(null) : openPicker(activeTrain.key, wagon.key, event.currentTarget)} disabled={!vehicles.length} aria-haspopup="dialog" aria-controls={pickerOpen || wagonEditor?.isNew ? 'wagon-assignment-dialog' : undefined} aria-expanded={pickerOpen || Boolean(wagonEditor?.isNew)} aria-label={`Add vehicle to wagon ${wagon.number}`} className="flex min-h-16 min-w-20 flex-col items-center justify-center gap-0.5 rounded-md border border-dashed border-blue-400 bg-blue-50/80 px-2 text-xs font-semibold text-blue-700 hover:border-blue-600 hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400">
                               <Plus className="h-4 w-4" />Add vehicle
                             </button>
-                            {(pickerOpen || wagonEditor?.isNew) && popoverAnchor.current && (
+                            {!pendingNavigation && (pickerOpen || wagonEditor?.isNew) && popoverAnchor.current && (
                               <AssignmentPopover anchor={popoverAnchor.current} mode={pickerOpen ? 'picker' : 'editor'} onDismiss={dismissPopover}>
                                 {pickerOpen ? pickerPanel : editorPanel}
                               </AssignmentPopover>
@@ -617,6 +649,7 @@ export const WagonAssignmentScreen: React.FC = () => {
           </div>
         </section>
       </fieldset>
+      {discardModal}
       {removalTarget && (
         <ConfirmationModal
           isOpen

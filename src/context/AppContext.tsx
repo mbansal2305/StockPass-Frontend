@@ -53,6 +53,8 @@ export interface ToastMessage {
 }
 
 type NamedEntity = { id: string; name: string };
+type NavigationAction = () => void | Promise<void>;
+type NavigationGuard = (proceed: NavigationAction) => boolean;
 
 const resolveOrderRelationId = (value: string, entities: NamedEntity[]): string => {
   if (!value) return '';
@@ -84,7 +86,7 @@ interface AppContextType {
   currentPage: NavigationPage;
   pageParams: Record<string, any>;
   navigate: (page: NavigationPage, params?: Record<string, any>) => void;
-  setNavigationGuard: (guard: (() => boolean) | null) => void;
+  setNavigationGuard: (guard: NavigationGuard | null) => void;
 
   // Master Data Tabs
   masterDataTab: 'commodities' | 'clients' | 'brokers' | 'transporters';
@@ -141,8 +143,8 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const navigationGuard = useRef<(() => boolean) | null>(null);
-  const setNavigationGuard = useCallback((guard: (() => boolean) | null) => { navigationGuard.current = guard; }, []);
+  const navigationGuard = useRef<NavigationGuard | null>(null);
+  const setNavigationGuard = useCallback((guard: NavigationGuard | null) => { navigationGuard.current = guard; }, []);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentPage, setCurrentPage] = useState<NavigationPage>('dashboard');
   const [pageParams, setPageParams] = useState<Record<string, any>>({});
@@ -335,11 +337,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       showToast('Only owners can manage employees', 'error');
       return;
     }
-    if (navigationGuard.current && !navigationGuard.current()) return;
-    setCurrentPage(page);
-    setPageParams(params);
-    setMobileMenuOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const proceed = () => {
+      setCurrentPage(page);
+      setPageParams(params);
+      setMobileMenuOpen(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    if (navigationGuard.current && !navigationGuard.current(proceed)) return;
+    proceed();
   };
 
   const login = async (username: string, pass: string): Promise<{ success: boolean; error?: string }> => {
@@ -380,10 +385,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const logout = async () => {
-    if (navigationGuard.current && !navigationGuard.current()) return;
-    await authApi.logout();
-    setCurrentUser(null);
-    showToast('Logged out successfully', 'info');
+    const proceed = async () => {
+      await authApi.logout();
+      setCurrentUser(null);
+      showToast('Logged out successfully', 'info');
+    };
+    if (navigationGuard.current && !navigationGuard.current(proceed)) return;
+    await proceed();
   };
 
   const createUserAccount = async (payload: UserCreatePayload): Promise<User> => {
