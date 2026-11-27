@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useLayoutEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Broker, Transport, TransportStatus, Transporter } from '../../types';
 import { PaginatedTransportsResult, transportsApi } from '../../api';
@@ -142,19 +142,36 @@ export const TransportListScreen: React.FC = () => {
     status: TransportStatus;
   } | null>(null);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const focusSearchAfterExpand = useRef(false);
   const isPaidTab = activeTab === 'PAID';
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      if (shouldIgnoreShortcut(event) || deleteTarget || statusChangeTarget || openActionMenuId || mobileMenuOpen
-        || event.key.toLowerCase() !== 'n') return;
-      event.preventDefault();
-      navigate('transport-form', { returnTo: 'transport' });
+      if (shouldIgnoreShortcut(event) || deleteTarget || statusChangeTarget || openActionMenuId || mobileMenuOpen) return;
+      const key = event.key.toLowerCase();
+      if (key === 'n') {
+        event.preventDefault();
+        navigate('transport-form', { returnTo: 'transport' });
+      } else if (key === '/') {
+        event.preventDefault();
+        if (filtersCollapsed) {
+          focusSearchAfterExpand.current = true;
+          setFiltersCollapsed(false);
+        } else {
+          document.getElementById('transport-search')?.focus();
+        }
+      }
     };
 
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [deleteTarget, statusChangeTarget, openActionMenuId, mobileMenuOpen, navigate]);
+  }, [deleteTarget, statusChangeTarget, openActionMenuId, mobileMenuOpen, navigate, filtersCollapsed]);
+
+  useLayoutEffect(() => {
+    if (filtersCollapsed || !focusSearchAfterExpand.current) return;
+    focusSearchAfterExpand.current = false;
+    document.getElementById('transport-search')?.focus();
+  }, [filtersCollapsed]);
 
   // Lookups
   useEffect(() => {
@@ -362,6 +379,7 @@ export const TransportListScreen: React.FC = () => {
             type="button"
             aria-expanded={!filtersCollapsed}
             aria-controls="transport-filter-panel"
+            aria-keyshortcuts="/"
             aria-label={filtersCollapsed ? 'Show transport filters' : 'Hide transport filters'}
             onClick={() => setFiltersCollapsed(collapsed => !collapsed)}
             className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
@@ -400,6 +418,7 @@ export const TransportListScreen: React.FC = () => {
           <div className="relative col-span-full row-start-1 min-w-0">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
+              id="transport-search"
               type="text"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPageNum(1); }}

@@ -142,6 +142,7 @@ export const OrderListScreen: React.FC = () => {
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const purchaseOptionRef = useRef<HTMLButtonElement>(null);
   const salesOptionRef = useRef<HTMLButtonElement>(null);
+  const focusPartyFilterAfterExpand = useRef(false);
 
   // Client and Commodity lookups
   const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c.name])), [clients]);
@@ -359,12 +360,26 @@ export const OrderListScreen: React.FC = () => {
       } else if (key === 'n' && !isLabour) {
         event.preventDefault();
         setShowTypeSelectModal(true);
+      } else if (key === '/') {
+        event.preventDefault();
+        if (filtersCollapsed) {
+          focusPartyFilterAfterExpand.current = true;
+          setFiltersCollapsed(false);
+        } else {
+          document.getElementById('orders-party-filter')?.focus();
+        }
       }
     };
 
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [showTypeSelectModal, deleteOrderTarget, openActionMenuId, mobileMenuOpen, isLabour, openOrderForm]);
+  }, [showTypeSelectModal, deleteOrderTarget, openActionMenuId, mobileMenuOpen, isLabour, openOrderForm, filtersCollapsed]);
+
+  useLayoutEffect(() => {
+    if (filtersCollapsed || !focusPartyFilterAfterExpand.current) return;
+    focusPartyFilterAfterExpand.current = false;
+    document.getElementById('orders-party-filter')?.focus();
+  }, [filtersCollapsed]);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
@@ -412,6 +427,7 @@ export const OrderListScreen: React.FC = () => {
             type="button"
             aria-expanded={!filtersCollapsed}
             aria-controls="orders-filter-panel"
+            aria-keyshortcuts="/"
             aria-label={filtersCollapsed ? 'Show order filters' : 'Hide order filters'}
             onClick={() => setFiltersCollapsed(collapsed => !collapsed)}
             className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"

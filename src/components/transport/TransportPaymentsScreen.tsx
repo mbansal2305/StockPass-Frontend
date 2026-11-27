@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { zipSync } from 'fflate';
 import { useApp } from '../../context/AppContext';
 import { Broker, Transport, TransportRentType, QuantityUnit, TransportStatus, Transporter } from '../../types';
@@ -9,6 +9,7 @@ import { formatCurrency, formatDate, formatQuantityWithUnit } from '../../utils/
 import { DecimalInput } from '../common/DecimalInput';
 import { DateInput } from '../common/DateInput';
 import { parseDateInputValue } from '../../utils/dateInput';
+import { shouldIgnoreShortcut } from '../common/keyboardShortcuts';
 import { Building2, ChevronDown, Edit2, FileSpreadsheet, FilterX, Printer, RefreshCw, Search, SlidersHorizontal, Wallet, X, Calendar } from 'lucide-react';
 import { TransportPaymentBill } from './TransportPaymentBill';
 import { MultiSearchableSelect, SearchableOption } from '../common/SearchableSelect';
@@ -266,6 +267,7 @@ export const TransportPaymentsScreen: React.FC = () => {
   const [printTransport, setPrintTransport] = useState<Transport | null>(null);
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+  const focusSearchAfterExpand = useRef(false);
   const [partyOptions, setPartyOptions] = useState<SearchableOption[]>(() => clients.map(client => ({
     id: client.id,
     label: client.city ? `${client.name} (${client.city})` : client.name,
@@ -282,6 +284,28 @@ export const TransportPaymentsScreen: React.FC = () => {
     .filter(client => String(client.type).toUpperCase() === 'MY_FIRM')
     .map(client => ({ id: client.id, name: client.name, city: client.city })));
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (shouldIgnoreShortcut(event) || pendingEdit || printTransport || event.key !== '/') return;
+      event.preventDefault();
+      if (filtersCollapsed) {
+        focusSearchAfterExpand.current = true;
+        setFiltersCollapsed(false);
+      } else {
+        document.getElementById('transport-payments-search')?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [filtersCollapsed, pendingEdit, printTransport]);
+
+  useLayoutEffect(() => {
+    if (filtersCollapsed || !focusSearchAfterExpand.current) return;
+    focusSearchAfterExpand.current = false;
+    document.getElementById('transport-payments-search')?.focus();
+  }, [filtersCollapsed]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
@@ -577,6 +601,7 @@ export const TransportPaymentsScreen: React.FC = () => {
             type="button"
             aria-expanded={!filtersCollapsed}
             aria-controls="transport-payments-filter-panel"
+            aria-keyshortcuts="/"
             aria-label={filtersCollapsed ? 'Show transport payment filters' : 'Hide transport payment filters'}
             onClick={() => setFiltersCollapsed(collapsed => !collapsed)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
@@ -614,6 +639,7 @@ export const TransportPaymentsScreen: React.FC = () => {
           <div className="relative col-span-full row-start-1 min-w-0">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
+              id="transport-payments-search"
               value={searchTerm}
               onChange={event => {
                 setSearchTerm(event.target.value);
