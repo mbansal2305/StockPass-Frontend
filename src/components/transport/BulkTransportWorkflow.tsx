@@ -14,6 +14,7 @@ interface TruckRow {
   id: string;
   transportId?: string;
   originalTransport?: Transport;
+  sortOrder: number;
   vehicleNumber: string;
   grossWeight: number;
   receivedWeight: number;
@@ -40,9 +41,9 @@ const convertQuantityUnit = (quantity: number, fromUnit: QuantityUnit, toUnit: Q
   return metricTons * 1000;
 };
 
-const newTruck = (): TruckRow => ({
+const newTruck = (sortOrder: number): TruckRow => ({
   id: `truck-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  vehicleNumber: '', grossWeight: 0, receivedWeight: 0, bagNumbers: 0, bagWeight: 500, anugya: false, gatepass: false
+  sortOrder, vehicleNumber: '', grossWeight: 0, receivedWeight: 0, bagNumbers: 0, bagWeight: 500, anugya: false, gatepass: false
 });
 
 export const BulkTransportWorkflow: React.FC = () => {
@@ -142,16 +143,29 @@ export const BulkTransportWorkflow: React.FC = () => {
         }
         const bulkOrderUnit = bulkOrder?.unit || 'mt';
         const nextTrucks: Record<string, TruckRow[]> = {};
+        const transportGroups: Record<string, Array<{ transport: Transport; responseIndex: number }>> = {};
         sources.forEach(sourceId => { nextTrucks[sourceId] = []; });
-        bulk.transports.forEach(transport => {
+        bulk.transports.forEach((transport, responseIndex) => {
           const sourceId = transport.fromClientId || sources[0] || '';
           if (!sourceId) return;
-          if (!nextTrucks[sourceId]) nextTrucks[sourceId] = [];
+          if (!transportGroups[sourceId]) transportGroups[sourceId] = [];
+          transportGroups[sourceId].push({ transport, responseIndex });
+        });
+        Object.entries(transportGroups).forEach(([sourceId, entries]) => {
+          const orderedEntries = [...entries].sort((left, right) => {
+            const leftOrder = Number(left.transport.sortOrder) || 0;
+            const rightOrder = Number(right.transport.sortOrder) || 0;
+            if (leftOrder > 0 && rightOrder > 0 && leftOrder !== rightOrder) return leftOrder - rightOrder;
+            if (leftOrder > 0 && rightOrder <= 0) return -1;
+            if (rightOrder > 0 && leftOrder <= 0) return 1;
+            return left.responseIndex - right.responseIndex;
+          });
           const isEnabled = (value: boolean | string | undefined) => value === true || (typeof value === 'string' && !['', 'false', '0', 'no'].includes(value.trim().toLowerCase()));
-          nextTrucks[sourceId].push({
+          nextTrucks[sourceId] = orderedEntries.map(({ transport }, index) => ({
             id: `transport-${transport.id}`,
             transportId: transport.id,
             originalTransport: transport,
+            sortOrder: index + 1,
             vehicleNumber: transport.vehicleNumber,
             grossWeight: convertQuantityUnit(transport.grossWeight, transport.grossWeightUnit || 'mt', bulkOrderUnit),
             receivedWeight: convertQuantityUnit(transport.receivedWeight || 0, transport.grossWeightUnit || 'mt', bulkOrderUnit),
@@ -159,7 +173,7 @@ export const BulkTransportWorkflow: React.FC = () => {
             bagWeight: transport.bagWeight ?? 500,
             anugya: isEnabled(transport.anugya),
             gatepass: isEnabled(transport.gatepass)
-          });
+          }));
         });
         const firstTransport = bulk.transports[0];
         setLoadingDate(bulk.loadingDate || firstTransport?.loadingDate || today());
@@ -290,6 +304,7 @@ export const BulkTransportWorkflow: React.FC = () => {
     const transports = allTrucks.map(row => ({
       ...row.originalTransport,
       id: row.transportId || row.originalTransport?.id,
+      sortOrder: row.sortOrder,
       billNumber: billNumber.trim(), billingFirmId, commodityId: selectedOrder.commodityId, fromClientId: row.sourceId,
       toClientId: destinationId, vehicleNumber: row.vehicleNumber.trim().toUpperCase(),
       transporterId: transporterId === DIRECT_TRANSPORT ? DIRECT_TRANSPORT : transporterId,
@@ -423,8 +438,62 @@ export const BulkTransportWorkflow: React.FC = () => {
     </section>
 
     <section className="bg-white p-5 rounded-lg border border-slate-200 space-y-4">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2"><div><h2 className="text-xs font-bold text-slate-900 uppercase">Step 3 · Truck data</h2><p className="text-[11px] text-slate-500 mt-1">{selectedLocations.find(item => item.id === activeSourceId)?.name || 'Select a source location to add trucks'}</p></div><button type="button" disabled={!activeSourceId} onClick={() => setTrucks(current => ({ ...current, [activeSourceId]: [...(current[activeSourceId] || []), newTruck()] }))} className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg text-xs font-semibold cursor-pointer"><Plus className="w-3.5 h-3.5" />Add truck</button></div>
-      {!activeSourceId ? <p className="text-xs text-slate-500 py-4">Choose one or more source locations above.</p> : !(trucks[activeSourceId] || []).length ? <p className="text-xs text-slate-500 py-4">No trucks in this location yet.</p> : <div className="overflow-x-auto border border-slate-200 rounded-lg"><table className="w-full min-w-[1080px] table-fixed text-left text-xs"><colgroup><col className="w-[220px]" /><col className="w-[140px]" /><col className="w-[80px]" /><col className="w-[120px]" /><col className="w-[80px]" /><col className="w-[140px]" /><col className="w-[100px]" /><col className="w-[100px]" /><col className="w-[80px]" /></colgroup><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold"><tr><th className="px-3 py-2.5">Vehicle Number</th><th className="px-3 py-2.5 text-right">Gross Wt ({getShortUnitLabel(selectedUnit)})</th><th className="px-3 py-2.5 text-right">Bags</th><th className="px-3 py-2.5 text-right">Bag Wt (g)</th><th className="px-3 py-2.5 text-right">Bharti (Kg)</th><th className="px-3 py-2.5 text-right">Rcvd Wt ({getShortUnitLabel(selectedUnit)})</th><th className="px-3 py-2.5 text-center">Anugya</th><th className="px-3 py-2.5 text-center">Gate Pass</th><th className="px-3 py-2.5 text-center">Delete</th></tr></thead><tbody className="divide-y divide-slate-100">{(trucks[activeSourceId] || []).map(row => { const bharti = calculateBharti(row); return <tr key={row.id} className="hover:bg-slate-50/50"><td className="px-3 py-2"><input value={row.vehicleNumber} onChange={event => updateTruck(activeSourceId, row.id, 'vehicleNumber', event.target.value.toUpperCase())} placeholder="Vehicle registration" className="w-full text-xs font-mono border border-slate-300 rounded px-2 py-1.5 uppercase" /></td><td className="px-3 py-2 text-right">{numericField(`Gross weight in ${getShortUnitLabel(selectedUnit)}`, row.grossWeight, value => updateTruck(activeSourceId, row.id, 'grossWeight', value))}</td><td className="px-3 py-2 text-right">{numericField('Bag count', row.bagNumbers, value => updateTruck(activeSourceId, row.id, 'bagNumbers', value))}</td><td className="px-3 py-2 text-right">{numericField('Bag weight in grams', row.bagWeight, value => updateTruck(activeSourceId, row.id, 'bagWeight', value))}</td><td className={`px-2 py-2 text-right tabular-nums whitespace-nowrap ${bharti !== null && bharti < 0 ? 'text-red-600 font-semibold' : 'text-slate-900'}`}>{bharti === null ? '—' : bharti.toFixed(2)}</td><td className="px-3 py-2 text-right">{numericField(`Received weight in ${getShortUnitLabel(selectedUnit)}`, row.receivedWeight, value => updateTruck(activeSourceId, row.id, 'receivedWeight', value))}</td><td className="px-3 py-2 text-center"><input type="checkbox" checked={row.anugya} onChange={event => updateTruck(activeSourceId, row.id, 'anugya', event.target.checked)} aria-label="Anugya" className="h-4 w-4 rounded border-slate-300 text-blue-600" /></td><td className="px-3 py-2 text-center"><input type="checkbox" checked={row.gatepass} onChange={event => updateTruck(activeSourceId, row.id, 'gatepass', event.target.checked)} aria-label="Gate pass" className="h-4 w-4 rounded border-slate-300 text-blue-600" /></td><td className="px-3 py-2 text-center"><button type="button" onClick={() => setTrucks(current => ({ ...current, [activeSourceId]: current[activeSourceId].filter(item => item.id !== row.id) }))} aria-label="Delete truck" className="p-1.5 text-red-600 hover:bg-red-50 rounded cursor-pointer"><Trash2 className="w-4 h-4" /></button></td></tr>; })}</tbody></table></div>}
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2"><div><h2 className="text-xs font-bold text-slate-900 uppercase">Step 3 · Truck data</h2><p className="text-[11px] text-slate-500 mt-1">{selectedLocations.find(item => item.id === activeSourceId)?.name || 'Select a source location to add trucks'}</p></div><button type="button" disabled={!activeSourceId} onClick={() => setTrucks(current => { const rows = current[activeSourceId] || []; return { ...current, [activeSourceId]: [...rows, newTruck(rows.length + 1)] }; })} className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg text-xs font-semibold cursor-pointer"><Plus className="w-3.5 h-3.5" />Add truck</button></div>
+      {!activeSourceId ? (
+        <p className="text-xs text-slate-500 py-4">Choose one or more source locations above.</p>
+      ) : !(trucks[activeSourceId] || []).length ? (
+        <p className="text-xs text-slate-500 py-4">No trucks in this location yet.</p>
+      ) : (
+        <div className="overflow-x-auto border border-slate-200 rounded-lg">
+          <table className="w-full min-w-[1112px] table-fixed text-left text-xs">
+            <colgroup>
+              <col className="w-[40px]" />
+              <col className="w-[220px]" />
+              <col className="w-[140px]" />
+              <col className="w-[80px]" />
+              <col className="w-[120px]" />
+              <col className="w-[80px]" />
+              <col className="w-[140px]" />
+              <col className="w-[100px]" />
+              <col className="w-[100px]" />
+              <col className="w-[80px]" />
+            </colgroup>
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+              <tr>
+                <th className="px-1 py-2.5 text-center">S.N</th>
+                <th className="px-3 py-2.5">Vehicle Number</th>
+                <th className="px-3 py-2.5 text-right">Gross Wt ({getShortUnitLabel(selectedUnit)})</th>
+                <th className="px-3 py-2.5 text-right">Bags</th>
+                <th className="px-3 py-2.5 text-right">Bag Wt (g)</th>
+                <th className="px-3 py-2.5 text-right">Bharti (Kg)</th>
+                <th className="px-3 py-2.5 text-right">Rcvd Wt ({getShortUnitLabel(selectedUnit)})</th>
+                <th className="px-3 py-2.5 text-center">Anugya</th>
+                <th className="px-3 py-2.5 text-center">Gate Pass</th>
+                <th className="px-3 py-2.5 text-center">Delete</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {(trucks[activeSourceId] || []).map((row, index) => {
+                const bharti = calculateBharti(row);
+                return (
+                  <tr key={row.id} className="hover:bg-slate-50/50">
+                    <td className="px-1 py-2 text-center tabular-nums">{index + 1}</td>
+                    <td className="px-3 py-2"><input value={row.vehicleNumber} onChange={event => updateTruck(activeSourceId, row.id, 'vehicleNumber', event.target.value.toUpperCase())} placeholder="Vehicle registration" className="w-full text-xs font-mono border border-slate-300 rounded px-2 py-1.5 uppercase" /></td>
+                    <td className="px-3 py-2 text-right">{numericField(`Gross weight in ${getShortUnitLabel(selectedUnit)}`, row.grossWeight, value => updateTruck(activeSourceId, row.id, 'grossWeight', value))}</td>
+                    <td className="px-3 py-2 text-right">{numericField('Bag count', row.bagNumbers, value => updateTruck(activeSourceId, row.id, 'bagNumbers', value))}</td>
+                    <td className="px-3 py-2 text-right">{numericField('Bag weight in grams', row.bagWeight, value => updateTruck(activeSourceId, row.id, 'bagWeight', value))}</td>
+                    <td className={`px-2 py-2 text-right tabular-nums whitespace-nowrap ${bharti !== null && bharti < 0 ? 'text-red-600 font-semibold' : 'text-slate-900'}`}>{bharti === null ? '—' : bharti.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right">{numericField(`Received weight in ${getShortUnitLabel(selectedUnit)}`, row.receivedWeight, value => updateTruck(activeSourceId, row.id, 'receivedWeight', value))}</td>
+                    <td className="px-3 py-2 text-center"><input type="checkbox" checked={row.anugya} onChange={event => updateTruck(activeSourceId, row.id, 'anugya', event.target.checked)} aria-label="Anugya" className="h-4 w-4 rounded border-slate-300 text-blue-600" /></td>
+                    <td className="px-3 py-2 text-center"><input type="checkbox" checked={row.gatepass} onChange={event => updateTruck(activeSourceId, row.id, 'gatepass', event.target.checked)} aria-label="Gate pass" className="h-4 w-4 rounded border-slate-300 text-blue-600" /></td>
+                    <td className="px-3 py-2 text-center"><button type="button" onClick={() => setTrucks(current => { const rows = (current[activeSourceId] || []).filter(item => item.id !== row.id); return { ...current, [activeSourceId]: rows.map((item, index) => ({ ...item, sortOrder: index + 1 })) }; })} aria-label="Delete truck" className="p-1.5 text-red-600 hover:bg-red-50 rounded cursor-pointer"><Trash2 className="w-4 h-4" /></button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
 
     <section className="bg-slate-900 text-white p-5 rounded-lg space-y-4">

@@ -258,6 +258,7 @@ export function transformBackendTransport(raw: any, lookups: TransportLookups = 
     toClientId: relationId(raw?.to_client_id ?? raw?.toClientId ?? raw?.to_client, lookups.clients),
     toClientName: relationName(raw?.to_client) ?? raw?.to_client_name ?? raw?.toClientName ?? undefined,
     vehicleNumber: String(raw?.vehicle_no ?? raw?.vehicle_number ?? raw?.vehicleNumber ?? ''),
+    sortOrder: Number(raw?.sort_order ?? 0),
     transporterId: relationId(
       raw?.transporter_id !== undefined
         ? raw.transporter_id
@@ -404,6 +405,7 @@ function toBulkTransportSchema(transport: BulkTransportEntry, lookups: Transport
     ...(transport.fromClientId ? { from_client: Number(numericId(transport.fromClientId)) } : {}),
     ...(transport.toClientId ? { to_client: Number(numericId(transport.toClientId)) } : {}),
     vehicle_no: transport.vehicleNumber,
+    sort_order: transport.sortOrder ?? 0,
     ...(transport.transporterId === 'none'
       ? { transporter: 'none' }
       : transport.transporterId

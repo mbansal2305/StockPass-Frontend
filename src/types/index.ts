@@ -303,6 +303,7 @@ export interface Transport {
   toClientId: string;
   toClientName?: string;
   vehicleNumber: string;
+  sortOrder?: number;
   transporterId: string;
   transporterName?: string;
   transporterBank?: TransportBankDetails | null;
