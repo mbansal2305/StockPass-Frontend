@@ -236,7 +236,8 @@ export const masterApi = {
     entity: MasterEntityType,
     filters: Record<string, any> = {},
     page = 1,
-    pageSize = 50
+    pageSize = 50,
+    search?: string
   ): Promise<PaginatedResult<T>> {
     const cleanFilters = Object.fromEntries(
       Object.entries(filters).filter(([_, v]) => v !== undefined && v !== '' && v !== 'ALL')
@@ -251,7 +252,8 @@ export const masterApi = {
       entity,
       filters: cleanFilters,
       page,
-      page_size: pageSize
+      page_size: pageSize,
+      search: search?.trim() || undefined
     };
 
     const res = await apiClient.post<any>('/master/lst/', payload);

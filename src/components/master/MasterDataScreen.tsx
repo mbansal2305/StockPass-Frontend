@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Commodity, BusinessClient, Broker, Transporter, ClientType, ClientFlag, MasterEntityType } from '../../types';
 import {
@@ -65,6 +65,7 @@ export const MasterDataScreen: React.FC = () => {
 
   // Global search input for current active tab
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [isLoadingApi, setIsLoadingApi] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
@@ -74,6 +75,7 @@ export const MasterDataScreen: React.FC = () => {
   const [masterCounts, setMasterCounts] = useState<MasterEntityCounts | null>(null);
   const [visibleTransporterAccounts, setVisibleTransporterAccounts] = useState<Set<string>>(() => new Set());
   const addButtonRef = useRef<HTMLButtonElement>(null);
+  const listRequestId = useRef(0);
 
   const localMasterDataRef = useRef({ commodities, clients, brokers, transporters });
   localMasterDataRef.current = { commodities, clients, brokers, transporters };
@@ -192,9 +194,18 @@ export const MasterDataScreen: React.FC = () => {
   }, [isLabour, mobileMenuOpen, openActionMenuId, selectedClientForDetails, deleteConfirmation,
     commodityModalOpen, clientModalOpen, brokerModalOpen, transporterModalOpen, isSubmitting]);
 
-  // Fetch one page from /master/lst/. Search is performed only against this page.
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
+    return () => window.clearTimeout(timeout);
+  }, [searchTerm]);
+
+  // Fetch one page of server-filtered results from /master/lst/.
   const fetchCurrentEntityData = useCallback(async () => {
+    if (searchTerm.trim() !== debouncedSearchTerm) return;
+    const requestId = ++listRequestId.current;
     setIsLoadingApi(true);
+    setServerData(prev => ({ ...prev, [masterDataTab]: [] }));
+    setServerPage({ total: 0, totalPages: 1 });
     try {
       const entityByTab: Record<typeof masterDataTab, MasterEntityType> = {
         commodities: 'commodity',
@@ -206,8 +217,10 @@ export const MasterDataScreen: React.FC = () => {
         entityByTab[masterDataTab],
         {},
         currentPageNum,
-        pageSize
+        pageSize,
+        debouncedSearchTerm
       );
+      if (requestId !== listRequestId.current) return;
       const results = result.results;
       const totalPages = Math.max(1, result.totalPages);
       setServerPage({ total: result.total, totalPages });
@@ -285,7 +298,10 @@ export const MasterDataScreen: React.FC = () => {
         syncMasterCache('transporter', normalizedRows);
       }
     } catch (err) {
-      console.warn('Failed querying master API, falling back to local dataset:', err);
+      if (requestId !== listRequestId.current) return;
+      console.warn('Failed querying master API:', err);
+      showToast('Failed to load master data', 'error');
+      if (debouncedSearchTerm) return;
       const localData = localMasterDataRef.current;
       const localRows = masterDataTab === 'commodities'
         ? localData.commodities
@@ -299,13 +315,13 @@ export const MasterDataScreen: React.FC = () => {
       setServerPage({ total: localRows.length, totalPages });
       setServerData(prev => ({ ...prev, [masterDataTab]: null }));
     } finally {
-      setIsLoadingApi(false);
+      if (requestId === listRequestId.current) setIsLoadingApi(false);
     }
-  }, [masterDataTab, currentPageNum, pageSize, syncMasterCache]);
+  }, [masterDataTab, currentPageNum, pageSize, searchTerm, debouncedSearchTerm, syncMasterCache, showToast]);
 
-  // Fetch a page when changing tabs or page; typing in search stays local.
   useEffect(() => {
-    fetchCurrentEntityData();
+    void fetchCurrentEntityData();
+    return () => { listRequestId.current += 1; };
   }, [fetchCurrentEntityData]);
 
   const fetchMasterCounts = useCallback(async () => {
@@ -321,40 +337,33 @@ export const MasterDataScreen: React.FC = () => {
     void fetchMasterCounts();
   }, [fetchMasterCounts]);
 
-  const matchesSearch = (item: object) => {
-    const term = searchTerm.trim().toLowerCase();
-    if (!term) return true;
-    return Object.entries(item).some(([key, value]) =>
-      !['image', 'imageurl', 'profile_picture'].includes(key.toLowerCase()) &&
-      (typeof value === 'string' || typeof value === 'number') &&
-      String(value).toLowerCase().includes(term)
-    );
+  const start = (currentPageNum - 1) * pageSize;
+  const displayedCommodities = serverData.commodities ?? commodities.slice(start, start + pageSize);
+  const displayedClients = serverData.clients ?? clients.slice(start, start + pageSize);
+  const displayedBrokers = serverData.brokers ?? brokers.slice(start, start + pageSize);
+  const displayedTransporters = serverData.transporters ?? transporters.slice(start, start + pageSize);
+
+  const updateSearch = (value: string) => {
+    if (value === searchTerm && currentPageNum === 1) return;
+    listRequestId.current += 1;
+    setIsLoadingApi(true);
+    setServerData(prev => ({ ...prev, [masterDataTab]: [] }));
+    setServerPage({ total: 0, totalPages: 1 });
+    setSearchTerm(value);
+    setCurrentPageNum(1);
   };
 
-  // Search only the currently loaded API page (or the matching local page offline).
-  const displayedCommodities = useMemo(() => {
-    const start = (currentPageNum - 1) * pageSize;
-    const rows = serverData.commodities ?? commodities.slice(start, start + pageSize);
-    return rows.filter(matchesSearch);
-  }, [commodities, serverData.commodities, searchTerm, currentPageNum, pageSize]);
-
-  const displayedClients = useMemo(() => {
-    const start = (currentPageNum - 1) * pageSize;
-    const rows = serverData.clients ?? clients.slice(start, start + pageSize);
-    return rows.filter(matchesSearch);
-  }, [clients, serverData.clients, searchTerm, currentPageNum, pageSize]);
-
-  const displayedBrokers = useMemo(() => {
-    const start = (currentPageNum - 1) * pageSize;
-    const rows = serverData.brokers ?? brokers.slice(start, start + pageSize);
-    return rows.filter(matchesSearch);
-  }, [brokers, serverData.brokers, searchTerm, currentPageNum, pageSize]);
-
-  const displayedTransporters = useMemo(() => {
-    const start = (currentPageNum - 1) * pageSize;
-    const rows = serverData.transporters ?? transporters.slice(start, start + pageSize);
-    return rows.filter(matchesSearch);
-  }, [transporters, serverData.transporters, searchTerm, currentPageNum, pageSize]);
+  const switchTab = (tab: typeof masterDataTab) => {
+    if (tab === masterDataTab && !searchTerm && currentPageNum === 1) return;
+    listRequestId.current += 1;
+    setIsLoadingApi(true);
+    setServerData(prev => ({ ...prev, [tab]: [] }));
+    setServerPage({ total: 0, totalPages: 1 });
+    setMasterDataTab(tab);
+    setSearchTerm('');
+    setDebouncedSearchTerm('');
+    setCurrentPageNum(1);
+  };
 
   const copyTransporterDetail = async (value: string, label: string) => {
     try {
@@ -366,10 +375,10 @@ export const MasterDataScreen: React.FC = () => {
   };
 
   const searchPlaceholder = {
-    commodities: 'Search current page of commodities...',
-    clients: 'Search current page of clients & godowns...',
-    brokers: 'Search current page of brokers...',
-    transporters: 'Search current page of transporters...'
+    commodities: 'Search commodities...',
+    clients: 'Search clients & godowns...',
+    brokers: 'Search brokers...',
+    transporters: 'Search transporters...'
   }[masterDataTab];
 
   // --- Handlers for Commodities ---
@@ -656,7 +665,7 @@ export const MasterDataScreen: React.FC = () => {
         <div className="inline-flex p-1 bg-slate-200/80 rounded-xl shadow-2xs self-start sm:self-auto overflow-x-auto max-w-full">
           <button
             type="button"
-            onClick={() => { setMasterDataTab('commodities'); setSearchTerm(''); setCurrentPageNum(1); }}
+            onClick={() => switchTab('commodities')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
               masterDataTab === 'commodities'
                 ? 'bg-white text-slate-900 shadow-xs'
@@ -668,7 +677,7 @@ export const MasterDataScreen: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => { setMasterDataTab('clients'); setSearchTerm(''); setCurrentPageNum(1); }}
+            onClick={() => switchTab('clients')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
               masterDataTab === 'clients'
                 ? 'bg-white text-slate-900 shadow-xs'
@@ -680,7 +689,7 @@ export const MasterDataScreen: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => { setMasterDataTab('brokers'); setSearchTerm(''); setCurrentPageNum(1); }}
+            onClick={() => switchTab('brokers')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
               masterDataTab === 'brokers'
                 ? 'bg-white text-slate-900 shadow-xs'
@@ -692,7 +701,7 @@ export const MasterDataScreen: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => { setMasterDataTab('transporters'); setSearchTerm(''); setCurrentPageNum(1); }}
+            onClick={() => switchTab('transporters')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
               masterDataTab === 'transporters'
                 ? 'bg-white text-slate-900 shadow-xs'
@@ -715,7 +724,7 @@ export const MasterDataScreen: React.FC = () => {
               <input
                 type="text"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => updateSearch(e.target.value)}
                 placeholder={searchPlaceholder}
                 className="w-full pl-9 pr-8 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
               />
@@ -727,7 +736,7 @@ export const MasterDataScreen: React.FC = () => {
             {searchTerm && (
               <button
                 type="button"
-                onClick={() => setSearchTerm('')}
+                onClick={() => updateSearch('')}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                 title="Clear search"
               >
@@ -1380,13 +1389,6 @@ export const MasterDataScreen: React.FC = () => {
         <div className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-600">
           <span>
             Showing {serverPage.total === 0 ? 0 : (currentPageNum - 1) * pageSize + 1} to {Math.min(currentPageNum * pageSize, serverPage.total)} of {serverPage.total} records
-            {searchTerm.trim() && ` · ${masterDataTab === 'commodities'
-              ? displayedCommodities.length
-              : masterDataTab === 'clients'
-                ? displayedClients.length
-                : masterDataTab === 'brokers'
-                  ? displayedBrokers.length
-                  : displayedTransporters.length} matches on this page`}
           </span>
           <div className="flex items-center gap-1">
             <button
