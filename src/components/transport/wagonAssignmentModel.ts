@@ -30,6 +30,28 @@ export interface Wagon {
   entries: VehicleEntry[];
 }
 
+export function wagonAssignmentTotals(wagon: Wagon, editingEntry?: VehicleEntry): { quantity: number | null; bags: number | null } {
+  const entries = wagon.entries.map(entry =>
+    editingEntry?.key === entry.key ? editingEntry : entry
+  );
+  if (editingEntry && !entries.some(entry => entry.key === editingEntry.key)) entries.push(editingEntry);
+
+  let quantity = 0;
+  let bags = 0;
+  for (const entry of entries) {
+    const entryQuantity = entry.quantity === '' ? 0 : quantityUnits(entry.quantity);
+    const entryBags = entry.bags === '' ? 0 : bagUnits(entry.bags);
+    if (entryQuantity === null || !Number.isSafeInteger(quantity + entryQuantity)) quantity = NaN;
+    else if (!Number.isNaN(quantity)) quantity += entryQuantity;
+    if (entryBags === null || !Number.isSafeInteger(bags + entryBags)) bags = NaN;
+    else if (!Number.isNaN(bags)) bags += entryBags;
+  }
+  return {
+    quantity: Number.isNaN(quantity) ? null : quantity,
+    bags: Number.isNaN(bags) ? null : bags
+  };
+}
+
 export function hasVehicleAssignment(wagon: Wagon, transport: string, excludeKey?: string): boolean {
   return wagon.entries.some(entry => entry.transport === transport && entry.key !== excludeKey);
 }

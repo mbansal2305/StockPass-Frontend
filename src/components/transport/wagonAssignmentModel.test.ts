@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { WagonAssignmentState, WagonVehicle } from '../../api';
-import { displayEditableQuantity, displayQuantity, displayRemainingQuantity, fromApi, hasVehicleAssignment, newEntry, newTrain, newWagon, proportionalQuantity, quantityUnits, remaining, remainingAfterEntry, stateWithVehicleEntry, toApi, trainName, updateEntryBags, validateEntry, vehicleAssignmentSummary, vehicleEntryChanged, vehicleSummaryTotals } from './wagonAssignmentModel';
+import { displayEditableQuantity, displayQuantity, displayRemainingQuantity, fromApi, hasVehicleAssignment, newEntry, newTrain, newWagon, proportionalQuantity, quantityUnits, remaining, remainingAfterEntry, stateWithVehicleEntry, toApi, trainName, updateEntryBags, validateEntry, vehicleAssignmentSummary, vehicleEntryChanged, vehicleSummaryTotals, wagonAssignmentTotals } from './wagonAssignmentModel';
 
 const vehicles: WagonVehicle[] = [
   { id: 101, vehicle_no: 'MP09AB1234', gross_wt: '20.000', quantity_unit: 'quintal', bag_nos: '40' }
@@ -256,6 +256,21 @@ test('formats editable quantity to two decimals without changing saved precision
   entry.quantity = '12.505';
   assert.equal(displayEditableQuantity(entry.quantity), '12.51');
   assert.equal(toApi(editor, 1, vehicles).trains[0].assignments[0].quantity, '12.505');
+});
+
+test('totals wagon quantity and bags, including a live editor change', () => {
+  const editor = fromApi(saved);
+  const wagon = editor.trains[0].wagons[0];
+  assert.deepEqual(wagonAssignmentTotals(wagon), { quantity: 12500, bags: 25 });
+  assert.deepEqual(wagonAssignmentTotals(wagon, { ...wagon.entries[0], quantity: '13.250', bags: '27' }), {
+    quantity: 13250, bags: 27
+  });
+  assert.deepEqual(wagonAssignmentTotals(wagon, { ...newEntry(), quantity: '1.500', bags: '3' }), {
+    quantity: 14000, bags: 28
+  });
+  assert.deepEqual(wagonAssignmentTotals({ ...wagon, entries: [{ ...wagon.entries[0], quantity: 'bad' }] }), {
+    quantity: null, bags: 25
+  });
 });
 
 test('detects uncommitted quantity or bag changes and ignores reverted edits', () => {

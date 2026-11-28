@@ -1,12 +1,12 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, ChevronDown, ChevronUp, Pencil, Plus, Search, TrainFront, Trash2, Truck, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronUp, Plus, Search, TrainFront, Trash2, Truck, X } from 'lucide-react';
 import { WagonAssignmentStatus, WagonVehicle, wagonAssignmentsApi } from '../../api';
 import { useApp } from '../../context/AppContext';
 import { getShortUnitLabel } from '../../utils/formatters';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { scrollActiveOptionIntoView } from '../common/SearchableSelect';
 import { AssignmentPopover } from './AssignmentPopover';
-import { bagUnits, displayEditableQuantity, displayQuantity, displayRemainingQuantity, EditorState, fromApi, hasVehicleAssignment, newEntry, newTrain, newWagon, proportionalQuantity, quantityUnits, remaining, remainingAfterEntry, stateWithVehicleEntry, toApi, trainName, Train, updateEntryBags, VehicleEditor, VehicleEntry, vehicleAssignmentSummary, vehicleEntryChanged, vehicleSummaryTotals, Wagon } from './wagonAssignmentModel';
+import { bagUnits, displayEditableQuantity, displayQuantity, displayRemainingQuantity, EditorState, fromApi, hasVehicleAssignment, newEntry, newTrain, newWagon, proportionalQuantity, quantityUnits, remaining, remainingAfterEntry, stateWithVehicleEntry, toApi, trainName, Train, updateEntryBags, VehicleEditor, VehicleEntry, vehicleAssignmentSummary, vehicleEntryChanged, vehicleSummaryTotals, Wagon, wagonAssignmentTotals } from './wagonAssignmentModel';
 
 const inputClass = 'w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-base text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100';
 const vehicleBadgeClass = 'inline-flex max-w-full items-center rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-mono text-xs font-bold text-sky-800';
@@ -26,6 +26,67 @@ type RemovalTarget =
   | { kind: 'wagon'; trainKey: string; wagonKey: string; label: string }
   | { kind: 'vehicle'; trainKey: string; wagonKey: string; entryKey: string; label: string; wagonNumber: string };
 
+interface AssignmentStatusSelectProps {
+  id: string;
+  status: WagonAssignmentStatus;
+  onChange: (status: WagonAssignmentStatus) => void;
+  disabled?: boolean;
+  compact?: boolean;
+}
+
+const AssignmentStatusSelect: React.FC<AssignmentStatusSelectProps> = ({ id, status, onChange, disabled = false, compact = false }) => {
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  return (
+    <div ref={pickerRef} className="relative w-full min-w-0">
+      <span id={`${id}-label`} className={compact ? 'sr-only' : 'text-xs font-semibold text-slate-700'}>Assignment status</span>
+      <button id={`${id}-button`} type="button" role="combobox" aria-labelledby={`${id}-label ${id}-value`} disabled={disabled}
+        aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? `${id}-options` : undefined}
+        onClick={() => setOpen(value => !value)}
+        onKeyDown={event => {
+          if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+        className={`${inputClass} ${compact ? 'min-h-8 px-2 py-0.5 text-xs sm:min-h-9 sm:py-1' : 'mt-1'} flex items-center justify-between gap-1 text-left disabled:cursor-not-allowed disabled:opacity-50`}>
+        <span id={`${id}-value`} className="truncate">{label}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div id={`${id}-options`} role="listbox" aria-labelledby={`${id}-label`}
+          className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+          {(['draft', 'pending', 'submitted'] as const).map(option => (
+            <button key={option} type="button" role="option" aria-selected={status === option}
+              onClick={() => { onChange(option); setOpen(false); }}
+              className={`min-h-10 w-full px-3 text-left text-sm hover:bg-blue-50 ${status === option ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-700'}`}>
+              {option.charAt(0).toUpperCase() + option.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const WagonAssignmentScreen: React.FC = () => {
   const { pageParams, navigate, showToast, setNavigationGuard } = useApp();
   const bulkId = String(pageParams.bulkTransportId || '');
@@ -38,6 +99,7 @@ export const WagonAssignmentScreen: React.FC = () => {
   const [exists, setExists] = useState(pageParams.wagonAssignmentStatus != null);
   const [activeTrainKey, setActiveTrainKey] = useState('');
   const [collapsedWagons, setCollapsedWagons] = useState<Set<string>>(() => new Set());
+  const [summaryCollapsed, setSummaryCollapsed] = useState(true);
   const [picker, setPicker] = useState<{ trainKey: string; wagonKey: string } | null>(null);
   const [search, setSearch] = useState('');
   const [activeOption, setActiveOption] = useState(0);
@@ -110,7 +172,7 @@ export const WagonAssignmentScreen: React.FC = () => {
     if (!summaryTotals.quantities.length) return '0';
     return summaryTotals.quantities.map(({ unit, ...totals }) => {
       const quantity = totals[field];
-      return quantity === null ? `Invalid quantity (${unit || 'unit unavailable'})` : `${displayQuantity(quantity)} ${unit}`;
+      return quantity === null ? `Invalid quantity (${unit || 'unit unavailable'})` : `${displayRemainingQuantity(quantity)} ${unit}`;
     }).join(' · ');
   };
   const assignedQuantityColor = summaryTotals.unavailableAssignment || summaryTotals.quantities.some(total => total.difference === null)
@@ -344,11 +406,21 @@ export const WagonAssignmentScreen: React.FC = () => {
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-5xl space-y-3 pb-6">
-      <header className="flex items-start gap-3">
-        <button type="button" onClick={() => navigate('bulk-transport-list')} aria-label="Back to bulk transports" className="rounded-lg border border-slate-200 bg-white p-2.5 text-slate-600 hover:bg-slate-50"><ArrowLeft className="h-4 w-4" /></button>
-        <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900"><TrainFront className="h-5 w-5 shrink-0 text-blue-600" />Manage Wagons</h1>
-          <p className="mt-1 break-words text-sm text-slate-500">{pageParams.bulkTitle || `Bulk transport ${bulkId}`}</p>
+      <header className="flex min-w-0 items-center gap-2">
+        <button type="button" onClick={() => navigate('bulk-transport-list')} aria-label="Back to bulk transports" className="shrink-0 rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50"><ArrowLeft className="h-4 w-4" /></button>
+        <div className="min-w-0 flex-1">
+          <h1 className="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-base font-bold text-slate-900 sm:text-xl"><TrainFront className="h-4 w-4 shrink-0 text-blue-600 sm:h-5 sm:w-5" /><span className="truncate">Manage Wagons</span></h1>
+          <p className="mt-1 truncate text-sm text-slate-500">{pageParams.bulkTitle || `Bulk transport ${bulkId}`}</p>
+        </div>
+        <div className="flex w-24 shrink-0 flex-col items-stretch gap-1 sm:w-auto sm:flex-row sm:items-center sm:gap-1.5">
+          <div className="w-full sm:w-24">
+            <AssignmentStatusSelect id="assignment-status-top" status={state.status} disabled={saving} compact
+              onChange={status => setState(current => ({ ...current, status }))} />
+          </div>
+          <button type="button" onClick={() => void save()} disabled={saving || Boolean(editor)}
+            className="inline-flex min-h-7 w-full shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-blue-600 px-2 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-9 sm:w-auto sm:px-2.5 sm:text-xs">
+            <Check className="h-3.5 w-3.5" />{saving ? 'Saving...' : 'Save'}
+          </button>
         </div>
       </header>
 
@@ -422,6 +494,11 @@ export const WagonAssignmentScreen: React.FC = () => {
                     const collapsed = collapsedWagons.has(wagon.key);
                     const pickerOpen = picker?.trainKey === activeTrain.key && picker.wagonKey === wagon.key;
                     const wagonEditor = editor?.trainKey === activeTrain.key && editor.wagonKey === wagon.key ? editor : null;
+                    const wagonTotals = wagonAssignmentTotals(wagon, wagonEditor?.entry);
+                    const wagonUnit = vehicles.find(vehicle =>
+                      wagon.entries.some(entry => entry.transport === String(vehicle.id))
+                      || wagonEditor?.entry.transport === String(vehicle.id)
+                    )?.quantity_unit;
                     const editingVehicle = wagonEditor && vehicles.find(vehicle => String(vehicle.id) === wagonEditor.entry.transport);
                     const editorBalance = editingVehicle && wagonEditor ? remaining(state, editingVehicle, wagonEditor.entry.key) : null;
                     const currentBalance = editorBalance && wagonEditor ? remainingAfterEntry(editorBalance, wagonEditor.entry) : null;
@@ -532,22 +609,27 @@ export const WagonAssignmentScreen: React.FC = () => {
                     );
                     return (
                       <article key={wagon.key} className="rounded-lg border border-gray-200 bg-blue-50/60">
-                        <div className="flex flex-wrap items-center gap-1 border-b border-blue-200 bg-blue-100 px-2 py-0.5">
+                        <div className="flex min-w-0 items-center gap-1 border-b border-blue-200 bg-blue-100 px-1.5 py-0.5 sm:px-2">
                           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-200 text-xs font-bold text-blue-800">{wagonIndex + 1}</span>
-                          <label className="flex min-w-0 flex-1 items-center gap-1 text-sm font-bold text-blue-800">
+                          <label className="flex min-w-0 flex-1 items-center gap-1 text-xs font-bold text-blue-800">
                             Wagon
-                            <input aria-label={`Wagon ${wagonIndex + 1} number`} value={wagon.number} onChange={event => updateWagon(activeTrain.key, wagon.key, item => ({ ...item, number: event.target.value }))} className="w-20 min-w-0 rounded-md border border-white/80 bg-white/80 px-1.5 py-0 text-base font-semibold text-slate-800 focus:border-blue-500 focus:outline-none sm:w-28" />
-                            <Pencil className="h-3 w-3 shrink-0 text-slate-400" aria-hidden="true" />
+                            <input aria-label={`Wagon ${wagonIndex + 1} number`} value={wagon.number} onChange={event => updateWagon(activeTrain.key, wagon.key, item => ({ ...item, number: event.target.value }))} className="w-14 min-w-0 rounded-md border border-white/80 bg-white/80 px-1 py-0 text-sm font-semibold text-slate-800 focus:border-blue-500 focus:outline-none sm:w-16 sm:px-1.5" />
                           </label>
-                          <span className="text-xs font-medium text-slate-600">{wagon.entries.length} vehicle{wagon.entries.length === 1 ? '' : 's'}</span>
+                          <span className="flex min-w-[64px] shrink-0 flex-col text-right text-[10px] font-medium leading-tight text-slate-600 sm:min-w-0 sm:flex-row sm:items-center sm:gap-1.5 sm:text-[12px]">
+                            <span className="whitespace-nowrap">{wagonTotals.quantity === null ? '—' : `${displayRemainingQuantity(wagonTotals.quantity)}${wagonUnit ? ` ${getShortUnitLabel(wagonUnit)}` : ''}`}</span>
+                            <span className="whitespace-nowrap">{wagonTotals.bags === null ? '—' : `${wagonTotals.bags} bags`}</span>
+                          </span>
+                          <span className="ml-2 flex shrink-0 items-center gap-0.5 text-[12px] font-medium text-slate-600 sm:ml-0" aria-label={`${wagon.entries.length} vehicles assigned`} title={`${wagon.entries.length} vehicles assigned`}>
+                            <Truck className="h-3 w-3" aria-hidden="true" />{wagon.entries.length}
+                          </span>
                           <button type="button" aria-label={`Remove wagon ${wagon.number}`} onClick={() => {
                             if (wagon.entries.length > 0) setRemovalTarget({ kind: 'wagon', trainKey: activeTrain.key, wagonKey: wagon.key, label: wagon.number || String(wagonIndex + 1) });
                             else removeWagon(activeTrain.key, wagon.key);
-                          }} className="flex h-7 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                          }} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
                           <button type="button" aria-label={`${collapsed ? 'Expand' : 'Collapse'} wagon ${wagon.number || wagonIndex + 1}`}
                             aria-expanded={!collapsed} aria-controls={`wagon-content-${wagon.key}`}
                             onClick={() => setWagonsCollapsed([wagon.key], !collapsed)}
-                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-blue-700 hover:bg-blue-200">
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-blue-700 hover:bg-blue-200">
                             {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                           </button>
                         </div>
@@ -614,11 +696,20 @@ export const WagonAssignmentScreen: React.FC = () => {
               <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-200"><Truck className="h-4 w-4 text-blue-300" />Assignment summary</h2>
               <p className="mt-1 text-xs text-slate-400">{state.trains.length} trains · {state.trains.reduce((total, train) => total + train.wagons.length, 0)} wagons · {summaryAvailable.length} vehicles remaining</p>
             </div>
-            {dirty && <span className="rounded-full bg-amber-400/15 px-2.5 py-1 text-[10px] font-semibold text-amber-300">Unsaved changes</span>}
+            <div className="flex items-center gap-2">
+              {dirty && <span className="rounded-full bg-amber-400/15 px-2.5 py-1 text-[10px] font-semibold text-amber-300">Unsaved changes</span>}
+              <button type="button" aria-expanded={!summaryCollapsed} aria-controls="assignment-summary-content"
+                aria-label={`${summaryCollapsed ? 'Expand' : 'Collapse'} assignment summary`}
+                onClick={() => setSummaryCollapsed(collapsed => !collapsed)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white">
+                {summaryCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
+          <div id="assignment-summary-content" hidden={summaryCollapsed}>
           <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-700 pt-3">
             <div className="min-w-0">
-              <p className="text-[10px] uppercase text-slate-400">Quantity in vehicles</p>
+              <p className="text-[10px] uppercase text-slate-400">Qty in vehicles</p>
               <p className="mt-1 break-words text-sm font-semibold tabular-nums sm:text-lg">{formatSummaryQuantity('vehicles')}</p>
               <p className="mt-1 text-xs text-slate-400">{summaryTotals.vehicleBags === null ? 'Invalid bags' : `${summaryTotals.vehicleBags} bags`}</p>
             </div>
@@ -628,7 +719,7 @@ export const WagonAssignmentScreen: React.FC = () => {
               <p className={`mt-1 text-xs ${summaryDifferenceColor(summaryTotals.differenceBags)}`}>{summaryTotals.unavailableAssignment ? 'Bags unavailable (vehicle missing)' : summaryTotals.assignedBags === null ? 'Invalid bags' : `${summaryTotals.assignedBags} bags`}</p>
             </div>
             <div className="min-w-0">
-              <p className="text-[10px] uppercase text-slate-400">Diff (vehicles - assigned)</p>
+              <p className="text-[10px] uppercase text-slate-400">Remaining</p>
               <p className="mt-1 break-words text-sm font-semibold tabular-nums sm:text-lg">
                 {summaryTotals.unavailableAssignment ? <span className="text-red-400">Unavailable (vehicle missing)</span>
                   : !summaryTotals.quantities.length ? <span className="text-emerald-400">0</span>
@@ -672,14 +763,14 @@ export const WagonAssignmentScreen: React.FC = () => {
             </div>
           ) : <p className="mt-3 text-xs text-slate-400">No vehicles available for this bulk transport.</p>}
           {editor && <p className="mt-3 text-xs text-amber-200">Finish or cancel the open vehicle entry before saving. {editor.trainKey !== activeTrainKey && <button type="button" onClick={() => setActiveTrainKey(editor.trainKey)} className="underline">Return to entry</button>}</p>}
-          <div className="mt-3 flex flex-col gap-2 border-t border-slate-700 pt-3 sm:flex-row sm:items-end sm:justify-end">
-            <label className="text-xs font-semibold text-slate-300 sm:w-44">Assignment status
-              <select className={`${inputClass} mt-1`} value={state.status} onChange={event => setState(current => ({ ...current, status: event.target.value as WagonAssignmentStatus }))}>
-                <option value="draft">Draft</option><option value="pending">Pending</option><option value="submitted">Submitted</option>
-              </select>
-            </label>
-            <button type="button" onClick={() => void save()} disabled={Boolean(editor)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" />{saving ? 'Saving...' : 'Save assignments'}</button>
           </div>
+        </section>
+        <section className="flex w-full min-w-0 flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-end sm:justify-end sm:p-4">
+          <div className="w-full min-w-0 sm:w-44">
+            <AssignmentStatusSelect id="assignment-status-bottom" status={state.status}
+              onChange={status => setState(current => ({ ...current, status }))} />
+          </div>
+          <button type="button" onClick={() => void save()} disabled={Boolean(editor)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" />{saving ? 'Saving...' : 'Save assignments'}</button>
         </section>
       </fieldset>
       {discardModal}
